@@ -35,6 +35,7 @@ Chipload is becoming a platform for software-defined shops. Read [ROADMAP.md](RO
 - `tests/test_proxy.py`, `test_tls_stack.py`, `test_tls_live.py`: exact gateway trust, private deployment state, TLS verification, and an opt-in real-identity/container lifecycle.
 - `scripts/tls-recovery`, `scripts/recovery_archive.py`, `docs/RECOVERY.md`: encrypted coordinated backups, WAL-aware database snapshots, authenticated archive inspection, and resumable offline restore into fresh deployment state. GnuPG handles encryption; keys stay outside deployment state.
 - `tests/test_recovery.py`, `test_recovery_live.py`: archive and storage failures, interrupted backup/restore, real Keycloak recovery, and preservation of shop data and spent request allowances.
+- `scripts/tls-credentials`, `docs/CREDENTIALS.md`, `tests/test_credentials*.py`: operator-only agent/database credential rotation, durable retry journals, old-credential rejection, and recovery of rotated deployments.
 - `tests/test_project.py`, `tests/test_lifecycle.py`, `tests/test_worker_live.py`: source boundary, concurrency, permission, publication, and opt-in real-container tests.
 - `tests/test_auth.py`, `test_published.py`, `test_transports.py`, `test_mcp_client.py`, `test_agent_lifecycle_live.py`: identity failures, public-query privacy, transport parity, actual MCP-client interoperability, and an opt-in complete authoring loop using a separate broker.
 - `pyproject.toml`, `uv.lock`: Python package and locked SDK/development dependencies.
@@ -79,6 +80,8 @@ Keep HTTP admission ahead of token verification and body parsing. Use the connec
 Keep TLS and identity state private and outside images/source bundles. Verify both CA chains and hostnames; use the configured issuer/resource audience even when the internal JWKS port differs. The generated agent is bound to one shop; a Keycloak role alone is insufficient. Never recreate credentials over an existing identity database, silently reinitialize missing state, or expose the administration listener publicly. Test failure of identity trust as well as successful authentication. The TLS stack currently has no production OpenBao integration or automatic certificate renewal.
 
 Recovery is an operator command, never an HTTP/MCP shop action. Back up the paired SQLite stores and identity/configuration state together while writers are stopped. Authenticate encrypted archives before using plaintext. Restore only into fresh state and a new PostgreSQL volume; retain the incomplete marker across failure and reject application startup until restore finishes. Preserve policy generations, spent request credit, subjects, signing keys, publication generations, and observation timestamps. Use the shared deployment operation lock, retain private modes, and never clean up resources belonging to another project.
+
+Credential rotation is also operator-only. Persist the pending credential before changing an external service, retry that same credential after interruption, and preserve subjects and grants. Verify old credentials fail for authentication reasons, not connection failures. Recreate containers after replacing individually mounted secret files. Block startup and backup while a rotation is unfinished. Secret rotation does not revoke already-issued JWTs; keep that distinction explicit in operator documentation.
 
 ## Start from an issue
 
@@ -128,6 +131,8 @@ For application packaging or listener changes, rebuild worker and runtime images
 For TLS, proxy trust, identity topology, or CA changes, also run `./scripts/build-tls` and `CHIPLOAD_TLS_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_tls_live.py' -v`. Follow `docs/TLS.md` for private initialization and certificate profiles. Keep the checkout and image fingerprints fixed while live tests run. TLS packaging does not complete production rotation, recovery, or load qualification.
 
 For recovery changes, run the ordinary `test_recovery.py` checks and `CHIPLOAD_RECOVERY_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_recovery_live.py' -v`. This requires GnuPG 2.4+, built worker/runtime/TLS images, and Docker. Verify interruption after identity restore commits, startup gating, retry, preserved identity/publication/request state, and cross-shop denials. Read `docs/RECOVERY.md` for maintenance interruption, protected plaintext staging, matching versions, and remaining off-host requirements.
+
+For credential changes, also run `test_credentials.py` and `CHIPLOAD_CREDENTIAL_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_credentials_live.py' -v`. Exercise lost responses after remote commits, retry, unchanged effective grants, old-secret rejection, and backup/restore with rotated credentials. Keep the checkout and image references fixed throughout live checks.
 
 For changes to the process example bundles, also run `test_process_worker_live.py` with the worker flag. This builds all 89 exported projects from their actual source and runs their acceptance cases. Rebuild the worker only when SDK source changes require it; example source arrives in the job bundle.
 

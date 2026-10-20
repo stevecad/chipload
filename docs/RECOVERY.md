@@ -6,6 +6,10 @@ TLS certificates and keys, and deployment secrets. It can restore that set into
 a fresh state directory and PostgreSQL volume. Application services stay stopped
 until the operator starts the restored deployment.
 
+The latest credential-rotation receipt is included when present. Backups reject
+unfinished [credential rotations](CREDENTIALS.md); finish the pending cutover
+before taking a new recovery set.
+
 This workflow covers the [single-host TLS stack](TLS.md). It does not back up
 OpenBao, ERP systems, equipment controllers, external evidence stores, Docker
 images, or the repository checkout. Preserve those independently. Disaster
@@ -156,7 +160,7 @@ request. Restoring files alone does not prove operational recovery.
 ## Handle interruption
 
 Deployment changes and recovery commands share an exclusive operation lock.
-`tls-stack up` and `reload` reject incomplete backup/restore markers. Status,
+`tls-stack up` and `reload` reject incomplete backup, restore, or credential-rotation markers. Status,
 logs, and shutdown remain available once the active operation releases its lock.
 Do not remove a marker merely to start a partially restored service.
 

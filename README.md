@@ -10,6 +10,8 @@ The API and build broker can run in separate containers with locked dependencies
 
 The TLS deployment has [encrypted backup and restore tooling](docs/RECOVERY.md) for shop data, identity data, grants, and TLS state. Recovery preserves request allowances and keeps a restored service offline until startup.
 
+The [credential rotation helper](docs/CREDENTIALS.md) changes the provisioned agent secret and Keycloak database password with interrupted-cutover recovery and verification that the previous credentials no longer authenticate.
+
 Chipload is not an ERP. Order management, purchasing, inventory management, production planning, accounting, and invoicing are out of scope. Chipload will work with ERP systems through adapters and APIs. Shop capabilities, business rules, and callable operations belong in Chipload; ERP systems remain the source of truth for their business records.
 
 The repository contains an experimental Python shop model and evaluator, REST/MCP discovery and authoring, Keycloak token verification with explicit shop grants, a separate container build broker, executable examples, and local identity/secrets infrastructure. Production deployment and privileged equipment operations remain to be implemented.

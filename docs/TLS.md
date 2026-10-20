@@ -212,7 +212,9 @@ It recreates gateway, Keycloak, and API, and verifies their HTTPS endpoints.
 Plan a maintenance interruption and distribute a changed CA to clients first.
 The live test exercises replacement of both certificates and CA trust while
 preserving identities and grants, and rejects clients that retain only the old
-CA. Automatic renewal and identity/database credential rotation remain work.
+CA. Automatic certificate renewal remains work. Use the
+[credential rotation helper](CREDENTIALS.md) for the provisioned shop-agent secret
+and Keycloak database password, including interruption and retry.
 
 Keycloak imports a realm only when absent. Editing `realm.json` or an initial
 secret file does **not** update existing users, clients, or database passwords.

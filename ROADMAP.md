@@ -24,9 +24,10 @@ Steve integration is planned for a later stage.
 - HTTP admission now shares deployment, connection-peer, identity, and mutation budgets across API processes. Limiter state is bounded; contention and saturation return retry details. Tests exercise two actual HTTP servers, process restart, forwarded-header spoofing, and MCP client recovery. `scripts/benchmark-requests` measures admission overhead. Network-edge controls and full deployment load qualification remain open.
 - Capacity policy and request balances use a separate durable store, keeping public admission independent of shop write locks. Resumable migration preserves existing policy history and spent allowances; tests exercise concurrent startup, interruption, store pairing, and discovery during authoring writes. Both database files belong to one backup/restore set.
 - API and broker container packaging now uses pinned images, locked wheels, non-root users, private shared storage, process limits, and graceful shutdown. The API has no Docker access; the broker has a daemon socket and no IP network. A live container test covers MCP authoring, isolated builds, REST discovery, restart, rollback, and withdrawal. See `docs/RUNTIME.md`.
-- The TLS topology adds a pinned Caddy gateway, production-mode Keycloak, private application/database networks, explicit CA trust, and one-shop agent provisioning. Its separate client/admin host listeners bind to loopback. Live checks exercise real tokens, verified HTTPS, certificate/CA replacement, the agent lifecycle, restart persistence, trust failures, forwarding-header spoofing, and network/port restrictions. See `docs/TLS.md`; public routing, production secrets delivery, automatic renewal, credential rotation, recovery, and deployment load qualification remain open.
+- The TLS topology adds a pinned Caddy gateway, production-mode Keycloak, private application/database networks, explicit CA trust, and one-shop agent provisioning. Its separate client/admin host listeners bind to loopback. Live checks exercise real tokens, verified HTTPS, certificate/CA replacement, the agent lifecycle, restart persistence, trust failures, forwarding-header spoofing, and network/port restrictions. See `docs/TLS.md`; public routing, production secrets delivery, automatic renewal, and deployment load qualification remain open.
 - Additional dependency environments, custom executable evaluation, production process supervision, privileged equipment adapters, and hardened internet deployment remain to be implemented.
 - Encrypted recovery now snapshots both shop databases, Keycloak, grants, and TLS/secrets state together. Restore targets fresh state, retains spent request capacity, blocks application startup during interruption, and resumes the same recovery attempt. A live drill checks real identity/signing keys, publication and observation history, REST/MCP discovery, and interruption before backup completion and after identity restore commits. See `docs/RECOVERY.md`; external secrets and off-host disaster recovery remain operational work.
+- Operator credential rotation now journals agent-secret and identity-database password changes, retries the same pending credential, verifies old-credential rejection, and preserves subjects and grants. Startup and backups reject unfinished rotations. See `docs/CREDENTIALS.md`; operator-account lifecycle, signing-key rotation, and production OpenBao delivery/rotation remain work.
 - No open GitHub issues existed when this plan was written. The milestones below are a local implementation backlog; they have not been published as issues.
 
 The existing Compose configuration is for local development. Completing a local demo will not complete the deployment goal.
@@ -189,6 +190,12 @@ including authorization bindings and request balances. Interrupted backup and
 restore are exercised against the actual containers; restored services remain
 offline until completion. This covers the single-host TLS topology, not OpenBao,
 external systems, or a qualified recovery onto a replacement host.
+
+Agent-secret and identity-database password rotation now have durable retry,
+old-credential rejection, unchanged-grant checks, and a recovery drill using the
+rotated credentials. Already-issued JWTs retain their normal expiry. Managed
+operator lifecycle, signing-key rotation, and OpenBao/adapter secret delivery
+remain separate work.
 
 **Complete when:** a clean installation can be configured from documented inputs; automated security and integration checks pass; backup/restore and credential rotation are exercised; failed identity/secrets dependencies fail safely; deployment tests verify exposed ports and network access; load-test results and operational requirements are documented. Local development settings must not pass production validation.
 

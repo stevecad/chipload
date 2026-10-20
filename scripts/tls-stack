@@ -54,6 +54,12 @@ def operation_lock(state):
 
 
 def require_ready(state):
+    if (state / ".credentials-incomplete.json").exists() or (
+        state / ".credentials-incomplete.json"
+    ).is_symlink():
+        raise ValueError(
+            "credential rotation is incomplete; use scripts/tls-credentials resume before starting services"
+        )
     if (state / ".restore-incomplete.json").exists():
         raise ValueError(
             "restore is incomplete; resume it with scripts/tls-recovery before starting services"

@@ -211,7 +211,7 @@ class RecoveryTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "another deployment"):
                 with script.stack.operation_lock(self.root):
                     self.fail("acquired a competing lock")
-        for name in (script.BACKUP_MARKER, script.RESTORE_MARKER):
+        for name in (script.BACKUP_MARKER, script.RESTORE_MARKER, ".credentials-incomplete.json"):
             marker = self.root / name
             archive.write(marker, "{}")
             with (
