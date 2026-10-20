@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+"""Measure shared request admission in a temporary database, without HTTP or shop work."""
+
+import argparse
+import json
+import math
+import multiprocessing
+import resource
+import statistics
+import tempfile
+import time
+from concurrent.futures import ProcessPoolExecutor
+from pathlib import Path
+
+
+def worker(arguments):
+    from chipload.lifecycle import Repository
+    from chipload.request_limits import RateLimited, RequestCapacity, RequestLimiter
+
+    path, calls, index = arguments
+    resource.setrlimit(resource.RLIMIT_AS, (512 * 1024**2, 512 * 1024**2))
+    resource.setrlimit(resource.RLIMIT_CPU, (20, 20))
+    limiter = RequestLimiter(Repository(Path(path)))
+    samples = []
+    counts = {"accepted": 0, "limited": 0, "busy": 0}
+    for number in range(calls):
+        started = time.perf_counter()
+        try:
+            limiter.ingress((f"198.51.{index}.{number % 16 + 1}", 50000))
+            status = "accepted"
+        except RateLimited:
+            status = "limited"
+        except RequestCapacity:
+            status = "busy"
+        counts[status] += 1
+        samples.append((time.perf_counter() - started) * 1000)
+    return counts, samples, resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+
+
+def main():
+    from chipload.lifecycle import Repository
+    from chipload.quotas import QuotaPolicy
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--calls", type=int, default=2000)
+    parser.add_argument("--processes", type=int, default=4)
+    parser.add_argument("--policy", choices=("defaults", "capacity"), default="capacity")
+    args = parser.parse_args()
+    if not 1 <= args.processes <= 8 or not args.processes <= args.calls <= 20_000:
+        parser.error("use 1–8 processes and between that many and 20,000 calls")
+    with tempfile.TemporaryDirectory(prefix="chipload-request-benchmark-") as directory:
+        repository = Repository(Path(directory) / "requests.db")
+        policy = repository.read_quotas()["policy"]
+        if args.policy == "capacity":
+            for scope in ("deployment", "peer"):
+                policy["requests"][scope] = {"per_minute": 60_000, "burst": 10_000}
+            repository.set_quotas(QuotaPolicy.model_validate(policy), expected_generation=0)
+        arguments = [
+            (
+                str(repository.path),
+                args.calls // args.processes + (i < args.calls % args.processes),
+                i,
+            )
+            for i in range(args.processes)
+        ]
+        started = time.perf_counter()
+        with ProcessPoolExecutor(
+            max_workers=args.processes, mp_context=multiprocessing.get_context("spawn")
+        ) as pool:
+            results = list(pool.map(worker, arguments))
+        elapsed = time.perf_counter() - started
+        counts = {key: sum(r[0][key] for r in results) for key in ("accepted", "limited", "busy")}
+        samples = sorted(value for _, values, _ in results for value in values)
+        print(
+            json.dumps(
+                {
+                    "calls": args.calls,
+                    "processes": args.processes,
+                    "policy": args.policy,
+                    **counts,
+                    "elapsed_seconds_including_startup": round(elapsed, 3),
+                    "accepted_per_second_including_startup": round(counts["accepted"] / elapsed, 1),
+                    "admission_latency_ms": {
+                        "median": round(statistics.median(samples), 3),
+                        "p95": round(samples[math.ceil(len(samples) * 0.95) - 1], 3),
+                        "max": round(max(samples), 3),
+                    },
+                    "max_worker_peak_rss_kib": max(r[2] for r in results),
+                    "retained_buckets": repository.read_quotas()["usage"]["deployment"][
+                        "request_buckets"
+                    ],
+                },
+                indent=2,
+            )
+        )
+
+
+if __name__ == "__main__":
+    main()

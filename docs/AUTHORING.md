@@ -114,7 +114,7 @@ components of 200 characters each, and 1,000 characters per message.
 
 These bounds apply outside the source container as well. They do not provide
 a separate CPU or memory sandbox for the trusted data-validation process.
-Process containment, ingress rate limits, filesystem capacity/retention, and
+Process containment, network-edge controls, filesystem capacity/retention, and
 concurrent load qualification remain required before internet deployment.
 Authoring/build quotas and dispatch fairness are described below.
 
@@ -143,7 +143,7 @@ is disabled; source output is bounded and is not returned through public
 discovery. The Docker broker itself is privileged infrastructure and must remain
 separate from a future public API. Its Docker access must never be delegated to
 shop source. Containers share the host kernel; production isolation, supervision,
-ingress controls, and deployment validation remain work under the hardening milestone.
+network-edge controls, and deployment validation remain work under the hardening milestone.
 
 These controls use Docker's documented
 [runtime restrictions](https://docs.docker.com/engine/containers/run/) and
@@ -308,17 +308,23 @@ as necessary; it does not cancel or erase existing work. A no-op source save
 does not create another revision or audit event. Reusing existing source or
 build request identities does not double-charge admission.
 
-Opening an older database upgrades schema 0/1/2 to schema 3 in one transaction.
+The policy's `requests` object controls shared HTTP and mutation rates; see
+[request admission](API.md#request-admission). Request allowances count retries
+and no-op calls, independently of source/build storage and job quotas. Deployment
+usage also reports the number of retained request buckets.
+
+Opening an older database upgrades schema 0/1/2/3 to schema 4 in one transaction.
 Build requester identities are recovered from request audit events, falling
 back to source ownership or a shared `legacy` identity when necessary. Existing
-usage may exceed the defaults and is preserved. Before upgrading a deployment,
+usage may exceed the defaults and is preserved. Existing quota policies gain
+default request limits. Before upgrading a deployment,
 stop old API/broker processes and make a consistent backup. Do not run old code
 alongside the new schema. SQLite remains a single-node database; this does not
 establish safe use over a network filesystem or across independent databases.
 
 Payload quotas exclude SQLite/WAL/index overhead, observation snapshots, and
-audit/publication history. Ingress limits, other mutation rates, filesystem
-quotas, and tested retention/backup/restore procedures remain required for
+audit/publication history. Network-edge controls, filesystem quotas,
+and tested retention/backup/restore procedures remain required for
 internet deployment. Reaching a retained-data limit requires deliberate
 operator capacity or retention work; automatic history deletion is not provided.
 

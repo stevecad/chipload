@@ -10,8 +10,10 @@ import httpx2
 import uvicorn
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
+from mcp.shared.exceptions import MCPError
 from server_support import IdentityFixture
 
+from chipload.quotas import QuotaPolicy
 from chipload.server import create_app
 
 
@@ -116,6 +118,34 @@ class MCPClientTests(unittest.IsolatedAsyncioTestCase):
                         ).status_code,
                         404,
                     )
+
+    async def test_official_client_receives_rate_retry_data_and_can_continue(self):
+        clock = [1_792_454_400_000]
+        self.operations.limiter.clock = lambda: clock[0]
+        async with httpx2.AsyncClient(trust_env=False) as transport:
+            async with Client(
+                streamable_http_client(self.base + "/mcp", http_client=transport)
+            ) as agent:
+                await agent.list_tools()
+                repository = self.operations.service.repository
+                quota = repository.read_quotas()
+                quota["policy"]["requests"]["peer"] = {"per_minute": 60, "burst": 1}
+                repository.set_quotas(
+                    QuotaPolicy.model_validate(quota["policy"]),
+                    expected_generation=quota["generation"],
+                )
+                arguments = {"request": {"shop_id": "thermal-example"}}
+                result = await agent.call_tool("shop_catalog", arguments)
+                self.assertFalse(result.is_error)
+                with self.assertRaises(MCPError) as failure:
+                    await agent.call_tool("shop_catalog", arguments)
+                self.assertEqual(failure.exception.code, 429)
+                self.assertEqual(failure.exception.data["status"], 429)
+                self.assertEqual(failure.exception.data["error"]["limit"], "peer")
+                self.assertEqual(failure.exception.data["error"]["retry_after"], 1)
+                clock[0] += 1000
+                recovered = await agent.call_tool("shop_catalog", arguments)
+                self.assertEqual(recovered.structured_content, result.structured_content)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-"""Durable authoring admission limits, enforced inside repository transactions."""
+"""Durable platform admission policy and source/build quota accounting."""
 
 import math
 from datetime import datetime, timedelta
@@ -8,6 +8,7 @@ from pydantic import Field, StrictInt
 
 from .model import Model
 from .project import MAX_OUTPUT_BYTES
+from .request_limits import RequestLimits
 
 Count = Annotated[StrictInt, Field(ge=1, le=1_000_000)]
 ByteLimit = Annotated[StrictInt, Field(ge=1, le=1024**4)]
@@ -24,6 +25,7 @@ class ScopeQuota(Model):
 
 
 class QuotaPolicy(Model):
+    requests: RequestLimits = RequestLimits()
     deployment: ScopeQuota = ScopeQuota(
         pending_builds=100,
         running_builds=2,
@@ -153,6 +155,9 @@ def quota_usage(db, *, at: datetime, shop: str | None = None, identity: str | No
             parameters,
         ).fetchone()
         result[scope] = {**dict(builds), **dict(sources)}
+    result["deployment"]["request_buckets"] = db.execute(
+        "SELECT COUNT(*) FROM request_buckets"
+    ).fetchone()[0]
     return result
 
 

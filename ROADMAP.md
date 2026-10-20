@@ -19,8 +19,9 @@ Steve integration is planned for a later stage.
 - A local application service now stores immutable source revisions, durable build jobs, exact publications, rollback/withdrawal, and audit events. It enforces shop/action grants. A restricted Docker worker and broker build Python projects; the broker validates models and acceptance results. Real-container tests cover hostile source and the publication lifecycle.
 - REST/OpenAPI and Streamable HTTP MCP share discovery, evaluation, authoring, publication, evidence, and observation operations. The server verifies Keycloak access tokens and applies explicit shop grants; a separate broker processes queued jobs. Public results have a distinct privacy projection.
 - Data boundaries now enforce JSON depth/token/number limits, model collection limits, bounded diagnostics, and deterministic evaluation/result/acceptance-suite budgets. Graph ordering avoids repeated scans. Adversarial parser, graph, transport, and container tests cover rejection and continued operation.
-- Bounded caches retain validated immutable builds and public catalog bytes while database publication selection, report integrity, permissions, observations, and evaluation time remain live. Concurrent misses share validation; saturation is retryable. `scripts/benchmark-data --service` measures compact/large-catalog reads with retention disabled and enabled. Cold validation, process containment, ingress limits, and deployment load qualification remain open.
-- Durable source/build quotas now cover deployment, shop, and verified identity scopes, including pending/running jobs, hourly admissions, retained records, and payload storage reservations. Brokers claim work atomically with persistent dispatch turns. Tests exercise competing processes, transport parity, idempotent retries, migration, and operator policy changes. Request-rate controls and broader deployment storage/retention remain open.
+- Bounded caches retain validated immutable builds and public catalog bytes while database publication selection, report integrity, permissions, observations, and evaluation time remain live. Concurrent misses share validation; saturation is retryable. `scripts/benchmark-data --service` measures compact/large-catalog reads with retention disabled and enabled. Cold validation, process containment, and deployment load qualification remain open.
+- Durable source/build quotas now cover deployment, shop, and verified identity scopes, including pending/running jobs, hourly admissions, retained records, and payload storage reservations. Brokers claim work atomically with persistent dispatch turns. Tests exercise competing processes, transport parity, idempotent retries, migration, and operator policy changes.
+- HTTP admission now shares deployment, connection-peer, identity, and mutation budgets across API processes. Limiter state is bounded; contention and saturation return retry details. Tests exercise two actual HTTP servers, process restart, forwarded-header spoofing, and MCP client recovery. `scripts/benchmark-requests` measures admission overhead. Network-edge controls and full deployment load qualification remain open.
 - Additional dependency environments, custom executable evaluation, production process supervision, privileged equipment adapters, and hardened internet deployment remain to be implemented.
 - No open GitHub issues existed when this plan was written. The milestones below are a local implementation backlog; they have not been published as issues.
 
@@ -167,10 +168,11 @@ see `docs/SHOP_MODEL.md`. `docs/AUTHORING.md` records reproducible data-operatio
 measurements. Immutable build/projection caching now reduces repeated-read cost
 under memory and concurrency budgets, with publication/corruption/withdrawal
 tests. Source/build quotas and fair dispatch are enforced across processes using
-the same repository. Trusted data-process containment, ingress and other mutation
-rate controls, broader storage/retention, deployment load targets, and concurrent
-adversarial deployment verification remain open. Do not treat the static budgets,
-cache, build quotas, or single-process benchmark as completion of this milestone.
+the same repository. Shared HTTP and mutation rate controls now reject excess
+traffic before shop work. Trusted data-process containment, contention from request
+accounting, network-edge controls, broader storage/retention, deployment load
+targets, and full adversarial deployment verification remain open. The component benchmarks and HTTP admission tests cover
+these implemented boundaries; production deployment remains a separate gate.
 
 **Complete when:** a clean installation can be configured from documented inputs; automated security and integration checks pass; backup/restore and credential rotation are exercised; failed identity/secrets dependencies fail safely; deployment tests verify exposed ports and network access; load-test results and operational requirements are documented. Local development settings must not pass production validation.
 

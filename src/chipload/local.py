@@ -43,7 +43,7 @@ def parser() -> argparse.ArgumentParser:
         "recover-builds", help="remove expired workers and fail their jobs"
     )
     recover.add_argument("--image")
-    status = commands.add_parser("quotas", help="read operator-owned authoring/build quotas and usage")
+    status = commands.add_parser("quotas", help="read platform quotas, request limits, and usage")
     status.add_argument("--shop")
     status.add_argument("--identity")
     quotas = commands.add_parser("set-quotas", help="update quotas for every API and broker")

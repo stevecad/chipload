@@ -54,6 +54,7 @@ from .project import unique_json
 from .published import Collection, ObservationSnapshot
 from .query import VariableResult
 from .quotas import QuotaExceeded
+from .request_limits import RateLimited, RequestCapacity
 from .responses import CatalogView, ItemView, PageView, PublicEvaluation
 
 MAX_REQUEST_BYTES = 3 * 1024 * 1024
@@ -74,6 +75,23 @@ def problem(error: Exception) -> tuple[int, dict]:
         status, code, message = 503, "identity_unavailable", "identity verification is unavailable"
     elif isinstance(error, DataBusy):
         status, code, message = 503, "data_busy", str(error)
+    elif isinstance(error, RequestCapacity):
+        return 503, {
+            "error": {
+                "code": "request_capacity",
+                "message": str(error),
+                "retry_after": error.retry_after,
+            }
+        }
+    elif isinstance(error, RateLimited):
+        return 429, {
+            "error": {
+                "code": "rate_limited",
+                "message": str(error),
+                "limit": error.limit,
+                "retry_after": error.retry_after,
+            }
+        }
     elif isinstance(error, QuotaExceeded):
         return 429, {
             "error": {
@@ -152,6 +170,7 @@ class Boundary:
             )
         self.active += 1
         try:
+            await run_in_threadpool(self.operations.limiter.ingress, scope.get("client"))
             if scope["method"] == "OPTIONS":
                 response = Response(
                     status_code=204,
@@ -170,6 +189,7 @@ class Boundary:
                 if kind.lower() != "bearer" or not separator or not token or " " in token:
                     raise AuthenticationError("invalid authorization header")
                 principal = await run_in_threadpool(self.verifier.verify, token)
+                await run_in_threadpool(self.operations.limiter.identity, principal.subject)
             scope["chipload.principal"] = principal
             data = bytearray()
             if "content-length" in headers:
@@ -247,15 +267,32 @@ class Boundary:
                 await send(message)
 
             await self.app(scope, replay, secured)
-        except (AuthenticationError, IdentityUnavailable) as error:
+        except (AuthenticationError, IdentityUnavailable, RateLimited, RequestCapacity) as error:
             status, body = problem(error)
+            response_headers = {"Cache-Control": "no-store", "Vary": "Authorization, Origin"}
+            if isinstance(error, (AuthenticationError, IdentityUnavailable)):
+                response_headers["WWW-Authenticate"] = challenge(self.settings)
+            if isinstance(error, (RateLimited, RequestCapacity)):
+                response_headers["Retry-After"] = str(error.retry_after)
+                if scope["path"] == "/mcp":
+                    # Preserve retry data in MCP clients before parsing a request ID.
+                    # Positive application codes avoid MCP's reserved negative range.
+                    body = {
+                        "jsonrpc": "2.0",
+                        "id": None,
+                        "error": {
+                            "code": status,
+                            "message": str(error),
+                            "data": {"status": status, **body},
+                        },
+                    }
+            if origin:
+                response_headers["Access-Control-Allow-Origin"] = origin
+                response_headers["Access-Control-Expose-Headers"] = "WWW-Authenticate, Retry-After"
             await JSONResponse(
                 body,
                 status,
-                headers={
-                    "Cache-Control": "no-store",
-                    "WWW-Authenticate": challenge(self.settings),
-                },
+                headers=response_headers,
             )(scope, receive, send)
         except TimeoutError:
             await JSONResponse({"error": {"code": "request_timeout"}}, 408)(scope, receive, send)
@@ -284,6 +321,7 @@ def make_mcp(operations: Operations, settings: ServerSettings):
                     Conflict,
                     ValueError,
                     DataBusy,
+                    RequestCapacity,
                 ) as error:
                     status, body = problem(error)
                     result = {"status": status, **body}
@@ -371,7 +409,10 @@ def create_app(
     async def handle_error(request, error):
         status, body = problem(error)
         headers = {"WWW-Authenticate": challenge(settings)} if status == 401 else {}
-        if isinstance(error, QuotaExceeded) and error.retry_after is not None:
+        if (
+            isinstance(error, (QuotaExceeded, RateLimited, RequestCapacity))
+            and error.retry_after is not None
+        ):
             headers["Retry-After"] = str(error.retry_after)
         return JSONResponse(body, status, headers=headers)
 
@@ -384,6 +425,7 @@ def create_app(
         ValidationError,
         RequestValidationError,
         DataBusy,
+        RequestCapacity,
         Exception,
     ):
         app.add_exception_handler(kind, handle_error)

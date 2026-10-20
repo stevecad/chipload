@@ -26,6 +26,7 @@ Chipload is becoming a platform for software-defined shops. Read [ROADMAP.md](RO
 - `src/chipload/auth.py`, `deploy/api/settings.example.json`: Keycloak access-token verification and explicit operator-owned shop bindings.
 - `src/chipload/broker.py`: separate build-queue process with guarded claims and expired-job recovery.
 - `src/chipload/quotas.py`, `tests/test_quotas.py`: shared source/build admission, report reservations, policy generations, and contention/migration checks. Quotas are operator-owned database policy; use the local `quotas`/`set-quotas` commands.
+- `src/chipload/request_limits.py`, `tests/test_request_limits*.py`: shared request and mutation rates, bounded limiter storage, and competing HTTP server tests. `scripts/benchmark-requests` measures admission overhead.
 - `scripts/build-worker`, `deploy/worker/Dockerfile`: pinned worker environment built from a minimal context.
 - `tests/test_project.py`, `tests/test_lifecycle.py`, `tests/test_worker_live.py`: source boundary, concurrency, permission, publication, and opt-in real-container tests.
 - `tests/test_auth.py`, `test_published.py`, `test_transports.py`, `test_mcp_client.py`, `test_agent_lifecycle_live.py`: identity failures, public-query privacy, transport parity, actual MCP-client interoperability, and an opt-in complete authoring loop using a separate broker.
@@ -63,6 +64,8 @@ Apply the shared bounded JSON decoder at data trust boundaries. New model featur
 Cache validated immutable data only. Every request still selects its publication from the database and checks its current identity/grants; stored report bytes and metadata determine reuse. Never cache publication pointers, authorization decisions, live observations, clocks, or evaluation results. Bound retained memory, entries, and concurrent cold loads. Test withdrawal during an ongoing read, cross-shop pointers, data corruption, visibility changes, and independent mutable response containers before changing this policy.
 
 Keep quota admission and queue claims atomic in the repository. Repeated build keys return their existing job without another charge. Charge accepted requests to their verified identity across shops, reserve report storage before execution, and retain running capacity until expired workers are removed. Broker dispatch must use `claim_next`, with shared running limits and persistent shop/identity turns. Never bypass platform quotas in REST/MCP or let shop source change them. Migration, concurrent-process admission/claims, source-head preservation, and publication behavior need tests when these contracts change.
+
+Keep HTTP admission ahead of token verification and body parsing. Use the connection peer and verified identity for request budgets; forwarding headers and refreshed tokens cannot create new allowances. Every mutating operation needs an explicit shop/action grant before charging its mutation budget. Preserve retry details for REST and MCP clients, bound limiter state, and reject requests when shared accounting is unavailable. Test process restarts, competing servers, and actual MCP client recovery when changing this boundary.
 
 ## Start from an issue
 

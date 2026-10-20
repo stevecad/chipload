@@ -24,6 +24,7 @@ from .limits import bounded_json
 from .model import Id, Model, Timestamp
 from .project import MAX_OUTPUT_BYTES, MAX_PROJECT_BYTES, BuildReport, SourceProject
 from .quotas import QUOTA_SCHEMA, QuotaPolicy, admit_build, admit_running, admit_source, quota_usage
+from .request_limits import REQUEST_SCHEMA, update_request_rates
 from .sandbox import DockerBuilder
 from .validation import Diagnostic
 
@@ -122,13 +123,13 @@ class Repository:
         finally:
             os.close(fd)
         with self.connection() as db:
-            if db.execute("PRAGMA user_version").fetchone()[0] not in {0, 1, 2, 3}:
+            if db.execute("PRAGMA user_version").fetchone()[0] not in {0, 1, 2, 3, 4}:
                 raise ValueError("unsupported repository schema")
             db.execute("PRAGMA journal_mode=WAL")
             db.execute("BEGIN IMMEDIATE")
             try:
                 version = db.execute("PRAGMA user_version").fetchone()[0]
-                if version not in {0, 1, 2, 3}:
+                if version not in {0, 1, 2, 3, 4}:
                     raise ValueError("unsupported repository schema")
                 # execute(), rather than executescript(), preserves this migration's transaction.
                 for statement in SCHEMA.split(";"):
@@ -144,7 +145,7 @@ class Repository:
                         "(SELECT actor FROM sources WHERE shop_id=builds.shop_id "
                         "AND revision=builds.source_revision),'legacy')"
                     )
-                for statement in QUOTA_SCHEMA.split(";"):
+                for statement in (QUOTA_SCHEMA + REQUEST_SCHEMA).split(";"):
                     if statement.strip():
                         db.execute(statement)
                 db.execute(
@@ -164,7 +165,7 @@ class Repository:
                         "FROM builds GROUP BY " + column,
                         (scope,),
                     )
-                db.execute("PRAGMA user_version=3")
+                db.execute("PRAGMA user_version=4")
                 db.execute("COMMIT")
             except BaseException:
                 db.execute("ROLLBACK")
@@ -197,6 +198,7 @@ class Repository:
             generation = db.execute("SELECT generation FROM quota_policy WHERE id=1").fetchone()[0]
             if generation != expected_generation:
                 raise Conflict("quota policy changed; read its generation before updating")
+            update_request_rates(db, self.policy(db).requests, policy.requests)
             db.execute(
                 "UPDATE quota_policy SET generation=?,policy=? WHERE id=1",
                 (generation + 1, payload),
@@ -208,8 +210,8 @@ class Repository:
             return {"generation": generation + 1, "policy": policy.model_dump(mode="json")}
 
     @contextmanager
-    def connection(self):
-        db = sqlite3.connect(self.path, timeout=5, isolation_level=None)
+    def connection(self, *, timeout=5):
+        db = sqlite3.connect(self.path, timeout=timeout, isolation_level=None)
         db.row_factory = sqlite3.Row
         db.execute("PRAGMA foreign_keys=ON")
         db.execute("PRAGMA synchronous=FULL")

@@ -6,7 +6,7 @@ revisions. Public discovery works without authentication or an agent.
 
 The current server is a local development runtime. It binds to loopback and does
 not import shop source or invoke Docker. A separate broker processes build jobs.
-Production packaging, TLS deployment, ingress rate limits, stronger isolation,
+Production packaging, TLS deployment, network-edge controls, stronger isolation,
 recovery exercises, and load/security qualification remain on the roadmap.
 
 ## Start the services
@@ -256,8 +256,7 @@ evaluation, and acceptance-suite limits are exposed by `sdk_reference`; see
 [build contracts](AUTHORING.md#project-and-build-contracts).
 
 These initial bounds do not constitute internet load qualification. Data
-processing still needs deployment process limits, request-rate controls,
-and concurrent load verification.
+processing still needs deployment process limits and concurrent load verification.
 
 Source/build admission uses durable quotas shared by every API and broker using
 the same database. Limits apply to the deployment, shop, and verified identity;
@@ -271,9 +270,8 @@ Reusing an accepted build's request key still returns that build when quotas are
 full. Reusing the key for a different source remains a 409 conflict. Keep the
 same key when retrying an uncertain submission; a new key requests a new build.
 See [quota defaults and operator controls](AUTHORING.md#authoring-and-build-quotas).
-These controls cover source/build storage and work admission. Public-request
-rate limits, other mutation rates, filesystem quotas, and retention/backup
-operations remain deployment work.
+These controls cover source/build storage and work admission. Filesystem quotas
+and retention/backup operations remain deployment work.
 
 Validated terminal build records and serialized public catalogs share a bounded
 process-local LRU cache. `data_cache_bytes` defaults to 33,554,432 (32 MiB);
@@ -294,6 +292,85 @@ cached. Withdrawal blocks subsequent reads even if an old artifact remains in
 memory; a request that already selected an earlier database snapshot may finish.
 There is no cache TTL delaying publication, rollback, visibility, or withdrawal.
 
+## Request admission
+
+All HTTP routes, including MCP discovery, health checks, and CORS preflight,
+share request budgets. Connection-peer and deployment checks precede token
+verification and body parsing. Verified identities have an additional budget
+across shops, routes, transports, and refreshed tokens.
+
+| Budget in `policy.requests` | Refill per minute | Burst |
+| --- | ---: | ---: |
+| `deployment` | 6,000 | 200 |
+| `peer` | 1,200 | 40 |
+| `identity` | 1,200 | 40 |
+| `mutation_identity` | 60 | 10 |
+| `mutation_shop` | 120 | 20 |
+
+These are token buckets with continuous refill, not counters that reset on a
+minute boundary. The burst is the maximum accumulated allowance. Source saves,
+build requests, publication changes, and observation writes share mutation
+budgets through the common operation layer. Permission checks precede mutation
+admission. Conflicts, no-op calls, and idempotent retries consume request allowance;
+build request keys still prevent duplicate jobs. The local operator CLI uses
+trusted services directly and is outside HTTP rate accounting.
+
+Operators edit `policy.requests` using the existing
+[`quotas` and `set-quotas` commands](AUTHORING.md#authoring-and-build-quotas).
+The same database stores policy and balances. Checks and debits use a
+[SQLite write transaction](https://www.sqlite.org/lang_transaction.html), so
+API processes and restarts share the allowance. A failed combined check charges
+none of its buckets. Later authentication, validation, or domain failures do not
+refund earlier admission. Policy edits retain spent credit, capped by the new
+burst, and update existing refill rates and expiration times atomically.
+
+The peer is the ASGI connection address. IPv4-mapped IPv6 is normalized to IPv4;
+IPv6 addresses share a `/64` allowance. Missing/invalid peers share one fallback
+bucket. Forwarded headers are ignored. Clients behind a NAT or reverse proxy
+share that peer allowance; verified-identity limits still distinguish users.
+Keep proxy-header rewriting disabled in the ASGI launcher. A production gateway
+and its trusted-client-address contract remain deployment work.
+
+`max_buckets` defaults to 4,096 and is bounded to 8–65,536. New peer/identity
+records cannot evict active budgets. Fully replenished buckets are reclaimed
+when new records need space. Backward clock changes grant no refill credit;
+operators must maintain the host clock. Limits govern admitted application
+work, while network flood and connection controls belong at the deployment edge.
+
+Exhausted budgets return HTTP 429 with `rate_limited`, the budget name in `limit`,
+and `retry_after` seconds. Limiter storage exhaustion, lock contention, or database
+failure returns HTTP 503 `request_capacity`; database lock waits are limited to
+50 ms. Both responses include `Retry-After` and `Cache-Control: no-store`.
+The rate response follows [HTTP 429 semantics](https://www.rfc-editor.org/rfc/rfc6585.html#section-4).
+
+MCP admission failures arrive before the request body is read: HTTP 429/503 carries
+a JSON-RPC error with `id: null`, application error code 429/503, and the same
+REST error plus `status` in `error.data`. Positive codes follow MCP's
+[application error allocation](https://modelcontextprotocol.io/specification/2026-07-28/basic/index#error-codes).
+The official Python client preserves those fields in `MCPError.data`; the client
+test verifies retry after refill using the same connection. Mutation failures
+after admission use the existing MCP error tool result, with structured status
+429/503 and retry details. Clients should respect the delay and retain the same
+build request key when retrying a submission.
+
+Measure the limiter separately from HTTP, authentication, and shop evaluation:
+
+```sh
+uv run python scripts/benchmark-requests --calls 2000 --processes 4
+uv run python scripts/benchmark-requests --calls 2000 --processes 4 --policy defaults
+```
+
+On the development host (Python 3.14.6), the capacity run used raised request
+allowances and admitted 1,909 calls in 4.05 seconds including process startup;
+91 calls returned capacity errors. Median admission latency was 2.28 ms and
+p95 was 51.11 ms. With default allowances, 440 calls were admitted, 1,520
+rate-limited, and 40 returned capacity errors in 2.90 seconds. The initial burst
+is included in those counts. These component measurements expose SQLite write
+contention; they are not HTTP throughput or a production capacity target.
+Admission currently shares the shop database's write lock. A long authoring or
+broker write can therefore produce temporary 503 responses on public reads.
+Reducing that contention is part of deployment performance qualification.
+
 ## Verification
 
 ```sh
@@ -305,6 +382,8 @@ CHIPLOAD_WORKER_TESTS=1 uv run --extra server python -m unittest discover -s tes
 Tests exercise signed-token failures, shop/role intersections, REST/MCP result
 parity, public filtering, pagination, revision conflicts, observation freshness,
 the official MCP client over real HTTP, and real Keycloak-issued tokens.
+Request-limit tests also launch two independent HTTP server processes, share
+one allowance, restart a process, and verify that published data remains intact.
 The opt-in agent lifecycle test uses the official client and a separate broker
 process to save broken source, inspect a failed container build, repair it,
 publish, update, roll back, and withdraw; an ordinary HTTP client checks discovery.

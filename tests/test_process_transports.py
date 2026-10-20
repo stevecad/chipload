@@ -13,6 +13,7 @@ from chipload.lifecycle import Repository, ShopService
 from chipload.operations import Operations
 from chipload.project import BuildReport, run_cases
 from chipload.published import PublishedService
+from chipload.quotas import QuotaPolicy
 from chipload.server import create_app
 from examples.process_shops import mixed
 from examples.process_shops.definitions import AT
@@ -34,6 +35,15 @@ class ProcessTransportTests(unittest.TestCase):
             )
             settings = identity.settings.model_copy(update={"bindings": (owner,)})
             service = ShopService(Repository(settings.database))
+            # This matrix exercises domain parity, with thousands of back-to-back calls.
+            # Request-limit behavior is tested separately under intentionally small allowances.
+            quota = service.repository.read_quotas()
+            for scope in ("deployment", "peer", "identity"):
+                quota["policy"]["requests"][scope] = {"per_minute": 60_000, "burst": 10_000}
+            service.repository.set_quotas(
+                QuotaPolicy.model_validate(quota["policy"]),
+                expected_generation=quota["generation"],
+            )
             published = PublishedService(service, clock=lambda: AT)
             operations = Operations(service, published)
             verifier = TokenVerifier(settings, client=identity.client)

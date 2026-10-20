@@ -5,7 +5,7 @@ from typing import Annotated, Callable, Literal
 
 from pydantic import Field, StrictInt, StrictStr, model_validator
 
-from .access import Principal
+from .access import Action, Principal, require
 from .artifact import Digest
 from .auth import AuthenticationError
 from .evaluate import EvaluationRequest
@@ -15,6 +15,7 @@ from .project import SourceProject
 from .published import Collection, ObservationSnapshot, PublishedService
 from .query import VariableQuery, VariableResult
 from .reference import sdk_reference
+from .request_limits import RequestLimiter
 from .responses import CatalogView, ItemView, PageView, PublicEvaluation
 
 
@@ -94,11 +95,13 @@ class Operation:
     authenticated: bool = False
     read_only: bool = True
     output: type[Model] | None = None
+    mutation_action: Action | None = None
 
 
 class Operations:
     def __init__(self, service: ShopService, published: PublishedService | None = None):
         self.service = service
+        self.limiter = RequestLimiter(service.repository)
         self.published = published or PublishedService(service)
         p = self.published
         s = self.service
@@ -166,6 +169,7 @@ class Operations:
                 lambda who, r: s.save_source(who, r.project, expected_head=r.expected_head),
                 True,
                 False,
+                mutation_action="source:write",
             ),
             "build_request": Operation(
                 BuildCreate,
@@ -175,6 +179,7 @@ class Operations:
                 ),
                 True,
                 False,
+                mutation_action="build:run",
             ),
             "build_inspect": Operation(
                 BuildRead,
@@ -194,6 +199,7 @@ class Operations:
                 self._publication,
                 True,
                 False,
+                mutation_action="publication:write",
             ),
             "audit_read": Operation(
                 AuditRead,
@@ -221,6 +227,7 @@ class Operations:
                 ),
                 True,
                 False,
+                mutation_action="observations:write",
             ),
         }
         outputs = {
@@ -243,6 +250,8 @@ class Operations:
         self.specs = {
             name: replace(spec, output=outputs.get(name)) for name, spec in self.specs.items()
         }
+        if any(not spec.read_only and spec.mutation_action is None for spec in self.specs.values()):
+            raise ValueError("mutating operations require an explicit action grant")
 
     def _publication(self, principal, request):
         arguments = (principal, request.shop_id)
@@ -257,6 +266,10 @@ class Operations:
         if spec.authenticated and principal is None:
             raise AuthenticationError("authentication required")
         request = spec.input.model_validate(request)
+        if not spec.read_only:
+            shop = request.project.shop_id if isinstance(request, SourceWrite) else request.shop_id
+            who = require(principal, shop, spec.mutation_action)
+            self.limiter.mutation(who.subject, shop)
         result = spec.handler(principal, request)
         if spec.output:
             result = spec.output.model_validate(result)
