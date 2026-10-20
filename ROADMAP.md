@@ -28,6 +28,14 @@ The existing Compose configuration is for local development. Completing a local 
 
 ## Design commitments
 
+### Work with ERP systems
+
+Chipload is not an ERP. Order management, purchasing, inventory management, production planning, accounting, and invoicing are out of scope.
+
+Chipload owns shop definitions, capability evaluation, business rules, and callable operation contracts. ERP systems remain authoritative for their business records. Adapters and APIs will connect the two: Chipload can use ERP observations when evaluating a shop and expose capabilities and operation results for ERP clients.
+
+Imported observations carry their source, external record reference, and freshness. An inventory observation can inform availability without becoming an inventory ledger. A shop can describe recurring production arrangements without Chipload managing contracts or generating a production plan. Capability workflows describe process dependencies and permitted operations; ERP workflows stay in the ERP.
+
 ### A shop is a Python project
 
 Ordinary Python modules, functions, reusable components, and pinned dependencies must be usable to define a shop. An agent needs access to the SDK reference, source files, revision history, diagnostics, and test results. The SDK must support composition across files and must not depend on an LLM to interpret a finished definition.
@@ -100,7 +108,7 @@ Pair the project with manufacturing requests and expected explanations, includin
 
 ### 2. Build the Python SDK and versioned shop model
 
-**Status:** Initial implementation and domain tests pass, including generic input catalogs, open resource kinds, exact absolute-temperature conversion, and contextual shop-variable applicability. See `docs/SHOP_MODEL.md` for the draft schema and migration decision. More expressive process transformations, evidence lifecycle, policy composition, scheduling, and custom executable evaluation remain design and implementation work; the current model does not claim general manufacturing feasibility.
+**Status:** Initial implementation and domain tests pass, including generic input catalogs, open resource kinds, exact absolute-temperature conversion, and contextual shop-variable applicability. See `docs/SHOP_MODEL.md` for the draft schema and migration decision. More expressive process transformations, evidence lifecycle, policy composition, and custom executable evaluation remain design and implementation work; the current model does not claim general manufacturing feasibility.
 
 Implement typed domain models, reusable shop components, explicit units, stable references, constraints, evidence, observations, and workflow compatibility. Provide structured validation errors that identify the relevant source object or field. Define deterministic serialization and compatibility rules for generated artifacts.
 
@@ -141,6 +149,8 @@ Expose discovery, evaluation, and the authoring/publication lifecycle through bo
 Define operation inputs, outputs, side effects, permissions, preconditions, and job states. Implement adapter contracts with narrowly scoped secrets, durable request identities, audit records, timeouts, cancellation semantics, and recovery from ambiguous outcomes. Retries must not silently repeat physical effects.
 
 Provide a simulated adapter and end-to-end workflows covering equipment operations, human tasks, inspection, and external services. Choose the first real adapter protocol through a concrete integration design. A simulation passing must not be recorded as equipment qualification.
+
+Define an ERP integration contract for reading relevant business observations and exposing shop capabilities and operation results. Preserve external record references and freshness, and test failure and retry behavior. ERP business workflows and record ownership stay in the ERP.
 
 **Complete when:** authorized clients can submit and inspect work through REST and MCP; unauthorized and cross-shop actions fail; duplicate requests do not duplicate simulated effects; interruption and recovery tests preserve an honest operation state; adapters receive only their own credentials.
 

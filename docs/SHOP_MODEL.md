@@ -150,6 +150,12 @@ list does not qualify every grade or condition. A typical quote turnaround does
 not create a deadline. The model does not turn these statements into RFQ,
 contract, ordering, or inventory-management actions.
 
+ERP functionality is out of scope for Chipload. ERP integration will provide
+timestamped observations and external record references through adapters and
+APIs. The ERP remains authoritative for orders, purchasing, inventory management,
+production planning, accounting, and invoicing. Chipload uses relevant observations
+to evaluate capability and business rules; its model does not manage those records.
+
 ## Capability evaluation
 
 A `Capability` combines a process, resource IDs, input requirements,

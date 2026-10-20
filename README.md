@@ -6,6 +6,8 @@ Chipload is becoming a platform for software-defined shops. A shop defines its r
 
 The shop authoring SDK and initial runtime use Python. A documented REST API lets websites, scripts, and other clients query shop data without an agent. MCP exposes the same domain services and permission rules for agents. Public discovery exposes the capabilities a shop explicitly publishes.
 
+Chipload is not an ERP. Order management, purchasing, inventory management, production planning, accounting, and invoicing are out of scope. Chipload will work with ERP systems through adapters and APIs. Shop capabilities, business rules, and callable operations belong in Chipload; ERP systems remain the source of truth for their business records.
+
 The repository contains an experimental Python shop model and evaluator, REST/MCP discovery and authoring, Keycloak token verification with explicit shop grants, a separate container build broker, executable examples, and local identity/secrets infrastructure. Production deployment and privileged equipment operations remain to be implemented.
 
 ## Define and inspect a shop
