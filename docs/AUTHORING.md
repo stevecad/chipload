@@ -103,6 +103,20 @@ all worker output as untrusted: it validates the returned model and references,
 enforces the shop ID, computes artifact identities, and runs acceptance cases
 outside the source process. Source cannot submit its own test results.
 
+Worker output, saved source, and stored reports use a shared JSON decoder that
+bounds nesting and structural work before object allocation. The broker rejects
+oversized model collections and evaluation graphs; see
+[model admission limits](SHOP_MODEL.md#units-identities-and-artifacts).
+Acceptance suites also have an aggregate 1,000,000 work-score budget, counting
+each target invocation. Exceeding this budget fails the build without executing
+or skipping selected cases. Diagnostics have at most 100 entries, 32 path
+components of 200 characters each, and 1,000 characters per message.
+
+These bounds apply outside the source container as well. They do not provide
+a separate CPU or memory sandbox for the trusted data-validation process.
+Process containment, queue fairness, per-identity/shop quotas, and concurrent
+load qualification remain required before internet deployment.
+
 ## Container boundary
 
 The image build uses a minimal context containing the SDK snapshot, package
@@ -134,6 +148,57 @@ These controls use Docker's documented
 [runtime restrictions](https://docs.docker.com/engine/containers/run/) and
 [default seccomp profile](https://docs.docker.com/engine/security/seccomp/).
 The live tests verify configured limits and actual access denials on the test host.
+
+For reproducible data-operation measurements, run:
+
+```sh
+uv run python scripts/benchmark-data
+uv run python scripts/benchmark-data --large-catalog
+```
+
+The synthetic workload has 17 repeated steps and a work score of 94,420 against
+the 100,000 limit. The second command adds 1,000 catalog entries, making a
+roughly 4 MiB artifact. Each benchmark child has 512 MiB address space, 30 CPU
+seconds, and a 60-second parent timeout. Output includes artifact size, Python
+and platform versions, median/p95/max timings, and peak process RSS. It checks
+the expected supported outcome and rejects an oversized JSON array.
+
+These measurements exclude the database, HTTP, identity verification, and
+concurrent load; they are not a deployment throughput claim. In an initial
+20-iteration run on the development host (Python 3.14.6, other tests running),
+read-and-evaluate medians were about 24 ms for the compact artifact and 380 ms
+for the large catalog. Peak process RSS was about 35 MiB and 66 MiB respectively.
+The large-model result identified repeated artifact validation as a performance
+cost. The repository now caches validated immutable build data and public
+catalog bytes under a memory/entry budget. Publication selection and report-byte
+hashing still happen on every read; observations and authorization stay live.
+
+Compare the shared published service with and without retention:
+
+```sh
+uv run python scripts/benchmark-data --service
+uv run python scripts/benchmark-data --service --large-catalog
+```
+
+This mode creates a temporary SQLite repository with synthetic trusted fixture
+data, then measures the same public evaluation with retention disabled, on the
+first load, and with a warm cache. It does not execute the fixture's source or
+contact equipment. On the same Python 3.14.6 development host, a 20-iteration
+run measured:
+
+| Workload | No-retention evaluation median / p95 | Warm evaluation median / p95 | Warm catalog median |
+| --- | --- | --- | --- |
+| Compact, 5.8 KiB | 36.5 / 47.8 ms | 20.2 / 24.8 ms | 0.9 ms |
+| Large catalog, 4.0 MiB | 872.5 / 910.7 ms | 65.8 / 75.3 ms | 44.2 ms |
+
+The large workload retained two entries with an estimated 10.0 MiB footprint;
+peak process RSS, including uncached validation and temporary allocations, was
+about 100 MiB. Its first cached load still took about 880 ms. These measurements
+include SQLite reads, integrity checks, public projection, and evaluation, but
+exclude HTTP, identity verification, and concurrent load. Production
+qualification must repeat them in the deployed runtime and exercise cold-load
+pressure, eviction, requests from multiple shops, and quotas. See
+[API cache policy](API.md#errors-and-limits).
 
 ## Storage, authorization, and recovery
 

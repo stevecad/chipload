@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 from collections import Counter
+from typing import Annotated
 
-from .model import Choice, Fact, Model, Rule, Shop
+from pydantic import Field, StrictStr
+
+from .complexity import complexity_errors
+from .graph import DependencyCycle, ordered_nodes
+from .limits import MAX_DIAGNOSTICS
+from .model import Choice, Fact, Id, Model, Rule, Shop
 
 
 class Diagnostic(Model):
-    code: str
-    path: tuple[str, ...]
-    message: str
+    code: Id
+    path: tuple[Annotated[StrictStr, Field(max_length=200)], ...] = Field(max_length=32)
+    message: Annotated[StrictStr, Field(max_length=1000)]
 
 
 class ShopValidationError(ValueError):
@@ -24,7 +30,9 @@ def validate_shop(shop: Shop) -> None:
     errors: list[Diagnostic] = []
 
     def error(code: str, path: tuple[str, ...], message: str) -> None:
-        errors.append(Diagnostic(code=code, path=path, message=message))
+        errors.append(Diagnostic(code=code, path=path, message=message[:1000]))
+        if len(errors) == MAX_DIAGNOSTICS:
+            raise ShopValidationError(errors)
 
     def unique(values: list[str] | tuple[str, ...], path: tuple[str, ...]) -> None:
         for value, count in Counter(values).items():
@@ -43,26 +51,21 @@ def validate_shop(shop: Shop) -> None:
         for rule in values:
             if isinstance(rule, Choice) and rule.catalog is not None:
                 ref(rule.catalog, "catalogs", path + (rule.fact, "catalog"))
-                catalog = indexes["catalogs"].get(rule.catalog)
-                if catalog:
-                    items = {item.id for item in catalog.items}
+                if rule.catalog in catalog_items:
+                    items = catalog_items[rule.catalog]
                     for value in rule.allowed:
                         if value not in items:
                             error(
                                 "missing-reference",
-                                path + (rule.fact, "allowed", value),
+                                path + (rule.fact, "allowed"),
                                 "Unknown catalog item.",
                             )
 
     def acyclic(graph: dict[str, tuple[str, ...]], path: tuple[str, ...]) -> None:
-        # Iterative topological removal avoids recursion limits on imported graphs.
-        pending = {key: set(deps) & graph.keys() for key, deps in graph.items()}
-        while pending:
-            ready = {key for key, deps in pending.items() if not deps}
-            if not ready:
-                error("dependency-cycle", path, "Cycle includes: " + ", ".join(sorted(pending)))
-                return
-            pending = {key: deps - ready for key, deps in pending.items() if key not in ready}
+        try:
+            ordered_nodes(graph)
+        except DependencyCycle as cycle:
+            error("dependency-cycle", path, "Cycle blocks: " + ", ".join(cycle.nodes[:10]))
 
     collections = (
         "sites",
@@ -79,6 +82,7 @@ def validate_shop(shop: Shop) -> None:
         items = getattr(shop, collection)
         unique([item.id for item in items], (collection,))
         indexes[collection] = {item.id: item for item in items}
+    catalog_items = {catalog.id: {item.id for item in catalog.items} for catalog in shop.catalogs}
     for catalog in shop.catalogs:
         unique([item.id for item in catalog.items], ("catalogs", catalog.id, "items"))
         for item in catalog.items:
@@ -165,5 +169,9 @@ def validate_shop(shop: Shop) -> None:
                         f"Unknown predecessor: {predecessor}.",
                     )
         acyclic({step.id: step.after for step in workflow.steps}, path + ("steps",))
+    if errors:
+        raise ShopValidationError(errors)
+    for path, message in complexity_errors(shop):
+        error("model-complexity", path, message)
     if errors:
         raise ShopValidationError(errors)

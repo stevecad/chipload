@@ -18,6 +18,8 @@ Steve's CadQuery authoring workflow is a conceptual reference: source code is au
 - The process library adds 88 process projects and one mixed shop with 2,147 technical/business cases. Every project has prototype/production acceptance conditions, contextual business variables, and portable Python source. The mixed shop models shared equipment and explicit route compatibility. Exact quantity increments support whole-item business rules without introducing shop types into the engine. See `docs/PROCESS_EXAMPLES.md`.
 - A local application service now stores immutable source revisions, durable build jobs, exact publications, rollback/withdrawal, and audit events. It enforces shop/action grants. A restricted Docker worker and broker build Python projects; the broker validates models and acceptance results. Real-container tests cover hostile source and the publication lifecycle.
 - REST/OpenAPI and Streamable HTTP MCP share discovery, evaluation, authoring, publication, evidence, and observation operations. The server verifies Keycloak access tokens and applies explicit shop grants; a separate broker processes queued jobs. Public results have a distinct privacy projection.
+- Data boundaries now enforce JSON depth/token/number limits, model collection limits, bounded diagnostics, and deterministic evaluation/result/acceptance-suite budgets. Graph ordering avoids repeated scans. Adversarial parser, graph, transport, and container tests cover rejection and continued operation.
+- Bounded caches retain validated immutable builds and public catalog bytes while database publication selection, report integrity, permissions, observations, and evaluation time remain live. Concurrent misses share validation; saturation is retryable. `scripts/benchmark-data --service` measures compact/large-catalog reads with retention disabled and enabled. Cold validation, process containment, quotas, and deployment load qualification remain open.
 - Additional dependency environments, custom executable evaluation, production process supervision, privileged equipment adapters, and hardened internet deployment remain to be implemented.
 - No open GitHub issues existed when this plan was written. The milestones below are a local implementation backlog; they have not been published as issues.
 
@@ -148,6 +150,15 @@ Produce a documented threat model and production container topology based on the
 Cover authorization on every entry point, malicious source and dependencies, traversal, outbound-request abuse, credential leakage, token validation, cache visibility, and denial of service. Define and measure discovery latency, throughput, and bounded evaluation time against a reproducible workload; choose performance targets from that workload.
 
 Bound model graph complexity and the CPU/memory spent validating worker output and evaluating published data, in addition to limiting source containers. Request-byte limits alone do not bound graph-processing cost. Exercise per-identity/shop quotas and fair queueing under adversarial workloads before internet deployment.
+
+**Progress:** Structural admission and deterministic work budgets are implemented;
+see `docs/SHOP_MODEL.md`. `docs/AUTHORING.md` records reproducible data-operation
+measurements. Immutable build/projection caching now reduces repeated-read cost
+under memory and concurrency budgets, with publication/corruption/withdrawal
+tests. Trusted data-process containment, quotas/fair queueing, deployment load
+targets, and concurrent adversarial deployment verification remain open. Do not
+treat the static budgets, cache, or single-process benchmark as completion of
+this milestone.
 
 **Complete when:** a clean installation can be configured from documented inputs; automated security and integration checks pass; backup/restore and credential rotation are exercised; failed identity/secrets dependencies fail safely; deployment tests verify exposed ports and network access; load-test results and operational requirements are documented. Local development settings must not pass production validation.
 

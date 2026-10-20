@@ -6,6 +6,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 from server_support import IdentityFixture
 
+from chipload.cache import DataBusy
 from chipload.server import MAX_REQUEST_BYTES, create_app
 from examples.export_project import project
 from examples.heat_treatment import SCENARIOS
@@ -55,6 +56,40 @@ class TransportTests(unittest.TestCase):
         self.assertIn("result", payload, payload)
         self.assertFalse(payload["result"].get("isError"), payload)
         return payload["result"]["structuredContent"]
+
+    def test_json_complexity_rejections_leave_both_transports_usable(self):
+        before = self.client.get("/v1/shops/thermal-example/catalog").json()
+        payloads = (
+            b'{"value":' + b"[" * 33 + b"0" + b"]" * 33 + b"}",
+            b"[" + b"0," * 100_000 + b"0]",
+            b'{"value":NaN}',
+        )
+        for path in ("/v1/shops/thermal-example/evaluate", "/mcp"):
+            for payload in payloads:
+                with self.subTest(path=path, bytes=len(payload)):
+                    response = self.client.post(
+                        path, content=payload, headers={"Content-Type": "application/json"}
+                    )
+                    self.assertEqual(response.status_code, 400, response.text)
+                    self.assertEqual(response.json(), {"error": {"code": "invalid_json"}})
+        self.assertEqual(self.client.get("/v1/shops/thermal-example/catalog").json(), before)
+        self.assertEqual(
+            self.structured(self.mcp("shop_catalog", {"shop_id": "thermal-example"})), before
+        )
+
+    def test_data_load_capacity_is_retryable_on_rest_and_mcp(self):
+        with patch.object(
+            self.operations.published,
+            "catalog",
+            side_effect=DataBusy("data loading is at capacity; retry later"),
+        ):
+            rest = self.client.get("/v1/shops/thermal-example/catalog")
+            mcp = self.mcp("shop_catalog", {"shop_id": "thermal-example"}).json()["result"]
+        self.assertEqual(rest.status_code, 503)
+        self.assertEqual(rest.json()["error"]["code"], "data_busy")
+        self.assertTrue(mcp["isError"])
+        self.assertEqual(mcp["structuredContent"], {"status": 503, **rest.json()})
+        self.assertEqual(self.client.get("/v1/shops/thermal-example/catalog").status_code, 200)
 
     def test_public_catalog_and_resources_need_no_agent_or_login(self):
         rest = self.client.get("/v1/shops/thermal-example/catalog")

@@ -12,6 +12,7 @@ from typing import Annotated, Literal, Self
 from pydantic import Field, StrictBool, model_validator
 
 from .artifact import Artifact
+from .graph import ordered_nodes
 from .model import (
     Assurance,
     Capability,
@@ -357,53 +358,45 @@ def evaluate(
             for rule in workflow.requirements
             if (reason := check_rule(rule, facts, ("workflows", workflow.id, "requirements")))
         )
-        pending = {step.id: step for step in workflow.steps}
+        steps = {step.id: step for step in workflow.steps}
         states: dict[str, dict[str, Value]] = {}
-        while pending:
-            ready = sorted(
-                step_id
-                for step_id, step in pending.items()
-                if all(parent in states for parent in step.after)
-            )
-            if not ready:
-                raise ValueError("workflow graph has not been validated")
-            for step_id in ready:
-                step = pending.pop(step_id)
-                capability = capabilities[step.capability]
-                modeled_facts.update(r.fact for r in capability.requirements)
-                state = initial_state.copy()
-                if step.after:
-                    # State is propagated only from actual predecessors. Never
-                    # gather outputs of unrelated steps into a convenient union.
-                    state = {}
-                    conflicting = set()
-                    for parent in step.after:
-                        for name, value in states[parent].items():
-                            if name in state and not same(state[name], value):
-                                conflicting.add(name)
-                            else:
-                                state[name] = value
-                    for name in sorted(conflicting):
-                        state.pop(name, None)
-                        extra_reasons.append(
-                            Reason(
-                                code="conflicting-input-state",
-                                outcome="unsupported",
-                                path=("workflows", workflow.id, "steps", step.id, name),
-                                message="Predecessor outputs disagree about the same subject property.",
-                            )
+        for step_id in ordered_nodes({step.id: step.after for step in workflow.steps}):
+            step = steps[step_id]
+            capability = capabilities[step.capability]
+            modeled_facts.update(r.fact for r in capability.requirements)
+            state = initial_state.copy()
+            if step.after:
+                # State is propagated only from actual predecessors. Never
+                # gather outputs of unrelated steps into a convenient union.
+                state = {}
+                conflicting = set()
+                for parent in step.after:
+                    for name, value in states[parent].items():
+                        if name in state and not same(state[name], value):
+                            conflicting.add(name)
+                        else:
+                            state[name] = value
+                for name in sorted(conflicting):
+                    state.pop(name, None)
+                    extra_reasons.append(
+                        Reason(
+                            code="conflicting-input-state",
+                            outcome="unsupported",
+                            path=("workflows", workflow.id, "steps", step.id, name),
+                            message="Predecessor outputs disagree about the same subject property.",
                         )
-                step_decision = decide(capability, state)
-                step_results.append(
-                    StepResult(step=step.id, capability=capability.id, decision=step_decision)
-                )
-                states[step.id] = state.copy()
-                if step_decision.outcome in ("supported", "conditional"):
-                    states[step.id].update({f.name: f.value for f in capability.output_state})
-                else:
-                    # An unproven transformation cannot establish an output.
-                    for fact in capability.output_state:
-                        states[step.id].pop(fact.name, None)
+                    )
+            step_decision = decide(capability, state)
+            step_results.append(
+                StepResult(step=step.id, capability=capability.id, decision=step_decision)
+            )
+            states[step.id] = state.copy()
+            if step_decision.outcome in ("supported", "conditional"):
+                states[step.id].update({f.name: f.value for f in capability.output_state})
+            else:
+                # An unproven transformation cannot establish an output.
+                for fact in capability.output_state:
+                    states[step.id].pop(fact.name, None)
         reasons = tuple(r for step in step_results for r in step.decision.reasons)
         decision = Decision(
             outcome=outcome(reasons),

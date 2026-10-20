@@ -9,6 +9,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field, StrictStr
 
+from .limits import MAX_MODEL_TOKENS, bounded_json
 from .model import Model, Shop
 from .validation import validate_shop
 
@@ -64,7 +65,11 @@ def compile_shop(shop: Shop, identity: BuildIdentity) -> Artifact:
     shop = Shop.model_validate(shop.model_dump(mode="python"))
     identity = BuildIdentity.model_validate(identity.model_dump(mode="python"))
     validate_shop(shop)
-    model_hash = digest(canonical_json(shop))
+    model_data = canonical_json(shop)
+    # Reserve structural space for identity, reports, and transport envelopes.
+    # This also applies to locally constructed models, before they can be stored.
+    bounded_json(model_data, max_tokens=MAX_MODEL_TOKENS)
+    model_hash = digest(model_data)
     build_hash = digest(
         canonical_json({"model_sha256": model_hash, "identity": identity.model_dump(mode="json")})
     )
@@ -73,18 +78,7 @@ def compile_shop(shop: Shop, identity: BuildIdentity) -> Artifact:
 
 def read_artifact(data: bytes, *, max_bytes: int = 8 * 1024 * 1024) -> Artifact:
     """Validate a stored artifact's shape, graph, and digests before serving it."""
-    if len(data) > max_bytes:
-        raise ValueError("artifact exceeds the size limit")
-
-    def unique_keys(pairs: list[tuple[str, object]]) -> dict:
-        result = {}
-        for key, value in pairs:
-            if key in result:
-                raise ValueError("duplicate JSON object key")
-            result[key] = value
-        return result
-
-    payload = json.loads(data, object_pairs_hook=unique_keys)
+    payload = bounded_json(data, max_bytes=max_bytes)
     artifact = Artifact.model_validate(payload)
     expected = compile_shop(artifact.shop, artifact.identity)
     if (

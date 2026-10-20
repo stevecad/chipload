@@ -10,7 +10,6 @@ from pydantic import Field
 
 from .access import Principal, require
 from .artifact import Artifact, Digest, canonical_json, digest
-from .discovery import public_catalog
 from .evaluate import EvaluationRequest, evaluate
 from .lifecycle import Conflict, NotFound, ShopService, now
 from .model import Model, Observation, Timestamp
@@ -66,7 +65,7 @@ class PublishedService:
             db.execute("BEGIN")
             row = db.execute(
                 "SELECT builds.* FROM shops JOIN builds ON shops.published_build=builds.id "
-                "WHERE shops.id=?",
+                "WHERE shops.id=? AND builds.shop_id=shops.id",
                 (shop,),
             ).fetchone()
             if row is None:
@@ -146,7 +145,11 @@ class PublishedService:
         artifact, _ = self._snapshot(shop)
         try:
             return query_variables(
-                artifact, query, at=self.clock(), public_only=not private
+                artifact,
+                query,
+                at=self.clock(),
+                public_only=not private,
+                _public_catalog=self.repository.public_catalog,
             ).model_dump(mode="json")
         except KeyError:
             raise NotFound("variable not found") from None
@@ -165,7 +168,7 @@ class PublishedService:
                 raise NotFound("evaluation target not found") from None
             return {"observation_revision": observations.revision, **result.model_dump(mode="json")}
         try:
-            catalog = public_catalog(artifact)
+            catalog = self.repository.public_catalog(artifact)
         except KeyError:
             raise NotFound("published shop not found") from None
         collection = "capabilities" if query.target_kind == "capability" else "workflows"
@@ -253,7 +256,8 @@ class PublishedService:
         )
         with self.repository.transaction() as db:
             row = db.execute(
-                "SELECT builds.* FROM shops JOIN builds ON shops.published_build=builds.id WHERE shops.id=?",
+                "SELECT builds.* FROM shops JOIN builds ON shops.published_build=builds.id "
+                "WHERE shops.id=? AND builds.shop_id=shops.id",
                 (shop,),
             ).fetchone()
             build = self.repository.build_record(row)

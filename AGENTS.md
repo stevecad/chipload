@@ -11,6 +11,8 @@ Chipload is becoming a platform for software-defined shops. Read [ROADMAP.md](RO
 - `docs/AUTHORING.md`: local source/build/publication workflow, permissions, worker limits, and recovery.
 - `docs/API.md`: REST/MCP contracts, Keycloak setup, public query policy, and network verification.
 - `src/chipload/`: Python authoring objects, cross-object validation, artifact codec, evaluator, contextual variable queries, and public catalog projection.
+- `src/chipload/limits.py`, `complexity.py`, `graph.py`, `tests/test_data_limits.py`: bounded JSON/model admission, deterministic evaluation budgets, and iterative dependency ordering. `scripts/benchmark-data` measures compact and large-catalog workloads under process limits.
+- `src/chipload/cache.py`, `tests/test_cache.py`: bounded immutable data retention and shared cold loads. The database remains authoritative for publication and changing observations; `scripts/benchmark-data --service` compares published reads with and without retention.
 - `examples/reference_shop/`: a fictional shop composed across Python modules and sixteen executable manufacturing scenarios.
 - `examples/swiss_profile.py`: anonymized reported shop characteristics and business policies, preserving approximate and unknown values.
 - `examples/heat_treatment.py`: a fictional heat-treatment-only shop with nine executable scenarios using the same engine.
@@ -52,6 +54,10 @@ SDK development requires Python 3.12+ and `uv`. Run `uv sync --locked --extra se
 Use `python -m chipload.local` through `uv run` for the local operator workflow. It assumes OS-level ownership and constructs local grants; never expose that authority construction over HTTP or MCP. Transports must verify identity and use `ShopService` permission checks. `Repository` and `BuildProcessor` are trusted infrastructure, not client APIs. Keep Docker access out of the public service and shop workers. Rebuild with `./scripts/build-worker` after SDK changes; the broker rejects mismatched worker fingerprints.
 
 Use `Operations` for both transports. Public evaluation may expose only the published contract, outcome, safe explanations, and relevant freshness; never return internal traces or private model hashes. Hidden catalog conditions must not become membership oracles. Verify the configured resource-URI audience and issuer; never construct principals or grants from request bodies. Do not turn off Host/Origin checks to accommodate tests. Use the installed official MCP SDK and verify its protocol contracts before changing adapters.
+
+Apply the shared bounded JSON decoder at data trust boundaries. New model features must have collection and scalar bounds and account for repeated evaluation and output in `complexity.py`; do not bypass budgets by sharing a capability across many workflow steps. Budget failures reject builds, never imply an unsupported physical process. Keep canonical encoding stable for admissible existing artifacts. Scores do not replace process CPU/memory limits, quotas, or deployment load tests.
+
+Cache validated immutable data only. Every request still selects its publication from the database and checks its current identity/grants; stored report bytes and metadata determine reuse. Never cache publication pointers, authorization decisions, live observations, clocks, or evaluation results. Bound retained memory, entries, and concurrent cold loads. Test withdrawal during an ongoing read, cross-shop pointers, data corruption, visibility changes, and independent mutable response containers before changing this policy.
 
 ## Start from an issue
 

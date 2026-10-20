@@ -173,6 +173,51 @@ def define_shop():
         self.assertEqual(report.status, "failed")
         self.assertIn("shop ID", report.diagnostics[0].message)
 
+    def test_forged_data_cannot_overrun_parser_or_model_budgets(self):
+        from chipload import Capability, Process, Range, Shop, Step, Workflow, quantity
+
+        cap = Capability(
+            id="offer", name="Offer", process="process",
+            requirements=tuple(
+                Range(fact=f"f-{i}", minimum=quantity("0", "mm")) for i in range(64)
+            ),
+        )
+        costly = Shop(
+            id="example", name="Repeated work",
+            processes=(Process(id="process", name="Process"),),
+            capabilities=(cap,),
+            workflows=(Workflow(
+                id="route", name="Route",
+                steps=tuple(Step(id=f"s-{i}", capability=cap.id) for i in range(7)),
+            ),),
+        )
+        attacks = (
+            ("b'[' * 33 + b'0' + b']' * 33", "nesting"),
+            ("b'[' + b'0,' * 100_000 + b'0]'", "token"),
+            ("json.dumps({'shop': {'id': 'example', 'name': 'Forged', "
+             "'resources': [None] * 1001}}).encode()", "1000"),
+            (repr(json.dumps({"shop": costly.model_dump(mode="json")}).encode()), "work score"),
+        )
+        for expression, expected in attacks:
+            code = (
+                "import os, json\n"
+                f"payload = {expression}\n"
+                "while payload:\n"
+                "    sent = os.write(1, payload)\n"
+                "    payload = payload[sent:]\n"
+                "os._exit(0)\n"
+            )
+            with self.subTest(expected=expected):
+                report = self.build(self.source(code))
+                self.assertEqual(report.status, "failed")
+                self.assertIsNone(report.artifact)
+                self.assertTrue(any(expected in d.message for d in report.diagnostics), report)
+        healthy = self.build(self.source(
+            "from chipload import Shop\n"
+            "def define_shop(): return Shop(id='example', name='Still working')\n"
+        ))
+        self.assertEqual(healthy.status, "succeeded", healthy)
+
     def test_saved_edit_build_publish_failure_update_and_rollback(self):
         source = project()
         with tempfile.TemporaryDirectory() as directory:

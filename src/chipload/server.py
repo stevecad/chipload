@@ -23,6 +23,7 @@ from starlette.responses import JSONResponse, Response
 from .access import Forbidden
 from .artifact import canonical_json, digest
 from .auth import AuthenticationError, IdentityUnavailable, ServerSettings, TokenVerifier
+from .cache import DataBusy
 from .lifecycle import (
     BuildRecord,
     Conflict,
@@ -70,6 +71,8 @@ def problem(error: Exception) -> tuple[int, dict]:
         status, code, message = 409, "revision_conflict", str(error)
     elif isinstance(error, IdentityUnavailable):
         status, code, message = 503, "identity_unavailable", "identity verification is unavailable"
+    elif isinstance(error, DataBusy):
+        status, code, message = 503, "data_busy", str(error)
     elif isinstance(error, (ValidationError, RequestValidationError)):
         return 422, {
             "error": {
@@ -262,7 +265,14 @@ def make_mcp(operations: Operations, settings: ServerSettings):
                 principal = ctx.request_context.request.scope.get("chipload.principal")
                 try:
                     return await run_in_threadpool(operations.call, name, principal, request)
-                except (AuthenticationError, Forbidden, NotFound, Conflict, ValueError) as error:
+                except (
+                    AuthenticationError,
+                    Forbidden,
+                    NotFound,
+                    Conflict,
+                    ValueError,
+                    DataBusy,
+                ) as error:
                     status, body = problem(error)
                     result = {"status": status, **body}
                     return CallToolResult(
@@ -320,7 +330,9 @@ def create_app(
     operations: Operations | None = None,
     verifier: TokenVerifier | None = None,
 ) -> FastAPI:
-    operations = operations or Operations(ShopService(Repository(settings.database)))
+    operations = operations or Operations(
+        ShopService(Repository(settings.database, cache_bytes=settings.data_cache_bytes))
+    )
     owned_verifier = verifier is None
     verifier = verifier or TokenVerifier(settings)
     mcp, mcp_http = make_mcp(operations, settings)
@@ -357,6 +369,7 @@ def create_app(
         ValueError,
         ValidationError,
         RequestValidationError,
+        DataBusy,
         Exception,
     ):
         app.add_exception_handler(kind, handle_error)

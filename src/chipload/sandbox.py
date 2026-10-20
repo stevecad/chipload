@@ -232,7 +232,7 @@ class DockerBuilder:
             diagnostics = [
                 Diagnostic(
                     code="invalid-field",
-                    path=tuple(str(p) for p in item["loc"]),
+                    path=tuple(str(p)[:200] for p in item["loc"][:32]),
                     message=item["msg"][:1000],
                 )
                 for item in error.errors(
@@ -261,6 +261,6 @@ class DockerBuilder:
             if artifact and not diagnostics and all(t.passed for t in tests)
             else "failed",
             artifact=artifact,
-            diagnostics=tuple(diagnostics),
+            diagnostics=tuple(diagnostics[-100:]),
             tests=tests,
         )

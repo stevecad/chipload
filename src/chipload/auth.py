@@ -10,9 +10,10 @@ from urllib.parse import urlsplit
 
 import httpx
 import jwt
-from pydantic import Field, StrictStr, model_validator
+from pydantic import Field, StrictInt, StrictStr, model_validator
 
 from .access import ACTIONS, Grant, Principal
+from .cache import DEFAULT_CACHE_BYTES
 from .model import Model
 from .project import unique_json
 
@@ -28,6 +29,7 @@ class IdentityUnavailable(RuntimeError):
 class ServerSettings(Model):
     mode: Literal["development", "production"] = "production"
     database: Path = Path(".local/chipload.db")
+    data_cache_bytes: Annotated[StrictInt, Field(ge=0, le=512 * 1024 * 1024)] = DEFAULT_CACHE_BYTES
     resource_url: StrictStr
     issuer: StrictStr
     jwks_url: StrictStr

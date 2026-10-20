@@ -22,7 +22,7 @@ from pydantic import (
     model_validator,
 )
 
-Id = Annotated[StrictStr, Field(pattern=r"^[a-z][a-z0-9-]{0,63}$")]
+Id = Annotated[StrictStr, Field(pattern=r"^[a-z][a-z0-9-]{0,63}$", max_length=64)]
 Name = Annotated[StrictStr, Field(min_length=1, max_length=200)]
 Text = Annotated[StrictStr, Field(max_length=4000)]
 Visibility = Literal["private", "public"]
@@ -36,6 +36,21 @@ class Model(BaseModel):
     model_config = ConfigDict(
         extra="forbid", frozen=True, validate_default=True, revalidate_instances="always"
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def collection_limit(cls, value: object) -> object:
+        # Reject oversized arrays before validating each element or collecting
+        # thousands of nested errors. Field metadata also exposes JSON Schema limits.
+        if isinstance(value, dict):
+            for name, field in cls.model_fields.items():
+                items = value.get(name)
+                if isinstance(items, (list, tuple)):
+                    for constraint in field.metadata:
+                        maximum = getattr(constraint, "max_length", None)
+                        if maximum is not None and len(items) > maximum:
+                            raise ValueError(f"{name} exceeds the limit of {maximum} items")
+        return value
 
 
 # A deliberately explicit initial UCUM subset. No guessing unknown unit strings.
@@ -70,7 +85,7 @@ UNITS: dict[str, Unit] = {
 
 class Quantity(Model):
     value: Annotated[StrictStr, Field(max_length=100)]
-    unit: StrictStr
+    unit: Annotated[StrictStr, Field(max_length=16)]
 
     @field_validator("value")
     @classmethod
@@ -102,7 +117,7 @@ def quantity(value: str, unit: str) -> Quantity:
     return Quantity(value=value, unit=unit)
 
 
-Value = Quantity | StrictStr | StrictBool
+Value = Quantity | Text | StrictBool
 
 
 def aware(value: datetime) -> datetime:
@@ -137,7 +152,7 @@ class Entity(Model):
 
 
 class Site(Entity):
-    time_zone: StrictStr | None = None
+    time_zone: Annotated[StrictStr, Field(max_length=100)] | None = None
 
     @field_validator("time_zone")
     @classmethod
@@ -158,17 +173,17 @@ class Resource(Entity):
     parent: Id | None = None
     status: Literal["active", "inactive", "retired"] = "active"
     # This field is never part of public discovery, even for a public resource.
-    private_details: tuple[Fact, ...] = ()
+    private_details: tuple[Fact, ...] = Field(default=(), max_length=100)
 
 
 class CatalogItem(Entity):
-    properties: tuple[Fact, ...] = ()
+    properties: tuple[Fact, ...] = Field(default=(), max_length=100)
 
 
 class Catalog(Entity):
     """Shop-defined vocabulary: materials, document formats, services, or other inputs."""
 
-    items: tuple[CatalogItem, ...]
+    items: tuple[CatalogItem, ...] = Field(max_length=1000)
 
 
 class Process(Entity):
@@ -181,9 +196,9 @@ class Evidence(Entity):
     claim: Text
     # Evidence is bound to the exact capability IDs it supports. Each capability
     # author must ensure its declared envelope is within this evidence's scope.
-    capabilities: tuple[Id, ...]
-    resources: tuple[Id, ...] = ()
-    requirements: tuple[Rule, ...] = ()
+    capabilities: tuple[Id, ...] = Field(max_length=256)
+    resources: tuple[Id, ...] = Field(default=(), max_length=256)
+    requirements: tuple[Rule, ...] = Field(default=(), max_length=100)
     recorded_at: Timestamp
     valid_until: Timestamp | None = None
     reference: Text = ""
@@ -240,7 +255,7 @@ class Range(Constraint):
 
 class Choice(Constraint):
     kind: Literal["choice"] = "choice"
-    allowed: tuple[StrictStr | StrictBool, ...]
+    allowed: tuple[Text | StrictBool, ...] = Field(max_length=256)
     catalog: Id | None = None
 
     @model_validator(mode="after")
@@ -259,7 +274,7 @@ class ObservationRequirement(Model):
     observation: Id
     resource: Id
     property: Id
-    allowed: tuple[StrictStr | StrictBool, ...]
+    allowed: tuple[Text | StrictBool, ...] = Field(max_length=256)
     purpose: Literal["capability", "readiness"] = "capability"
     on_mismatch: Literal["unsupported", "conditional", "unknown"] = "conditional"
     remedy: Text
@@ -275,25 +290,25 @@ class ObservationRequirement(Model):
 
 class Capability(Entity):
     process: Id
-    resources: tuple[Id, ...] = ()
-    requirements: tuple[Rule, ...] = ()
-    evidence: tuple[Id, ...] = ()
-    observations: tuple[ObservationRequirement, ...] = ()
-    input_state: tuple[Fact, ...] = ()
-    output_state: tuple[Fact, ...] = ()
+    resources: tuple[Id, ...] = Field(default=(), max_length=256)
+    requirements: tuple[Rule, ...] = Field(default=(), max_length=100)
+    evidence: tuple[Id, ...] = Field(default=(), max_length=32)
+    observations: tuple[ObservationRequirement, ...] = Field(default=(), max_length=64)
+    input_state: tuple[Fact, ...] = Field(default=(), max_length=100)
+    output_state: tuple[Fact, ...] = Field(default=(), max_length=100)
 
 
 class Step(Model):
     id: Id
     capability: Id
-    after: tuple[Id, ...] = ()
+    after: tuple[Id, ...] = Field(default=(), max_length=64)
 
 
 class Workflow(Entity):
-    steps: tuple[Step, ...]
+    steps: tuple[Step, ...] = Field(max_length=256)
     # Restrict the requests a workflow promises to handle, in addition to the
     # requirements of each constituent capability.
-    requirements: tuple[Rule, ...] = ()
+    requirements: tuple[Rule, ...] = Field(default=(), max_length=100)
 
 
 class Interval(Model):
@@ -314,7 +329,7 @@ class Interval(Model):
 
 class ValueSet(Model):
     kind: Literal["set"] = "set"
-    values: tuple[StrictStr, ...]
+    values: tuple[Text, ...] = Field(max_length=256)
 
     @model_validator(mode="after")
     def unique(self) -> Self:
@@ -339,7 +354,7 @@ class ShopVariable(Entity):
     source: Source
     recorded_at: Timestamp
     valid_until: Timestamp | None = None
-    applies_when: tuple[Rule, ...] = ()
+    applies_when: tuple[Rule, ...] = Field(default=(), max_length=100)
     notes: Text = ""
 
     @model_validator(mode="after")
@@ -356,14 +371,14 @@ class ShopVariable(Entity):
 
 class Shop(Entity):
     schema_version: Literal["0.2-draft"] = "0.2-draft"
-    sites: tuple[Site, ...] = ()
-    resources: tuple[Resource, ...] = ()
-    catalogs: tuple[Catalog, ...] = ()
-    processes: tuple[Process, ...] = ()
-    capabilities: tuple[Capability, ...] = ()
-    workflows: tuple[Workflow, ...] = ()
-    evidence: tuple[Evidence, ...] = ()
-    variables: tuple[ShopVariable, ...] = ()
+    sites: tuple[Site, ...] = Field(default=(), max_length=1000)
+    resources: tuple[Resource, ...] = Field(default=(), max_length=1000)
+    catalogs: tuple[Catalog, ...] = Field(default=(), max_length=1000)
+    processes: tuple[Process, ...] = Field(default=(), max_length=1000)
+    capabilities: tuple[Capability, ...] = Field(default=(), max_length=1000)
+    workflows: tuple[Workflow, ...] = Field(default=(), max_length=1000)
+    evidence: tuple[Evidence, ...] = Field(default=(), max_length=1000)
+    variables: tuple[ShopVariable, ...] = Field(default=(), max_length=1000)
 
 
 class Observation(Model):

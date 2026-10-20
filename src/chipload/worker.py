@@ -42,7 +42,7 @@ def main() -> None:
                     "diagnostics": [
                         {
                             "code": "invalid-field",
-                            "path": [str(part) for part in item["loc"]],
+                            "path": [str(part)[:200] for part in item["loc"][:32]],
                             "message": item["msg"][:1000],
                         }
                         for item in error.errors(
@@ -55,7 +55,7 @@ def main() -> None:
     except Exception as error:
         path = []
         if isinstance(error, SyntaxError):
-            path = [Path(error.filename or "").name, str(error.lineno)]
+            path = [Path(error.filename or "").name[:200], str(error.lineno)]
         print(
             json.dumps(
                 {
@@ -63,7 +63,7 @@ def main() -> None:
                         {
                             "code": "source-error",
                             "path": path,
-                            "message": f"{type(error).__name__}: {str(error)[:1000]}",
+                            "message": f"{type(error).__name__}: {error}"[:1000],
                         }
                     ]
                 }

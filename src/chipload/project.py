@@ -9,7 +9,9 @@ from typing import Annotated, Literal, Self
 from pydantic import Field, StrictStr, model_validator
 
 from .artifact import Artifact, Digest, canonical_json, digest
+from .complexity import target_budgets
 from .evaluate import EvaluationRequest, Outcome, evaluate
+from .limits import MAX_CASE_WORK, MAX_DIAGNOSTICS, bounded_json
 from .model import Id, Model, Observation, Timestamp
 from .validation import Diagnostic
 
@@ -92,8 +94,8 @@ class CaseResult(Model):
     id: Id
     passed: bool
     actual: Outcome | None = None
-    reason_codes: tuple[Id, ...] = ()
-    error: str | None = None
+    reason_codes: tuple[Id, ...] = Field(default=(), max_length=100)
+    error: Annotated[StrictStr, Field(max_length=1000)] | None = None
 
 
 class BuildReport(Model):
@@ -101,8 +103,8 @@ class BuildReport(Model):
     worker_image: Annotated[StrictStr, Field(pattern=r"^sha256:[0-9a-f]{64}$")]
     status: Literal["succeeded", "failed"]
     artifact: Artifact | None = None
-    diagnostics: tuple[Diagnostic, ...] = ()
-    tests: tuple[CaseResult, ...] = ()
+    diagnostics: tuple[Diagnostic, ...] = Field(default=(), max_length=MAX_DIAGNOSTICS)
+    tests: tuple[CaseResult, ...] = Field(default=(), max_length=100)
 
     @model_validator(mode="after")
     def consistent(self) -> Self:
@@ -117,6 +119,11 @@ class BuildReport(Model):
 
 def run_cases(artifact: Artifact, cases: tuple[AcceptanceCase, ...]) -> tuple[CaseResult, ...]:
     """Data-only assertions; source cannot replace the evaluator in this process."""
+    budgets = target_budgets(artifact.shop)
+    work = sum(budgets.get((c.request.target_kind, c.request.target), (0, 0))[0] for c in cases)
+    if len(cases) > 100 or work > MAX_CASE_WORK:
+        # Do not silently skip tests or treat a budget failure as domain rejection.
+        raise ValueError(f"Acceptance suite exceeds the {MAX_CASE_WORK} work / 100 case limit")
     results = []
     for case in cases:
         try:
@@ -136,15 +143,5 @@ def run_cases(artifact: Artifact, cases: tuple[AcceptanceCase, ...]) -> tuple[Ca
 
 
 def unique_json(data: bytes) -> object:
-    """Reject duplicate fields at worker/project trust boundaries."""
-    import json
-
-    def pairs(items: list[tuple[str, object]]) -> dict:
-        result = {}
-        for key, value in items:
-            if key in result:
-                raise ValueError("duplicate JSON object key")
-            result[key] = value
-        return result
-
-    return json.loads(data, object_pairs_hook=pairs)
+    """Shared bounded decoder for network, project, and worker data."""
+    return bounded_json(data)

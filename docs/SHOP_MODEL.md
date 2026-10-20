@@ -241,6 +241,41 @@ references, cycles, cross-site resource parents, and ambiguous fact definitions.
 Cross-object diagnostics include repair paths. Pydantic errors identify invalid
 fields, including unknown fields and incompatible bounds.
 
+The draft runtime now enforces model admission limits. `sdk_reference()` exposes
+them to agents through JSON Schema and a `limits` object:
+
+| Collection or value | Maximum |
+| --- | --- |
+| Each top-level shop collection; items in each catalog | 1,000 |
+| Facts or rules in one collection | 100 |
+| Resource references or evidence capability references | 256 |
+| Evidence references on a capability | 32 |
+| Observation requirements on a capability | 64 |
+| Workflow steps; predecessors per step | 256; 64 |
+| Choice values or descriptive set values | 256 |
+| Text values, descriptions, and remedies | 4,000 characters |
+| Workflow state, including a reserve for request fields | 512 fields |
+| Cross-object diagnostics returned per validation | 100 |
+
+Compilation also checks deterministic work and result-size scores in
+`src/chipload/complexity.py`. Each capability and workflow has a 100,000 work
+budget and a 256,000 result-weight budget. Repeated steps count repeatedly;
+evidence checks, choice comparisons, state joins, and repeated decision output
+contribute to the budgets. Combined variable applicability has the same limits.
+These scores are admission policies, not milliseconds or exact serialized byte
+counts. Exceeding them rejects a build with a `model-complexity` diagnostic.
+It does not change a manufacturing result to `unsupported` or silently omit work.
+Large definitions must be reorganized before publication.
+
+The data decoder checks nesting (32 levels) and scan tokens (100,000) before
+allocating JSON objects. Scan tokens count punctuation outside strings, string
+openings, and escapes; punctuation inside ordinary strings does not count.
+Compiled models reserve envelope space with a 90,000-token limit. Byte limits
+still apply. Resource and workflow graph ordering visits each dependency edge
+once, with sorting for deterministic layers. Valid existing models keep their
+canonical representation and digests; definitions exceeding the new limits
+are no longer admissible, including when reading older stored artifacts.
+
 `compile_shop()` accepts a constructed model and build identity. It produces a
 model digest and a separate build digest that includes source, dependency lock,
 SDK source, and Python runtime identity. `read_artifact()` checks the data,

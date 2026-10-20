@@ -242,7 +242,39 @@ active requests to 32 per application process. Only JSON with unique keys and
 identity encoding is accepted. Host and Origin are checked against configuration.
 Cross-origin browser access requires explicit `allowed_origins`; response policy
 does not reflect arbitrary origins. Forwarded headers are not trusted by the
-local launcher. These initial bounds do not constitute internet load qualification.
+local launcher.
+
+JSON must be UTF-8, with finite numbers of at most 100 characters, no duplicate
+keys, at most 32 nested containers, and at most 100,000 scan tokens (structural
+punctuation, string openings, and escapes). Rejected JSON returns HTTP 400
+`invalid_json` on both REST and MCP before domain work. Source strings containing
+ordinary JSON punctuation do not consume nesting depth. Model collection,
+evaluation, and acceptance-suite limits are exposed by `sdk_reference`; see
+[model admission limits](SHOP_MODEL.md#units-identities-and-artifacts) and
+[build contracts](AUTHORING.md#project-and-build-contracts).
+
+These initial bounds do not constitute internet load qualification. Data
+processing still needs deployment process limits, per-identity/shop quotas,
+fair queueing, and concurrent load verification.
+
+Validated terminal build records and serialized public catalogs share a bounded
+process-local LRU cache. `data_cache_bytes` defaults to 33,554,432 (32 MiB);
+set it to zero to disable retention. It limits estimated retained Python-object
+memory, with a separate 128-entry limit. It is not a process RSS limit.
+Oversized entries are returned without retention. Four distinct cold loads may
+run concurrently; requests for the same data share their load. Saturation or a
+five-second wait returns REST HTTP 503 `data_busy`, or an MCP tool error with
+structured status 503. Retrying a read is safe; a waiting request timing out
+does not cancel or restart the original load.
+
+The database selects the current publication on every request. Build cache keys
+include all returned record metadata and a hash of the exact stored report
+bytes, so corrupted or changed records are revalidated. Cached catalogs contain
+only the explicit public projection and callers receive independent containers.
+Permissions, observation snapshots, timestamps, and evaluation results are not
+cached. Withdrawal blocks subsequent reads even if an old artifact remains in
+memory; a request that already selected an earlier database snapshot may finish.
+There is no cache TTL delaying publication, rollback, visibility, or withdrawal.
 
 ## Verification
 

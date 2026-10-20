@@ -1,7 +1,7 @@
 """Contextual shop-variable queries over data; no shop source is executed."""
 
 from datetime import datetime
-from typing import Annotated, Literal, Self
+from typing import Annotated, Callable, Literal, Self
 
 from pydantic import Field, model_validator
 
@@ -46,16 +46,22 @@ class VariableResult(Model):
 
 
 def query_variables(
-    artifact: Artifact, query: VariableQuery, *, at: datetime, public_only: bool = True
+    artifact: Artifact,
+    query: VariableQuery,
+    *,
+    at: datetime,
+    public_only: bool = True,
+    _public_catalog: Callable[[Artifact], dict] = public_catalog,
 ) -> VariableResult:
     """Resolve applicability without interpreting a description as a hard rule.
 
     Private mode is for authorized service callers only. Public mode filters
     before lookup and never evaluates a hidden catalog predicate as an oracle.
+    `_public_catalog` is a trusted service cache hook, never request data.
     """
     aware(at)
     if public_only:
-        catalog = public_catalog(artifact)
+        catalog = _public_catalog(artifact)
         views = {variable["id"]: variable for variable in catalog["variables"]}
         revision = catalog["public_sha256"]
     else:

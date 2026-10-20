@@ -1,0 +1,296 @@
+#!/usr/bin/env python3
+"""Reproducible data-validation/evaluation measurements; no network or shop source."""
+
+import argparse
+import json
+import math
+import os
+import platform
+import resource
+import statistics
+import subprocess
+import sys
+import tempfile
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+def measure(iterations, function):
+    samples = []
+    for _ in range(iterations):
+        start = time.perf_counter()
+        function()
+        samples.append((time.perf_counter() - start) * 1000)
+    return {
+        "median_ms": round(statistics.median(samples), 3),
+        "p95_ms": round(sorted(samples)[math.ceil(len(samples) * 0.95) - 1], 3),
+        "max_ms": round(max(samples), 3),
+    }
+
+
+def service_measurements(artifact, request, at, iterations):
+    """Seed synthetic trusted data; never invoke a source worker or real shop."""
+    from chipload import compile_shop
+    from chipload.access import ACTIONS, Grant, Principal
+    from chipload.lifecycle import Repository, ShopService
+    from chipload.project import AcceptanceCase, BuildReport, SourceFile, SourceProject, run_cases
+    from chipload.published import PublishedService
+
+    with tempfile.TemporaryDirectory(prefix="chipload-benchmark-") as directory:
+        path = Path(directory) / "benchmark.db"
+        writer = ShopService(Repository(path, cache_bytes=0))
+        owner = Principal(
+            subject="benchmark", grants=(Grant(shop_id="benchmark", actions=ACTIONS),)
+        )
+        source = SourceProject(
+            shop_id="benchmark",
+            entrypoint="shop:define_shop",
+            files=(
+                SourceFile(
+                    path="shop.py",
+                    content="def define_shop():\n    raise RuntimeError('benchmark fixture only')\n",
+                ),
+            ),
+            tests=(AcceptanceCase(id="support", request=request, at=at, expected="supported"),),
+        )
+        saved = writer.save_source(owner, source, expected_head=None)
+        queued = writer.request_build(owner, "benchmark", saved.revision)
+        claim, _ = writer.repository.claim(queued.id, 60)
+        artifact = compile_shop(
+            artifact.shop, artifact.identity.model_copy(update={"source_sha256": saved.revision})
+        )
+        writer.repository.finish(
+            queued.id,
+            claim,
+            BuildReport(
+                source_revision=saved.revision,
+                worker_image="sha256:" + "a" * 64,
+                status="succeeded",
+                artifact=artifact,
+                tests=run_cases(artifact, source.tests),
+            ),
+        )
+        writer.publish(owner, "benchmark", queued.id, expected_generation=0)
+        uncached = PublishedService(ShopService(Repository(path, cache_bytes=0)), clock=lambda: at)
+        repository = Repository(path)
+        cached = PublishedService(ShopService(repository), clock=lambda: at)
+
+        def evaluate(service):
+            result = service.evaluation("benchmark", request)
+            if result["outcome"] != "supported":
+                raise AssertionError("published benchmark result changed")
+
+        measurements = {
+            "public_evaluation_no_retention": measure(iterations, lambda: evaluate(uncached)),
+            "public_evaluation_first_load": measure(1, lambda: evaluate(cached)),
+            "public_evaluation_warm": measure(iterations, lambda: evaluate(cached)),
+            "public_catalog_warm": measure(iterations, lambda: cached.catalog("benchmark")),
+        }
+        assert cached.catalog("benchmark") == uncached.catalog("benchmark")
+        return measurements, repository.data_cache.usage
+
+
+def child(iterations, broad, service):
+    # Contain this benchmark itself. Deployment resource controls are separate.
+    resource.setrlimit(resource.RLIMIT_AS, (512 * 1024 * 1024,) * 2)
+    resource.setrlimit(resource.RLIMIT_CPU, (30, 30))
+    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+    from chipload import (
+        BuildIdentity,
+        Capability,
+        Catalog,
+        CatalogItem,
+        Evidence,
+        Fact,
+        Process,
+        Range,
+        Shop,
+        Step,
+        Workflow,
+        compile_shop,
+        evaluate,
+        quantity,
+        read_artifact,
+    )
+    from chipload.complexity import target_budgets
+    from chipload.discovery import public_catalog
+    from chipload.evaluate import EvaluationRequest
+    from chipload.limits import bounded_json
+
+    at = datetime(2026, 10, 20, tzinfo=timezone.utc)
+    rules = tuple(
+        Range(
+            fact=f"dimension-{i}",
+            minimum=quantity("0", "mm"),
+            maximum=quantity("100", "mm"),
+        )
+        for i in range(10)
+    )
+    cap = Capability(
+        id="offer",
+        name="Synthetic offer",
+        process="process",
+        visibility="public",
+        requirements=rules,
+        evidence=("proof",),
+    )
+    catalog = (
+        Catalog(
+            id="inputs",
+            name="Synthetic inputs",
+            visibility="public",
+            items=tuple(
+                CatalogItem(
+                    id=f"item-{i}",
+                    name=f"Item {i}",
+                    visibility="public",
+                    properties=(
+                        Fact(name="one", value="x" * 2000),
+                        Fact(name="two", value="y" * 2000),
+                    ),
+                )
+                for i in range(1000)
+            ),
+        )
+        if broad
+        else None
+    )
+    shop = Shop(
+        id="benchmark",
+        name="Synthetic benchmark",
+        visibility="public",
+        catalogs=(catalog,) if catalog else (),
+        processes=(Process(id="process", name="Synthetic process", visibility="public"),),
+        capabilities=(cap,),
+        evidence=(
+            Evidence(
+                id="proof",
+                name="Synthetic declaration",
+                level="declared",
+                source="simulated",
+                claim="Benchmark only; no physical qualification.",
+                capabilities=(cap.id,),
+                requirements=rules,
+                recorded_at=at,
+            ),
+        ),
+        workflows=(
+            Workflow(
+                id="route",
+                name="Repeated synthetic process",
+                visibility="public",
+                steps=tuple(
+                    Step(
+                        id=f"step-{i}",
+                        capability=cap.id,
+                        after=(f"step-{i - 1}",) if i else (),
+                    )
+                    for i in range(17)
+                ),
+            ),
+        ),
+    )
+    artifact = compile_shop(
+        shop,
+        BuildIdentity(
+            source_sha256="a" * 64,
+            sdk_sha256="b" * 64,
+            dependencies_sha256="c" * 64,
+            runtime="benchmark-data",
+        ),
+    )
+    request = EvaluationRequest(
+        target_kind="workflow",
+        target="route",
+        allow_simulated=True,
+        facts=tuple(Fact(name=r.fact, value=quantity("50", "mm")) for r in rules),
+    )
+    wire = artifact.to_json()
+
+    def evaluate_loaded():
+        result = evaluate(artifact, request, at=at)
+        if result.outcome != "supported":
+            raise AssertionError("benchmark workload no longer produces the expected outcome")
+
+    def serve():
+        restored = read_artifact(wire)
+        result = evaluate(restored, request, at=at)
+        if result.outcome != "supported":
+            raise AssertionError("stored artifact result changed")
+
+    def reject_wide():
+        try:
+            bounded_json(b"[" + b"0," * 100_000 + b"0]")
+        except ValueError:
+            return
+        raise AssertionError("oversized JSON was accepted")
+
+    if service:
+        measurements, cache_usage = service_measurements(artifact, request, at, iterations)
+        scope = (
+            "Published service with SQLite and public projection; excludes HTTP/auth/concurrency."
+        )
+    else:
+        measurements = {
+            "read_artifact": measure(iterations, lambda: read_artifact(wire)),
+            "evaluate_loaded": measure(iterations, evaluate_loaded),
+            "read_and_evaluate": measure(iterations, serve),
+            "public_catalog": measure(iterations, lambda: public_catalog(artifact)),
+            "reject_wide_json": measure(iterations, reject_wide),
+        }
+        cache_usage = None
+        scope = "Single process data operations; excludes HTTP, database, auth, and concurrency."
+    print(
+        json.dumps(
+            {
+                "python": platform.python_version(),
+                "platform": platform.platform(),
+                "logical_cpus": os.cpu_count(),
+                "iterations": iterations,
+                "workload": "large-catalog" if broad else "compact",
+                "artifact_bytes": len(wire),
+                "workflow_work_score": target_budgets(shop)["workflow", "route"][0],
+                "peak_process_rss_kib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+                "measurements": measurements,
+                "cache_usage": cache_usage,
+                "scope": scope,
+            },
+            indent=2,
+        )
+    )
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--iterations", type=int, default=20)
+    parser.add_argument("--large-catalog", action="store_true")
+    parser.add_argument(
+        "--service",
+        action="store_true",
+        help="Compare published reads with/without cache retention",
+    )
+    parser.add_argument("--child", action="store_true", help=argparse.SUPPRESS)
+    args = parser.parse_args()
+    if not 1 <= args.iterations <= 100:
+        parser.error("--iterations must be between 1 and 100")
+    if args.child:
+        child(args.iterations, args.large_catalog, args.service)
+    else:
+        command = [
+            sys.executable,
+            str(Path(__file__).resolve()),
+            "--child",
+            "--iterations",
+            str(args.iterations),
+        ]
+        if args.large_catalog:
+            command.append("--large-catalog")
+        if args.service:
+            command.append("--service")
+        result = subprocess.run(command, timeout=60)
+        raise SystemExit(result.returncode)
+
+
+if __name__ == "__main__":
+    main()

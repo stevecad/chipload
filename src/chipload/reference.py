@@ -2,6 +2,16 @@
 
 from .artifact import SDK_VERSION
 from .evaluate import EvaluationRequest
+from .limits import (
+    MAX_CASE_WORK,
+    MAX_DIAGNOSTICS,
+    MAX_EVALUATION_WORK,
+    MAX_JSON_DEPTH,
+    MAX_JSON_TOKENS,
+    MAX_MODEL_TOKENS,
+    MAX_RESULT_WEIGHT,
+    MAX_WORKFLOW_STATE,
+)
 from .model import UNITS, Shop
 from .project import SourceProject
 from .query import VariableQuery
@@ -29,6 +39,22 @@ def sdk_reference() -> dict:
                 "offset": str(unit.offset),
             }
             for name, unit in UNITS.items()
+        },
+        "limits": {
+            "json_depth": MAX_JSON_DEPTH,
+            "json_structural_tokens": MAX_JSON_TOKENS,
+            "model_structural_tokens": MAX_MODEL_TOKENS,
+            "diagnostics": MAX_DIAGNOSTICS,
+            "evaluation_work_score": MAX_EVALUATION_WORK,
+            "evaluation_result_weight": MAX_RESULT_WEIGHT,
+            "workflow_state_fields": MAX_WORKFLOW_STATE,
+            "acceptance_suite_work_score": MAX_CASE_WORK,
+            "collection_limits": "See maxItems and maxLength in the schemas.",
+            "budget_meaning": (
+                "Conservative deterministic work scores, not elapsed time. "
+                "Repeated steps count repeatedly. Exceeding a budget rejects the build; "
+                "it is not a manufacturing feasibility outcome."
+            ),
         },
         "rules": [
             "Shop-specific types and vocabularies belong in the source project.",

@@ -6,6 +6,7 @@ and BuildProcessor are trusted infrastructure; only ShopService is a client API.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sqlite3
@@ -16,10 +17,12 @@ from pathlib import Path
 from typing import Literal
 
 from .access import Principal, require
-from .artifact import Digest, read_artifact
+from .artifact import Artifact, Digest, canonical_json, digest, read_artifact
+from .cache import DEFAULT_CACHE_BYTES, DataCache
 from .discovery import public_catalog
+from .limits import bounded_json
 from .model import Id, Model, Timestamp
-from .project import MAX_OUTPUT_BYTES, BuildReport, SourceProject
+from .project import MAX_OUTPUT_BYTES, MAX_PROJECT_BYTES, BuildReport, SourceProject
 from .sandbox import DockerBuilder
 from .validation import Diagnostic
 
@@ -105,7 +108,8 @@ CREATE TABLE IF NOT EXISTS build_requests (
 
 
 class Repository:
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, *, cache_bytes: int = DEFAULT_CACHE_BYTES):
+        self.data_cache = DataCache(max_bytes=cache_bytes)
         self.path = Path(path).absolute()
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         # The operator selects this path. Refuse symlink databases and permissive files.
@@ -162,23 +166,58 @@ class Repository:
         ).fetchone()
         if row is None:
             raise NotFound("source revision not found")
-        project = SourceProject.model_validate_json(row["project"])
+        project = SourceProject.model_validate(
+            bounded_json(row["project"], max_bytes=MAX_PROJECT_BYTES)
+        )
         if project.revision != revision or project.shop_id != shop:
             raise ValueError("stored source integrity check failed")
         return SourceRevision(revision=revision, project=project, created_at=row["created_at"])
 
-    @staticmethod
-    def build_record(row) -> BuildRecord:
+    def build_record(self, row) -> BuildRecord:
         try:
-            return Repository._decode_build(row)
+            if row is None:
+                raise NotFound("build not found")
+            # Always hash the bytes read from the current database snapshot.
+            # IDs alone cannot detect corruption or an out-of-band row change.
+            payload = row["report"]
+            if row["state"] in {"succeeded", "failed"} and not payload:
+                raise ValueError("terminal build has no report")
+            if payload and row["state"] in {"succeeded", "failed"}:
+                if not isinstance(payload, bytes) or len(payload) > MAX_OUTPUT_BYTES:
+                    raise ValueError("stored build report exceeds its byte/type limits")
+                key = (
+                    "build",
+                    row["id"],
+                    row["shop_id"],
+                    row["source_revision"],
+                    row["state"],
+                    row["created_at"],
+                    row["finished_at"],
+                    row["deadline"],
+                    digest(payload),
+                )
+                return self.data_cache.get(key, lambda: self._decode_build(row))
+            return self._decode_build(row)
         except ValueError as error:
             raise IntegrityError(str(error)) from error
+
+    def public_catalog(self, artifact: Artifact) -> dict:
+        """Project an already validated artifact, without caching publication state.
+
+        Keep only immutable bytes. Every caller gets fresh containers so edits
+        to a response cannot affect later requests or expose another revision.
+        """
+        payload = self.data_cache.get(
+            ("public-catalog", artifact.build_sha256),
+            lambda: canonical_json(public_catalog(artifact)),
+        )
+        return json.loads(payload)
 
     @staticmethod
     def _decode_build(row) -> BuildRecord:
         if row is None:
             raise NotFound("build not found")
-        report = BuildReport.model_validate_json(row["report"]) if row["report"] else None
+        report = BuildReport.model_validate(bounded_json(row["report"])) if row["report"] else None
         if report:
             if report.source_revision != row["source_revision"] or report.status != row["state"]:
                 raise ValueError("stored build integrity check failed")
@@ -217,6 +256,7 @@ class Repository:
         payload = report.model_dump_json().encode()
         if len(payload) > MAX_OUTPUT_BYTES:
             raise ValueError("build report exceeds the storage limit")
+        bounded_json(payload)
         with self.transaction() as db:
             row = db.execute("SELECT * FROM builds WHERE id=?", (build_id,)).fetchone()
             record = self.build_record(row)
@@ -268,6 +308,7 @@ class ShopService:
     ) -> SourceRevision:
         require(principal, project.shop_id, "source:write")
         project = SourceProject.model_validate(project.model_dump(mode="python"))
+        bounded_json(project.to_json(), max_bytes=MAX_PROJECT_BYTES)
         revision = project.revision
         with self.repository.transaction() as db:
             row = db.execute("SELECT head FROM shops WHERE id=?", (project.shop_id,)).fetchone()
@@ -417,11 +458,11 @@ class ShopService:
             return Publication(shop_id=shop, generation=generation, build_id=build_id)
 
     def catalog(self, shop: str) -> dict:
-        # One snapshot selects exactly the published build. There is no process cache.
+        # Publication selection is authoritative on every read, including cache hits.
         with self.repository.connection() as db:
             row = db.execute(
                 "SELECT builds.* FROM shops JOIN builds ON shops.published_build=builds.id "
-                "WHERE shops.id=?",
+                "WHERE shops.id=? AND builds.shop_id=shops.id",
                 (shop,),
             ).fetchone()
             if row is None:
@@ -430,7 +471,7 @@ class ShopService:
             if record.state != "succeeded" or record.report is None:
                 raise ValueError("invalid publication")
             try:
-                return public_catalog(record.report.artifact)
+                return self.repository.public_catalog(record.report.artifact)
             except KeyError:
                 raise NotFound("published shop not found") from None
 
