@@ -1,0 +1,80 @@
+{
+  "realm": "chipload",
+  "enabled": true,
+  "displayName": "Chipload local development",
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": false,
+  "bruteForceProtected": true,
+  "accessTokenLifespan": 300,
+  "roles": {
+    "client": {
+      "chipload": [
+        {"name": "shop:read", "description": "Read permitted shop resources"},
+        {"name": "shop:operate", "description": "Invoke permitted shop operations"},
+        {"name": "shop:admin", "description": "Manage permitted shop configuration"}
+      ]
+    }
+  },
+  "clients": [
+    {
+      "clientId": "chipload",
+      "name": "Chipload API and MCP resource server",
+      "protocol": "openid-connect",
+      "bearerOnly": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false
+    },
+    {
+      "clientId": "chipload-cli",
+      "name": "Local development authorization-code client",
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://127.0.0.1:8765/callback",
+        "http://localhost:8765/callback"
+      ],
+      "defaultClientScopes": ["profile", "email"],
+      "attributes": {"pkce.code.challenge.method": "S256"},
+      "protocolMappers": [
+        {
+          "name": "chipload-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "chipload",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "chipload-resource-uri",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "http://localhost:8088/mcp",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "chipload-client-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-client-role-mapper",
+          "config": {
+            "usermodel.clientRoleMapping.clientId": "chipload",
+            "claim.name": "resource_access.chipload.roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ]
+}

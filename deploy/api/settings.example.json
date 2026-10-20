@@ -1,0 +1,10 @@
+{
+  "mode": "development",
+  "database": ".local/chipload.db",
+  "resource_url": "http://localhost:8088/mcp",
+  "issuer": "http://localhost:8080/realms/chipload",
+  "jwks_url": "http://localhost:8080/realms/chipload/protocol/openid-connect/certs",
+  "role_client": "chipload",
+  "bindings": [],
+  "allowed_origins": []
+}

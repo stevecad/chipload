@@ -1,5 +1,10 @@
 # Chipload Specification v0.1.0
 
+This document specifies the original v0.1 data format. For the software-defined
+shop platform and experimental Python model, read [ROADMAP.md](ROADMAP.md) and
+[docs/SHOP_MODEL.md](docs/SHOP_MODEL.md). The draft model does not silently
+reinterpret v0.1 files.
+
 Chipload is a simple, shared way to write down what a machine shop has and what each machine can do, so any piece of software can read the same description.
 
 ## The problem we're solving
