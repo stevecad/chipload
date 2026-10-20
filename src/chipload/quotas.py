@@ -6,6 +6,7 @@ from typing import Annotated
 
 from pydantic import Field, StrictInt
 
+from .execution_model import RESULT_RESERVATION_BYTES
 from .model import Model
 from .project import MAX_OUTPUT_BYTES
 from .request_limits import RequestLimits
@@ -22,6 +23,11 @@ class ScopeQuota(Model):
     report_bytes: ByteLimit
     retained_sources: Count
     source_bytes: ByteLimit
+    pending_operations: Count = 100
+    running_operations: Annotated[StrictInt, Field(ge=1, le=128)] = 1
+    operations_per_hour: Count = 600
+    retained_operations: Count = 1000
+    operation_bytes: ByteLimit = 128 * 1024**2
 
 
 class QuotaPolicy(Model):
@@ -155,6 +161,17 @@ def quota_usage(db, *, at: datetime, shop: str | None = None, identity: str | No
             parameters,
         ).fetchone()
         result[scope] = {**dict(builds), **dict(sources)}
+        operations = db.execute(
+            "SELECT COUNT(*) AS retained_operations, "
+            "COALESCE(SUM(state IN ('queued','running','indeterminate')),0) AS pending_operations, "
+            "COALESCE(SUM(state='running'),0) AS running_operations, "
+            "COALESCE(SUM(state='indeterminate'),0) AS indeterminate_operations, "
+            "COALESCE(SUM(created_at>?),0) AS operations_last_hour, "
+            "COALESCE(SUM(length(request)+length(binding)+?),0) AS operation_bytes_reserved "
+            f"FROM executions {where}",
+            ((at - timedelta(hours=1)).isoformat(), RESULT_RESERVATION_BYTES, *parameters),
+        ).fetchone()
+        result[scope].update(dict(operations))
     return result
 
 

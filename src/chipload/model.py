@@ -19,6 +19,7 @@ from pydantic import (
     StrictInt,
     StrictStr,
     field_validator,
+    model_serializer,
     model_validator,
 )
 
@@ -369,6 +370,49 @@ class ShopVariable(Entity):
         return self
 
 
+class OperationField(Model):
+    """A named operation argument or result; quantities retain explicit units."""
+
+    name: Id
+    kind: Literal["text", "boolean", "quantity"]
+    description: Text = ""
+    required: StrictBool = True
+    unit: Annotated[StrictStr, Field(max_length=100)] | None = None
+
+    @model_validator(mode="after")
+    def measurement(self) -> Self:
+        if self.kind == "quantity":
+            if self.unit not in UNITS:
+                raise ValueError("quantity fields need a supported unit")
+        elif self.unit is not None:
+            raise ValueError("only quantity fields have a unit")
+        return self
+
+
+class OperationCheck(Model):
+    """Evaluate a published capability or workflow before dispatching an operation."""
+
+    target_kind: Literal["capability", "workflow"]
+    target: Id
+    inputs: tuple[Id, ...] = Field(default=(), max_length=100)
+    initial_state: tuple[Fact, ...] = Field(default=(), max_length=100)
+    minimum_evidence: Assurance = "qualified"
+
+
+class ShopOperation(Entity):
+    """A shop-authored call contract, independent of privileged adapter provisioning."""
+
+    adapter: Id
+    command: Id
+    effect: Literal["read", "write"]
+    effect_description: Annotated[StrictStr, Field(min_length=1, max_length=4000)]
+    resources: tuple[Id, ...] = Field(default=(), max_length=64)
+    inputs: tuple[OperationField, ...] = Field(default=(), max_length=100)
+    outputs: tuple[OperationField, ...] = Field(default=(), max_length=100)
+    checks: tuple[OperationCheck, ...] = Field(default=(), max_length=16)
+    timeout_seconds: Annotated[StrictInt, Field(ge=1, le=300)] = 30
+
+
 class Shop(Entity):
     schema_version: Literal["0.2-draft"] = "0.2-draft"
     sites: tuple[Site, ...] = Field(default=(), max_length=1000)
@@ -379,6 +423,14 @@ class Shop(Entity):
     workflows: tuple[Workflow, ...] = Field(default=(), max_length=1000)
     evidence: tuple[Evidence, ...] = Field(default=(), max_length=1000)
     variables: tuple[ShopVariable, ...] = Field(default=(), max_length=1000)
+    operations: tuple[ShopOperation, ...] = Field(default=(), max_length=1000)
+
+    @model_serializer(mode="wrap")
+    def preserve_existing_artifacts(self, handler):
+        result = handler(self)
+        if not self.operations:
+            result.pop("operations", None)
+        return result
 
 
 class Observation(Model):

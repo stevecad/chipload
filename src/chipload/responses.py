@@ -18,6 +18,7 @@ class CatalogView(Model):
     capabilities: tuple[dict, ...]
     workflows: tuple[dict, ...]
     variables: tuple[dict, ...]
+    operations: tuple[dict, ...] = ()
 
 
 class PageView(Model):

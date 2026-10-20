@@ -68,7 +68,7 @@ class AdmissionStoreTests(unittest.TestCase):
         with self.assertRaises(RateLimited):
             limiter.identity("owner")
         with repository.connection() as db:
-            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 5)
+            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 6)
             self.assertEqual(db.execute("SELECT state FROM admission_store").fetchone()[0], "ready")
             tables = {r[0] for r in db.execute("SELECT name FROM sqlite_schema WHERE type='table'")}
             self.assertTrue(tables.isdisjoint({"request_buckets", "quota_policy", "quota_changes"}))
@@ -84,6 +84,40 @@ class AdmissionStoreTests(unittest.TestCase):
 
     def test_schema_four_migration_preserves_policy_history_and_spent_allowance(self):
         self.legacy()
+        self.assert_migrated(Repository(self.path))
+
+    def test_operation_schema_migration_is_atomic_and_preserves_paired_state(self):
+        self.legacy()
+        repository = Repository(self.path)
+        from chipload import lifecycle
+
+        tables = (
+            "simulation_effects",
+            "execution_resources",
+            "execution_turns",
+            "executions",
+            "operation_bindings",
+        )
+        with repository.transaction() as db:
+            for table in tables:
+                db.execute(f"DROP TABLE {table}")
+            db.execute("PRAGMA user_version=5")
+        with patch.object(
+            lifecycle, "EXECUTION_SCHEMA", lifecycle.EXECUTION_SCHEMA + "INVALID SQL;"
+        ):
+            with self.assertRaises(sqlite3.OperationalError):
+                Repository(self.path)
+        with repository.connection() as db:
+            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 5)
+            present = {
+                row[0] for row in db.execute("SELECT name FROM sqlite_schema WHERE type='table'")
+            }
+            self.assertTrue(present.isdisjoint(tables))
+        with ProcessPoolExecutor(
+            max_workers=2, mp_context=multiprocessing.get_context("spawn")
+        ) as pool:
+            identities = list(pool.map(repository_identity, (self.path, self.path)))
+        self.assertEqual(identities, [repository.admission.identity] * 2)
         self.assert_migrated(Repository(self.path))
         self.assert_migrated(Repository(self.path))
 

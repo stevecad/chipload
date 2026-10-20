@@ -76,6 +76,7 @@ def validate_shop(shop: Shop) -> None:
         "workflows",
         "evidence",
         "variables",
+        "operations",
     )
     indexes = {}
     for collection in collections:
@@ -89,6 +90,30 @@ def validate_shop(shop: Shop) -> None:
             facts(item.properties, ("catalogs", catalog.id, "items", item.id, "properties"))
     for variable in shop.variables:
         rules(variable.applies_when, ("variables", variable.id, "applies_when"))
+    for operation in shop.operations:
+        path = ("operations", operation.id)
+        unique(operation.resources, path + ("resources",))
+        for resource in operation.resources:
+            ref(resource, "resources", path + ("resources", resource))
+        for name in ("inputs", "outputs"):
+            unique([item.name for item in getattr(operation, name)], path + (name,))
+        inputs = {item.name for item in operation.inputs}
+        for index, check in enumerate(operation.checks):
+            check_path = path + ("checks", str(index))
+            ref(
+                check.target,
+                "capabilities" if check.target_kind == "capability" else "workflows",
+                check_path + ("target",),
+            )
+            unique(check.inputs, check_path + ("inputs",))
+            facts(check.initial_state, check_path + ("initial_state",))
+            for name in check.inputs:
+                if name not in inputs:
+                    error(
+                        "missing-reference",
+                        check_path + ("inputs", name),
+                        "Check input must name an operation input.",
+                    )
     for resource in shop.resources:
         path = ("resources", resource.id)
         if resource.site is not None:
@@ -169,6 +194,27 @@ def validate_shop(shop: Shop) -> None:
                         f"Unknown predecessor: {predecessor}.",
                     )
         acyclic({step.id: step.after for step in workflow.steps}, path + ("steps",))
+    for operation in shop.operations:
+        required = set()
+        for check in operation.checks:
+            if check.target_kind == "capability":
+                capabilities = [indexes["capabilities"].get(check.target)]
+            else:
+                workflow = indexes["workflows"].get(check.target)
+                capabilities = (
+                    [indexes["capabilities"].get(step.capability) for step in workflow.steps]
+                    if workflow
+                    else []
+                )
+            for capability in capabilities:
+                if capability:
+                    required.update(capability.resources)
+        if not required.issubset(operation.resources):
+            error(
+                "unbound-operation-resource",
+                ("operations", operation.id, "resources"),
+                "Operation resources must include every resource used by its checks.",
+            )
     if errors:
         raise ShopValidationError(errors)
     for path, message in complexity_errors(shop):

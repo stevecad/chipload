@@ -5,10 +5,12 @@ from typing import Annotated, Callable, Literal
 
 from pydantic import Field, StrictInt, StrictStr, model_validator
 
-from .access import Action, Principal, require
+from .access import Action, Principal, require, require_operation
 from .artifact import Digest
 from .auth import AuthenticationError
 from .evaluate import EvaluationRequest
+from .execution import ExecutionService
+from .execution_model import ExecutionRecord, ExecutionRequest, OperationInspection
 from .lifecycle import BuildRecord, Publication, ShopService, SourceRevision
 from .model import Id, Model, Observation
 from .project import SourceProject
@@ -49,6 +51,14 @@ class VariablesInput(ShopInput):
 
 class SourceRead(ShopInput):
     revision: Digest | None = None
+
+
+class OperationInput(ShopInput):
+    operation_id: Id
+
+
+class ExecutionRead(OperationInput):
+    execution_id: Digest
 
 
 class SourceWrite(Model):
@@ -103,9 +113,40 @@ class Operations:
         self.service = service
         self.limiter = RequestLimiter(service.repository)
         self.published = published or PublishedService(service)
+        self.executions = ExecutionService(service.repository)
         p = self.published
         s = self.service
         self.specs = {
+            "operation_inspect": Operation(
+                OperationInput,
+                "Inspect an authorized published call contract and its binding status.",
+                lambda who, r: self.executions.inspect_operation(who, r.shop_id, r.operation_id),
+                True,
+            ),
+            "operation_submit": Operation(
+                ExecutionRequest,
+                "Submit a published shop operation in an explicit simulation or live mode. Reuse the request key only for retries of this exact request.",
+                lambda who, r: self.executions.submit(who, r),
+                True,
+                False,
+                mutation_action="operation:execute",
+            ),
+            "operation_execution_read": Operation(
+                ExecutionRead,
+                "Read a durable operation outcome; indeterminate does not mean no effect occurred.",
+                lambda who, r: self.executions.read(who, r.shop_id, r.operation_id, r.execution_id),
+                True,
+            ),
+            "operation_execution_cancel": Operation(
+                ExecutionRead,
+                "Request cancellation. An already dispatched effect can still complete; inspect the resulting state.",
+                lambda who, r: self.executions.cancel(
+                    who, r.shop_id, r.operation_id, r.execution_id
+                ),
+                True,
+                False,
+                mutation_action="operation:cancel",
+            ),
             "identity_read": Operation(
                 Empty,
                 "Read your verified identity and effective shop grants.",
@@ -231,6 +272,10 @@ class Operations:
             ),
         }
         outputs = {
+            "operation_inspect": OperationInspection,
+            "operation_submit": ExecutionRecord,
+            "operation_execution_read": ExecutionRecord,
+            "operation_execution_cancel": ExecutionRecord,
             "identity_read": Principal,
             "shop_catalog": CatalogView,
             "shop_list": PageView,
@@ -268,7 +313,11 @@ class Operations:
         request = spec.input.model_validate(request)
         if not spec.read_only:
             shop = request.project.shop_id if isinstance(request, SourceWrite) else request.shop_id
-            who = require(principal, shop, spec.mutation_action)
+            who = (
+                require_operation(principal, shop, request.operation_id, spec.mutation_action)
+                if isinstance(request, (ExecutionRequest, ExecutionRead))
+                else require(principal, shop, spec.mutation_action)
+            )
             self.limiter.mutation(who.subject, shop)
         result = spec.handler(principal, request)
         if spec.output:

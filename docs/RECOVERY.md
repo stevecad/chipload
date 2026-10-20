@@ -10,6 +10,15 @@ The latest credential-rotation receipt is included when present. Backups reject
 unfinished [credential rotations](CREDENTIALS.md); finish the pending cutover
 before taking a new recovery set.
 
+Recovery sets include schema-6 operation bindings, execution history, and
+simulation receipts. Backups reject queued, running, or indeterminate operations.
+Stop new submissions, finish or cancel queued calls, reconcile uncertain outcomes,
+and stop separately launched executors before backup. The stack helper supervises
+its API/build broker; it does not stop an independently launched executor.
+See [operation recovery semantics](OPERATIONS.md#states-cancellation-and-recovery).
+Restoring these databases cannot undo an equipment action or an ERP transaction;
+real adapter receiver-state recovery remains integration work.
+
 This workflow covers the [single-host TLS stack](TLS.md). It does not back up
 OpenBao, ERP systems, equipment controllers, external evidence stores, Docker
 images, or the repository checkout. Preserve those independently. Disaster

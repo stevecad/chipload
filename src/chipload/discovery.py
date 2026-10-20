@@ -114,6 +114,18 @@ def public_catalog(artifact: Artifact) -> dict:
             for variable in shop.variables
             if variable.visibility == "public"
         ],
+        "operations": [
+            {
+                **summary(operation),
+                "effect": operation.effect,
+                "effect_description": operation.effect_description,
+                "inputs": [field.model_dump(mode="json") for field in operation.inputs],
+                "outputs": [field.model_dump(mode="json") for field in operation.outputs],
+                "timeout_seconds": operation.timeout_seconds,
+            }
+            for operation in shop.operations
+            if operation.visibility == "public"
+        ],
     }
     # Public cache identities must not fingerprint private equipment details.
     return {"public_sha256": digest(canonical_json(catalog)), **catalog}

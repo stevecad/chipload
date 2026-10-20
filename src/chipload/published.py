@@ -17,7 +17,7 @@ from .project import unique_json
 from .query import VariableQuery, query_variables
 
 Collection = Literal[
-    "sites", "resources", "catalogs", "processes", "capabilities", "workflows", "variables"
+    "sites", "resources", "catalogs", "processes", "capabilities", "workflows", "variables", "operations"
 ]
 
 

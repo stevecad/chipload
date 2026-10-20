@@ -24,6 +24,7 @@ from .access import Forbidden
 from .artifact import canonical_json, digest
 from .auth import AuthenticationError, IdentityUnavailable, ServerSettings, TokenVerifier
 from .cache import DataBusy
+from .execution_model import ExecutionRecord, ExecutionRequest, OperationInspection
 from .lifecycle import (
     BuildRecord,
     Conflict,
@@ -40,8 +41,10 @@ from .operations import (
     BuildRead,
     Empty,
     EvaluationInput,
+    ExecutionRead,
     ItemInput,
     ObservationsWrite,
+    OperationInput,
     Operations,
     PageInput,
     PublicationChange,
@@ -553,6 +556,52 @@ def create_app(
             raise ValueError("body and path shop IDs must match")
         return await call("observations_write", request, body)
 
+    @app.get(
+        "/v1/shops/{shop_id}/private/operations/{operation_id}", response_model=OperationInspection
+    )
+    async def operation_inspect(shop_id: str, operation_id: str, request: Request):
+        return await call(
+            "operation_inspect", request, OperationInput(shop_id=shop_id, operation_id=operation_id)
+        )
+
+    @app.post(
+        "/v1/shops/{shop_id}/operations/{operation_id}/executions",
+        status_code=202,
+        response_model=ExecutionRecord,
+    )
+    async def operation_submit(
+        shop_id: str, operation_id: str, body: ExecutionRequest, request: Request
+    ):
+        if body.shop_id != shop_id or body.operation_id != operation_id:
+            raise ValueError("body and path shop/operation IDs must match")
+        return await call("operation_submit", request, body)
+
+    @app.get(
+        "/v1/shops/{shop_id}/operations/{operation_id}/executions/{execution_id}",
+        response_model=ExecutionRecord,
+    )
+    async def operation_execution_read(
+        shop_id: str, operation_id: str, execution_id: str, request: Request
+    ):
+        return await call(
+            "operation_execution_read",
+            request,
+            ExecutionRead(shop_id=shop_id, operation_id=operation_id, execution_id=execution_id),
+        )
+
+    @app.post(
+        "/v1/shops/{shop_id}/operations/{operation_id}/executions/{execution_id}/cancel",
+        response_model=ExecutionRecord,
+    )
+    async def operation_execution_cancel(
+        shop_id: str, operation_id: str, execution_id: str, request: Request
+    ):
+        return await call(
+            "operation_execution_cancel",
+            request,
+            ExecutionRead(shop_id=shop_id, operation_id=operation_id, execution_id=execution_id),
+        )
+
     @app.get("/v1/shops/{shop_id}/{collection}", response_model=PageView)
     async def page(
         shop_id: str,
@@ -607,6 +656,7 @@ def create_app(
                         "audit",
                         "evidence",
                         "observations",
+                        "executions",
                     )
                 )
             )

@@ -322,6 +322,28 @@ public evaluation response; detailed evaluation requires the caller's
 `evaluation:read` grant for that shop. See [API.md](API.md) for the response and
 authorization contracts.
 
+## Callable operation contracts
+
+`Shop.operations` adds `ShopOperation`: named typed inputs/outputs, an explicit
+effect description, logical adapter/command, resource references, prerequisite
+capability/workflow checks, and a dispatch timeout. Fields support text, boolean,
+and explicitly unit-bearing quantity values. A call requires supported technical
+and business checks using current observations. Shop and process kinds remain
+open vocabulary; operations introduce no manufacturing-specific engine branches.
+
+Contracts are authored in Python and compiled as data. Public operation discovery
+exposes only opted-in descriptions and field contracts. Operator-owned bindings
+and execution permissions separately determine whether a call can run. See
+[OPERATIONS.md](OPERATIONS.md) for the execution service and simulator.
+
+Bounds are 1,000 operations per shop, 100 input/output fields each, 64 resources,
+16 checks, and 1–300 timeout seconds. Combined checks share the evaluation work
+and result budgets; resource references must cover every checked capability.
+Operations are private by default. Empty operation collections are omitted from
+canonical model encoding to preserve existing artifact identities. Public catalog
+responses now include an `operations` collection, changing their representation
+digest even when it is empty.
+
 ## Version and migration decision
 
 The original `SPEC.md` continues to specify v0.1 YAML/JSON documents. This Python

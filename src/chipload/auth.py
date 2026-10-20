@@ -221,6 +221,8 @@ class TokenVerifier:
             {role for role in roles if isinstance(role, str)} if isinstance(roles, list) else set()
         )
         ceiling = set(ACTIONS) if "shop:admin" in roles else set()
+        if "shop:operate" in roles:
+            ceiling.update({"operation:read", "operation:execute", "operation:cancel"})
         if "shop:read" in roles:
             ceiling.update(action for action in ACTIONS if action.endswith(":read"))
         binding = self._bindings.get(claims["sub"])
@@ -228,7 +230,9 @@ class TokenVerifier:
             subject=claims["sub"],
             grants=tuple(
                 Grant(
-                    shop_id=grant.shop_id, actions=tuple(a for a in grant.actions if a in ceiling)
+                    shop_id=grant.shop_id,
+                    actions=tuple(a for a in grant.actions if a in ceiling),
+                    operations=grant.operations,
                 )
                 for grant in (binding.grants if binding else ())
             ),

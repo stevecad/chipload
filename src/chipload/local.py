@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 
 from .access import ACTIONS, Grant, Principal
+from .execution import ExecutionService
+from .execution_model import AdapterBinding
 from .lifecycle import BuildProcessor, Repository, ShopService
 from .project import MAX_PROJECT_BYTES, SourceProject, unique_json
 from .quotas import QuotaPolicy
@@ -49,6 +51,11 @@ def parser() -> argparse.ArgumentParser:
     quotas = commands.add_parser("set-quotas", help="update quotas for every API and broker")
     quotas.add_argument("policy", type=Path)
     quotas.add_argument("--expected-generation", type=int, required=True)
+    binding = commands.add_parser(
+        "bind-operation", help="provision an operator-owned adapter binding"
+    )
+    binding.add_argument("binding", type=Path)
+    binding.add_argument("--expected-generation", type=int, required=True)
     return command
 
 
@@ -59,6 +66,17 @@ def main() -> None:
         return
     try:
         service = ShopService(Repository(args.database))
+        if args.action == "bind-operation":
+            with args.binding.open("rb") as source:
+                data = source.read(16 * 1024 + 1)
+            if len(data) > 16 * 1024:
+                raise ValueError("operation binding exceeds its size limit")
+            binding = AdapterBinding.model_validate(unique_json(data))
+            output = ExecutionService(service.repository).bind(
+                binding, expected_generation=args.expected_generation
+            )
+            print(json.dumps(output, indent=2))
+            return
         if args.action in {"quotas", "set-quotas"}:
             if args.action == "quotas":
                 output = service.repository.read_quotas(shop=args.shop, identity=args.identity)

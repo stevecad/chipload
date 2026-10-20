@@ -85,7 +85,16 @@ def complexity_errors(shop: Shop):
                     f"Workflow state exceeds {MAX_WORKFLOW_STATE} fields including 100 request fields."
                 ),
             )
-    for (kind, target), (work, weight) in target_budgets(shop).items():
+    budgets = target_budgets(shop)
+    for operation in shop.operations:
+        work = sum(budgets[check.target_kind, check.target][0] for check in operation.checks)
+        weight = sum(budgets[check.target_kind, check.target][1] for check in operation.checks)
+        if work > MAX_EVALUATION_WORK or weight > MAX_RESULT_WEIGHT:
+            yield (
+                ("operations", operation.id),
+                "Combined operation checks exceed the evaluation budget.",
+            )
+    for (kind, target), (work, weight) in budgets.items():
         path = ("capabilities" if kind == "capability" else "workflows", target)
         if work > MAX_EVALUATION_WORK:
             yield path, f"Evaluation work score {work} exceeds {MAX_EVALUATION_WORK}."

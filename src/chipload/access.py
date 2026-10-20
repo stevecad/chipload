@@ -17,6 +17,9 @@ Action = Literal[
     "evidence:read",
     "observations:read",
     "observations:write",
+    "operation:read",
+    "operation:execute",
+    "operation:cancel",
 ]
 ACTIONS: tuple[Action, ...] = (
     "source:read",
@@ -29,12 +32,16 @@ ACTIONS: tuple[Action, ...] = (
     "evidence:read",
     "observations:read",
     "observations:write",
+    "operation:read",
+    "operation:execute",
+    "operation:cancel",
 )
 
 
 class Grant(Model):
     shop_id: Id
     actions: tuple[Action, ...]
+    operations: Annotated[tuple[Id, ...], Field(max_length=1000)] | None = None
 
 
 class Principal(Model):
@@ -49,6 +56,20 @@ class Forbidden(PermissionError):
 def require(principal: Principal | None, shop_id: str, action: Action) -> Principal:
     if principal is None or not any(
         grant.shop_id == shop_id and action in grant.actions for grant in principal.grants
+    ):
+        raise Forbidden("permission denied")
+    return principal
+
+
+def require_operation(
+    principal: Principal | None, shop_id: str, operation: str, action: Action
+) -> Principal:
+    require(principal, shop_id, action)
+    if not any(
+        grant.shop_id == shop_id
+        and action in grant.actions
+        and (grant.operations is None or operation in grant.operations)
+        for grant in principal.grants
     ):
         raise Forbidden("permission denied")
     return principal

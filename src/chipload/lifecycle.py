@@ -21,6 +21,7 @@ from .admission import AdmissionStore, PolicyConflict
 from .artifact import Artifact, Digest, canonical_json, digest, read_artifact
 from .cache import DEFAULT_CACHE_BYTES, DataCache
 from .discovery import public_catalog
+from .execution_model import EXECUTION_SCHEMA
 from .limits import bounded_json
 from .model import Id, Model, Timestamp
 from .project import MAX_OUTPUT_BYTES, MAX_PROJECT_BYTES, BuildReport, SourceProject
@@ -125,9 +126,9 @@ class Repository:
             os.close(fd)
         with self.connection() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in {0, 1, 2, 3, 4, 5}:
+            if version not in {0, 1, 2, 3, 4, 5, 6}:
                 raise ValueError("unsupported repository schema")
-            if version == 5:
+            if version in {5, 6}:
                 reference = db.execute("SELECT * FROM admission_store WHERE id=1").fetchone()
                 if reference is None:
                     raise IntegrityError("missing admission store reference")
@@ -137,14 +138,16 @@ class Repository:
                     self.admission = self._admission(reference["identity"])
                     self.admission.enable_wal()
                     self.admission.snapshot()
+                    if version == 5:
+                        self._initialize_executions()
                     return
             db.execute("PRAGMA journal_mode=WAL")
             db.execute("BEGIN IMMEDIATE")
             try:
                 version = db.execute("PRAGMA user_version").fetchone()[0]
-                if version not in {0, 1, 2, 3, 4, 5}:
+                if version not in {0, 1, 2, 3, 4, 5, 6}:
                     raise ValueError("unsupported repository schema")
-                if version == 5:
+                if version in {5, 6}:
                     db.execute("COMMIT")
                     self._initialize_admission()
                     return
@@ -199,6 +202,14 @@ class Repository:
     def _admission(self, identity: str) -> AdmissionStore:
         return AdmissionStore(self.path.with_name(self.path.name + ".admission"), identity)
 
+    def _initialize_executions(self):
+        with self.transaction() as db:
+            if db.execute("PRAGMA user_version").fetchone()[0] == 5:
+                for statement in EXECUTION_SCHEMA.split(";"):
+                    if statement.strip():
+                        db.execute(statement)
+                db.execute("PRAGMA user_version=6")
+
     def _initialize_admission(self):
         with self.transaction() as db:
             row = db.execute("SELECT * FROM admission_store WHERE id=1").fetchone()
@@ -213,6 +224,7 @@ class Repository:
             else:
                 self.admission.enable_wal()
                 self.admission.snapshot()
+        self._initialize_executions()
 
     def policy(self) -> QuotaPolicy:
         try:

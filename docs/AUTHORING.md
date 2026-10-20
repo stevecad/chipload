@@ -336,7 +336,7 @@ The policy's `requests` object controls shared HTTP and mutation rates; see
 and no-op calls, independently of source/build storage and job quotas. Deployment
 usage also reports the number of retained request buckets.
 
-Opening schema 0–4 upgrades the shop database to schema 5 and creates the paired
+Opening schema 0–4 first upgrades the shop database to schema 5 and creates the paired
 capacity store. Migration first commits a pending marker, copies policy,
 history, and request balances, then marks the pair ready and removes the old
 tables. Interrupted startup resumes that copy before serving requests. Existing
@@ -344,7 +344,12 @@ limits, policy generations, and spent allowances are preserved. Older stores
 without request policy gain defaults. Build requester identities are recovered
 from request audit events, falling back to source ownership or a shared `legacy`
 identity when necessary. Existing usage may exceed defaults and is preserved.
-Before upgrading, stop old API/broker processes and make a consistent backup.
+Startup then migrates schema 5 to schema 6 in one transaction, adding operation
+bindings, executions, resource locks, dispatch turns, and simulation receipts.
+This preserves the paired store, spent request credit, sources, and publications.
+Existing quota policies gain bounded operation defaults. Existing explicit grants
+gain no new operation actions automatically. See [OPERATIONS.md](OPERATIONS.md).
+Before upgrading, stop old API/broker/executor processes and make a consistent backup.
 Do not run old code alongside the new schema. SQLite remains single-node
 storage; this does not establish safe use over a network filesystem or across
 independent repositories.

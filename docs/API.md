@@ -71,7 +71,7 @@ documents the launcher; the settings example contains no identities or grants.
 | `POST /v1/shops/{shop}/variables/query` | `shop_variables` |
 
 Collections are `sites`, `resources`, `catalogs`, `processes`, `capabilities`,
-`workflows`, and `variables`. Only explicitly public records appear. Private and
+`workflows`, `variables`, and `operations`. Only explicitly public records appear. Private and
 missing IDs both return 404. Page sizes are 1–100; `query` filters names and IDs.
 Follow the returned `next_cursor` with the same collection and filter. Cursors
 are tied to the public revision; a changed revision returns 409 so the client
@@ -128,6 +128,16 @@ partial disclosure into proof of support.
 | `PUT /v1/shops/{shop}/observations` | `observations_write` |
 | `POST /v1/shops/{shop}/private/evaluate` | `shop_evaluate_private` |
 | `POST /v1/shops/{shop}/private/variables/query` | `shop_variables_private` |
+| `GET /v1/shops/{shop}/private/operations/{operation}` | `operation_inspect` |
+| `POST /v1/shops/{shop}/operations/{operation}/executions` | `operation_submit` |
+| `GET /v1/shops/{shop}/operations/{operation}/executions/{execution}` | `operation_execution_read` |
+| `POST /v1/shops/{shop}/operations/{operation}/executions/{execution}/cancel` | `operation_execution_cancel` |
+
+Callable operations use typed inputs/outputs, explicit simulation/live intent,
+shop and operation grants, and separately provisioned adapter bindings. See
+[OPERATIONS.md](OPERATIONS.md) for payloads, state transitions, quotas, durable
+request keys, cancellation, and reconciliation. Public operation discovery does
+not enable execution. The supplied executor currently runs simulated adapters.
 
 Source writes contain `project` and a required `expected_head` (null for a new
 shop). Build requests contain `shop_id`, an exact source `revision`, and a
@@ -179,9 +189,11 @@ mounts its public CA bundle at `/etc/chipload/identity-ca.pem`. Restart the API
 after changing trust material.
 
 The token's `resource_access.chipload.roles` sets a permission ceiling:
-`shop:read` permits read actions, and `shop:admin` permits the current authoring
+`shop:read` permits read actions, `shop:operate` permits `operation:read`,
+`operation:execute`, and `operation:cancel`, and `shop:admin` permits all current
 actions. Each action must **also** appear in the operator-owned binding for that
-subject and shop. `shop:operate` does not grant authoring privileges. No token
+subject and shop. Grants may restrict operation actions through an `operations`
+ID allowlist. `shop:operate` does not grant authoring privileges. No token
 role alone grants access to a shop, and token-supplied shop grants are ignored.
 
 After verifying an identity with `GET /v1/identity`, an operator can add a binding

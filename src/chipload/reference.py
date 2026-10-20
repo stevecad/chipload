@@ -2,6 +2,7 @@
 
 from .artifact import SDK_VERSION
 from .evaluate import EvaluationRequest
+from .execution_model import ExecutionRequest
 from .limits import (
     MAX_CASE_WORK,
     MAX_DIAGNOSTICS,
@@ -31,6 +32,7 @@ def sdk_reference() -> dict:
             "source_project": SourceProject.model_json_schema(),
             "evaluation_request": EvaluationRequest.model_json_schema(),
             "variable_query": VariableQuery.model_json_schema(),
+            "execution_request": ExecutionRequest.model_json_schema(),
         },
         "units": {
             name: {
@@ -64,5 +66,8 @@ def sdk_reference() -> dict:
             "Save, build, test, and publish are separate actions.",
             "Publication requires a successful build with at least one acceptance case.",
             "Source runs in an operator-provisioned environment with pinned dependencies.",
+            "Operation contracts require a separate adapter binding to execute; publishing source does not grant equipment authority.",
+            "Execution mode is explicit. Simulated results are not equipment qualification.",
+            "Retry an exact execution request with its original request key. Reconcile indeterminate outcomes without resending effects.",
         ],
     }

@@ -152,6 +152,13 @@ Expose discovery, evaluation, and the authoring/publication lifecycle through bo
 
 ### 6. Make authorized shop operations callable
 
+**Progress:** Python operation contracts, explicit simulation/live intent, operator-owned adapter bindings, operation-level grants, shared REST/MCP submission/inspection/cancellation, quotas, resource exclusion, audit events, and a separate simulated executor are implemented. Tests cover retries, changing preconditions, cancellation races, claim fencing, uncertain outcomes, reconciliation, migration, and recovery snapshots. The callable shop example covers machine, human-review, inspection, and external-service contracts with business conditions. See `docs/OPERATIONS.md`. Real adapter protocols, scoped OpenBao delivery, executor containment/supervision, durable orchestration between operations, and the ERP integration contract remain unfinished.
+
+The live TLS/Keycloak check authors and builds the actual example through MCP,
+then exercises all four simulated calls through REST/MCP and a separate executor.
+A process-crash test exits after committing an effect receipt and confirms that
+reconciliation recovers the result without repeating the effect.
+
 Define operation inputs, outputs, side effects, permissions, preconditions, and job states. Implement adapter contracts with narrowly scoped secrets, durable request identities, audit records, timeouts, cancellation semantics, and recovery from ambiguous outcomes. Retries must not silently repeat physical effects.
 
 Provide a simulated adapter and end-to-end workflows covering equipment operations, human tasks, inspection, and external services. Choose the first real adapter protocol through a concrete integration design. A simulation passing must not be recorded as equipment qualification.
