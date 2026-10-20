@@ -1,0 +1,43 @@
+name: chipload-executor
+services:
+  executor:
+    image: ${CHIPLOAD_EXECUTOR_IMAGE:?Run ./scripts/build-runtime}
+    pull_policy: never
+    user: ${CHIPLOAD_UID:?}:${CHIPLOAD_GID:?}
+    command: [--settings, /etc/chipload/settings.json, --simulators, /etc/chipload/adapters.json]
+    labels:
+      org.chipload.executor-owner: ${CHIPLOAD_EXECUTOR_OWNER:?}
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 10s
+    pids_limit: 32
+    cpus: 1
+    mem_limit: 512m
+    memswap_limit: 512m
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777
+    ulimits:
+      nofile: {soft: 256, hard: 256}
+      core: {soft: 0, hard: 0}
+    logging:
+      driver: local
+      options: {max-size: 10m, max-file: "3"}
+    volumes:
+      - type: bind
+        source: ${CHIPLOAD_DATA:?}
+        target: /data
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${CHIPLOAD_CONFIG:?}
+        target: /etc/chipload/settings.json
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${CHIPLOAD_ADAPTERS:?}
+        target: /etc/chipload/adapters.json
+        read_only: true
+        bind: {create_host_path: false}

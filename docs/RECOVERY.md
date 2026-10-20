@@ -17,7 +17,11 @@ and stop separately launched executors before backup. The stack helper supervise
 its API/build broker; it does not stop an independently launched executor.
 See [operation recovery semantics](OPERATIONS.md#states-cancellation-and-recovery).
 Restoring these databases cannot undo an equipment action or an ERP transaction;
-real adapter receiver-state recovery remains integration work.
+external receiver-state recovery remains integration work. The separate
+[executor launcher](ADAPTERS.md) honors the TLS deployment operation lock and
+incomplete-state markers, but the stack helpers do not stop its Compose project.
+Its adapter configuration, AppRole credential directory, OpenBao state, and
+receiver ledger need their own coordinated protection and recovery.
 
 This workflow covers the [single-host TLS stack](TLS.md). It does not back up
 OpenBao, ERP systems, equipment controllers, external evidence stores, Docker

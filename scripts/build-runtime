@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the API and broker from locked dependencies and a minimal source context."""
+"""Build API, broker, and executor images from locked dependencies and minimal context."""
 
 import hashlib
 import os
@@ -26,7 +26,7 @@ def main():
         shutil.copyfile(root / "deploy/runtime/Dockerfile", context / "Dockerfile")
         shutil.copyfile(root / "LICENSE", context / "LICENSE")
         shutil.copytree(root / "deploy/runtime/licenses", context / "licenses")
-        for role in ("api", "broker"):
+        for role in ("api", "broker", "executor"):
             subprocess.run(
                 [
                     "uv",
@@ -45,7 +45,7 @@ def main():
                 check=True,
             )
         images = {}
-        for role in ("api", "broker"):
+        for role in ("api", "broker", "executor"):
             subprocess.run(
                 [
                     "docker",

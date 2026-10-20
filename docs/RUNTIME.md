@@ -8,13 +8,15 @@ the host Docker daemon.
 This packaging adds process and filesystem limits. The supplied Compose file
 exposes HTTP only on host loopback. The [TLS stack](TLS.md) adds a gateway,
 production-mode Keycloak, and private application/identity networks. Production
-OpenBao delivery, credential rotation, off-host recovery, and deployment
-load qualification remain required for public deployment.
+OpenBao lifecycle, automatic signing-key/certificate rotation, off-host recovery,
+and deployment load qualification remain required for public deployment.
+The separate [executor packaging](ADAPTERS.md) supports offline simulation and
+HTTPS calls with scoped OpenBao credentials.
 
 ## Build and configure
 
 Use Python 3.12+, `uv`, Docker Engine, and Docker Compose on the same host as
-the data directory. Build all three images from the same checkout:
+the data directory. Build worker, API, broker, and executor images from the same checkout:
 
 ```sh
 ./scripts/build-worker
@@ -28,8 +30,9 @@ exported requirements, and the relevant Dockerfile into temporary build contexts
 shop projects, local databases, and `.env` files are excluded. Python and Docker
 CLI base images are pinned by digest. Installation accepts hash-locked binary
 wheels. Image IDs are saved in `.local/worker-image`, `.local/api-image`, and
-`.local/broker-image`; runtime startup checks their roles, SDK fingerprint, and
-dependency lock against the checkout. Rebuild all three after SDK/lock changes.
+`.local/broker-image`, plus `.local/executor-image` for the separate executor.
+Startup checks image roles, SDK fingerprint, and dependency lock against the
+checkout. Rebuild these images after SDK/lock changes.
 Images carry Chipload's MIT license. The broker also includes the Docker CLI
 29.9.1 [license](https://github.com/docker/cli/blob/v29.9.1/LICENSE) and
 [notice](https://github.com/docker/cli/blob/v29.9.1/NOTICE) under

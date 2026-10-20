@@ -1,0 +1,198 @@
+#!/usr/bin/env python3
+"""Launch one contained executor, with one adapter's credentials and private network."""
+
+import argparse
+import hashlib
+import importlib.machinery
+import importlib.util
+import json
+import os
+import re
+import subprocess
+from contextlib import contextmanager
+from pathlib import Path
+
+from chipload.executor import ExecutorSettings, Simulators, private_json
+from chipload.remote_adapter import HttpAdapterConfig, private_bytes
+
+ROOT = Path(__file__).resolve().parents[1]
+loader = importlib.machinery.SourceFileLoader("runtime_script", str(ROOT / "scripts/runtime"))
+runtime = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
+loader.exec_module(runtime)
+
+
+def private_network(name):
+    value = json.loads(
+        subprocess.check_output(["docker", "network", "inspect", name], text=True, timeout=15)
+    )[0]
+    if (
+        value.get("Internal") is not True
+        or value.get("Driver") != "bridge"
+        or value.get("Scope") != "local"
+    ):
+        raise ValueError("network adapters require an existing internal local bridge")
+    for container in value.get("Containers", {}):
+        labels = (
+            json.loads(
+                subprocess.check_output(
+                    ["docker", "inspect", container, "--format", "{{json .Config.Labels}}"],
+                    text=True,
+                    timeout=15,
+                )
+            )
+            or {}
+        )
+        if labels.get("org.chipload.runtime-role") in {"api", "broker"} or labels.get(
+            "org.chipload.worker-protocol"
+        ):
+            raise ValueError("the adapter network must be separate from API and source workers")
+
+
+def ownership(name, expected):
+    ids = subprocess.check_output(
+        ["docker", "ps", "-aq", "--filter", f"label=com.docker.compose.project={name}"],
+        text=True,
+        timeout=15,
+    ).split()
+    for identifier in ids:
+        labels = (
+            json.loads(
+                subprocess.check_output(
+                    ["docker", "inspect", identifier, "--format", "{{json .Config.Labels}}"],
+                    text=True,
+                    timeout=15,
+                )
+            )
+            or {}
+        )
+        if labels.get("org.chipload.executor-owner") != expected:
+            raise ValueError("Compose project belongs to a different executor configuration")
+
+
+@contextmanager
+def deployment_guard(config, data, action):
+    metadata = config.parent / "deployment.json"
+    if action not in {"up", "down"} or not (metadata.exists() or metadata.is_symlink()):
+        yield
+        return
+    runtime.private(metadata)
+    if data != config.parent / "data":
+        raise ValueError("TLS settings must use their own deployment data directory")
+    loader = importlib.machinery.SourceFileLoader(
+        "executor_tls_helpers", str(ROOT / "scripts/tls-stack")
+    )
+    tls = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
+    loader.exec_module(tls)
+    with tls.operation_lock(config.parent):
+        if action == "up":
+            tls.require_ready(config.parent)
+        yield
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("action", choices=("up", "down", "status", "logs"))
+    parser.add_argument("--settings", type=Path, required=True)
+    parser.add_argument("--data", type=Path, required=True)
+    selection = parser.add_mutually_exclusive_group(required=True)
+    selection.add_argument("--simulators", type=Path)
+    selection.add_argument("--adapter", type=Path)
+    parser.add_argument("--credentials", type=Path)
+    parser.add_argument("--network")
+    parser.add_argument("--name", default="chipload-executor")
+    args = parser.parse_args()
+    if os.getuid() == 0:
+        parser.error("run as the non-root owner of the configuration and repository")
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,62}", args.name):
+        parser.error("use a lowercase Compose project name")
+    if bool(args.adapter) != bool(args.credentials and args.network) or (
+        not args.adapter and (args.credentials or args.network)
+    ):
+        parser.error("a network adapter requires its credentials directory and internal network")
+    with deployment_guard(args.settings.absolute(), args.data.absolute(), args.action):
+        launch(args)
+
+
+def launch(args):
+    runtime.docker_socket()  # Reject remote daemons before touching local mount paths.
+    config, data = args.settings.absolute(), args.data.absolute()
+    adapter = (args.adapter or args.simulators).absolute()
+    credentials = args.credentials.absolute() if args.credentials else None
+    image = runtime.image("executor") if args.action == "up" else "sha256:" + "0" * 64
+    owner = hashlib.sha256(
+        json.dumps(
+            [str(config), str(data), str(adapter), str(credentials), args.network],
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    ownership(args.name, owner)
+    if args.action == "up":
+        runtime.private(config)
+        runtime.private(adapter)
+        if ExecutorSettings.model_validate(private_json(config)).database != Path(
+            "/data/chipload.db"
+        ):
+            raise ValueError("container executor settings must use /data/chipload.db")
+        runtime.check_data(data)
+        # Opening a fresh database here would hide a wrong mount or failed restore.
+        for filename in ("chipload.db", "chipload.db.admission"):
+            runtime.private(data / filename)
+        runtime.check_images({"executor": image})
+        if args.adapter:
+            definition = HttpAdapterConfig.model_validate(private_json(adapter))
+            runtime.private(credentials, directory=True)
+            allowed = {"role-id", "secret-id", definition.ca_file, definition.secrets.ca_file} - {
+                None
+            }
+            if {p.name for p in credentials.iterdir()} != allowed:
+                raise ValueError("mount only this adapter's credential and CA files")
+            for filename in allowed:
+                private_bytes(
+                    credentials / filename,
+                    256 * 1024 if filename not in {"role-id", "secret-id"} else 4096,
+                )
+            private_network(args.network)
+        else:
+            Simulators.model_validate(private_json(adapter))
+    environment = {
+        **os.environ,
+        "CHIPLOAD_UID": str(os.getuid()),
+        "CHIPLOAD_GID": str(os.getgid()),
+        "CHIPLOAD_EXECUTOR_IMAGE": image,
+        "CHIPLOAD_EXECUTOR_OWNER": owner,
+        "CHIPLOAD_DATA": str(data),
+        "CHIPLOAD_CONFIG": str(config),
+        "CHIPLOAD_ADAPTERS": str(adapter),
+        "CHIPLOAD_CREDENTIALS": str(credentials or ""),
+        "CHIPLOAD_ADAPTER_NETWORK": args.network or "",
+    }
+    command = [
+        "docker",
+        "compose",
+        "--env-file",
+        "/dev/null",
+        "--project-name",
+        args.name,
+        "--file",
+        str(ROOT / "deploy/executor/compose.yaml"),
+    ]
+    if args.adapter:
+        command.extend(["--file", str(ROOT / "deploy/executor/network.yaml")])
+    command.extend(
+        {
+            "up": ["up", "--detach", "--force-recreate"],
+            "down": ["down"],
+            "status": ["ps"],
+            "logs": ["logs", "--tail", "100"],
+        }[args.action]
+    )
+    subprocess.run(command, env=environment, check=True)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception:
+        raise SystemExit(
+            "executor launch failed; inspect private configuration, network, and image versions"
+        ) from None

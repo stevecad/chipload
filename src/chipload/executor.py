@@ -3,17 +3,18 @@
 import argparse
 import json
 import os
+import signal
 import stat
-import time
+import threading
 import uuid
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Protocol
 
-from pydantic import Field, model_validator
+from pydantic import ConfigDict, Field, model_validator
 
-from .access import Forbidden, require_operation
+from .access import Forbidden, Principal, require_operation
 from .artifact import canonical_json, digest
 from .execution import (
     admit,
@@ -25,7 +26,7 @@ from .execution import (
 )
 from .execution_model import MAX_EXECUTION_BYTES, AdapterBinding, AdapterResult, ExecutionRequest
 from .lifecycle import Conflict, IntegrityError, Repository, now
-from .model import Fact, Id, Model, ShopOperation
+from .model import Fact, Id, Model, ShopOperation, Timestamp
 from .project import unique_json
 from .quotas import QuotaExceeded
 
@@ -37,6 +38,9 @@ class ExecutionContext:
     claim: str | None
     request: ExecutionRequest
     operation: ShopOperation
+    actor: str
+    deadline: Timestamp
+    cancel_requested: bool
 
 
 class Adapter(Protocol):
@@ -159,7 +163,16 @@ class OperationRunner:
                 }
             )
         )
-        return ExecutionContext(row["id"], intent, row["claim"], request, operation)
+        return ExecutionContext(
+            row["id"],
+            intent,
+            row["claim"],
+            request,
+            operation,
+            row["actor"],
+            datetime.fromisoformat(row["deadline"]),
+            bool(row["cancel_requested"]),
+        )
 
     def expire(self):
         at = self.clock()
@@ -220,6 +233,8 @@ class OperationRunner:
                     reason = "adapter-binding-changed"
                 if adapter.mode != binding.mode:
                     reason = "adapter-mode-mismatch"
+                if getattr(adapter, "fingerprint", None) != binding.adapter_sha256:
+                    reason = "adapter-configuration-changed"
                 shop = db.execute("SELECT * FROM shops WHERE id=?", (row["shop_id"],)).fetchone()
                 if (
                     not shop
@@ -349,7 +364,11 @@ class OperationRunner:
             return False
         binding = AdapterBinding.model_validate_json(row["binding"])
         adapter = self.adapters.get(binding.adapter_id)
-        if adapter is None or adapter.mode != binding.mode:
+        if (
+            adapter is None
+            or adapter.mode != binding.mode
+            or getattr(adapter, "fingerprint", None) != binding.adapter_sha256
+        ):
             return False
         context = self._context(row)
         try:
@@ -409,35 +428,69 @@ class Simulators(Model):
         return self
 
 
+class ExecutorSettings(Model):
+    # Accept shared API settings without importing an HTTP/JWT stack into the executor.
+    model_config = ConfigDict(extra="ignore")
+    database: Path
+    bindings: tuple[Principal, ...] = Field(max_length=1000)
+
+    @model_validator(mode="after")
+    def unique_subjects(self):
+        if len({who.subject for who in self.bindings}) != len(self.bindings):
+            raise ValueError("executor bindings must have unique subjects")
+        return self
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--settings", type=Path, required=True)
-    parser.add_argument("--simulators", type=Path, required=True)
+    selection = parser.add_mutually_exclusive_group(required=True)
+    selection.add_argument("--simulators", type=Path)
+    selection.add_argument("--adapter", type=Path)
+    parser.add_argument("--credentials", type=Path)
     parser.add_argument("--once", action="store_true")
     args = parser.parse_args()
-    # Network/real adapters are intentionally not loaded from shop projects.
-    from .auth import ServerSettings
-
-    settings = ServerSettings.model_validate(private_json(args.settings))
+    stopping = threading.Event()
+    signal.signal(signal.SIGTERM, lambda *_: stopping.set())
+    signal.signal(signal.SIGINT, lambda *_: stopping.set())
+    settings = ExecutorSettings.model_validate(private_json(args.settings))
     repository = Repository(settings.database)
-    configuration = Simulators.model_validate(private_json(args.simulators))
-    adapters = {
-        entry.id: SimulatedAdapter(repository, entry.outputs) for entry in configuration.adapters
-    }
-    while True:
+    if args.adapter:
+        from .remote_adapter import HttpAdapter, HttpAdapterConfig
+
+        if args.credentials is None:
+            parser.error("a network adapter requires its own credentials directory")
+        info = args.credentials.lstat()
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077:
+            raise ValueError("credentials must be an owned private directory")
+        configuration = HttpAdapterConfig.model_validate(private_json(args.adapter))
+        adapters = {
+            configuration.id: HttpAdapter(configuration, args.credentials.absolute(), stopping)
+        }
+    else:
+        if args.credentials is not None:
+            parser.error("simulators do not use a credentials directory")
+        configuration = Simulators.model_validate(private_json(args.simulators))
+        adapters = {
+            entry.id: SimulatedAdapter(repository, entry.outputs)
+            for entry in configuration.adapters
+        }
+    while not stopping.is_set():
         # Reload explicit grants between claims; token role ceilings were checked on admission.
-        current = ServerSettings.model_validate(private_json(args.settings))
+        current = ExecutorSettings.model_validate(private_json(args.settings))
         if current.database != settings.database:
             raise ValueError("executor storage changed; restart with the intended settings")
         principals = {who.subject: who for who in current.bindings}
         runner = OperationRunner(repository, adapters, principals.get)
         ran = runner.run_next()
+        if stopping.is_set():
+            break
         reconciled = runner.reconcile_pending()
         if args.once:
             print(json.dumps({"dispatched": ran, "reconciled": reconciled}))
             break
         if not ran:
-            time.sleep(0.5)
+            stopping.wait(0.5)
 
 
 if __name__ == "__main__":

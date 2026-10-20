@@ -14,7 +14,9 @@ The [credential rotation helper](docs/CREDENTIALS.md) changes the provisioned ag
 
 Chipload is not an ERP. Order management, purchasing, inventory management, production planning, accounting, and invoicing are out of scope. Chipload will work with ERP systems through adapters and APIs. Shop capabilities, business rules, and callable operations belong in Chipload; ERP systems remain the source of truth for their business records.
 
-The repository contains an experimental Python shop model and evaluator, REST/MCP discovery and authoring, Keycloak token verification with explicit shop grants, a separate container build broker, executable examples, and local identity/secrets infrastructure. [Callable operations](docs/OPERATIONS.md) add typed contracts, business and capability checks, durable execution records, and a separate simulated adapter executor. Production deployment and real equipment integration remain work.
+The repository contains an experimental Python shop model and evaluator, REST/MCP discovery and authoring, Keycloak token verification with explicit shop grants, a separate container build broker, executable examples, and local identity/secrets infrastructure. [Callable operations](docs/OPERATIONS.md) add typed contracts, business and capability checks, durable execution records, and a separate adapter executor. A [contained HTTPS adapter](docs/ADAPTERS.md)
+uses scoped OpenBao credentials, fixed receiver contracts, and durable
+reconciliation; the offline simulator remains available. Production deployment and real equipment integration remain work.
 
 ## Define and inspect a shop
 
@@ -61,7 +63,7 @@ Keycloak imports a resource-server client named `chipload`, with independent `sh
 
 Chipload validates token signatures, issuer, audience, token type, and expiry, then intersects Keycloak roles with operator-owned shop/action grants. MCP exposes protected-resource metadata and uses pre-registered OAuth clients. Access-token audience must include the exact configured MCP resource URL, initially `http://localhost:8088/mcp`; the realm template adds this mapper to `chipload-cli`. Existing realm imports are not updated automatically. See [the API guide](docs/API.md) for bindings, audience setup, and current authorization limits.
 
-OpenBao uses a KV v2 mount at `chipload/` and a restricted `chipload-example` AppRole. Its tokens can only read `chipload/data/shops/example/*`; they cannot write secrets or administer OpenBao. No equipment credentials are seeded. Populate paths like `shops/example/mill-01` through OpenBao administration. Shop code will reference these paths; the runtime will resolve values without exposing them in MCP responses.
+OpenBao uses a KV v2 mount at `chipload/` and a restricted `chipload-example` AppRole. Its tokens can only read `chipload/data/shops/example/*`; they cannot write secrets or administer OpenBao. No equipment credentials are seeded. Populate paths like `shops/example/mill-01` through OpenBao administration. The development role demonstrates secret access only. The [HTTPS adapter](docs/ADAPTERS.md) uses a separate operator-owned exact-path policy and verified TLS; shop code does not select secret paths or receive resolved credentials.
 
 The bootstrap writes owner-only files under ignored `.local/dev-stack/`:
 

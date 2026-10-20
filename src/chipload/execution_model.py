@@ -36,6 +36,7 @@ class AdapterBinding(Model):
     model_sha256: Digest
     adapter_id: Id
     mode: ExecutionMode
+    adapter_sha256: Digest | None = Field(default=None, exclude_if=lambda value: value is None)
     enabled: StrictBool = True
 
 

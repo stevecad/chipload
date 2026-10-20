@@ -137,7 +137,8 @@ Callable operations use typed inputs/outputs, explicit simulation/live intent,
 shop and operation grants, and separately provisioned adapter bindings. See
 [OPERATIONS.md](OPERATIONS.md) for payloads, state transitions, quotas, durable
 request keys, cancellation, and reconciliation. Public operation discovery does
-not enable execution. The supplied executor currently runs simulated adapters.
+not enable execution. The supplied executor supports simulated adapters and a separately configured
+[HTTPS receiver with scoped credentials](ADAPTERS.md).
 
 Source writes contain `project` and a required `expected_head` (null for a new
 shop). Build requests contain `shop_id`, an exact source `revision`, and a

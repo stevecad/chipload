@@ -1,0 +1,15 @@
+services:
+  executor:
+    network_mode: !reset null
+    networks: [adapter]
+    command: [--settings, /etc/chipload/settings.json, --adapter, /etc/chipload/adapters.json, --credentials, /run/chipload/credentials]
+    volumes:
+      - type: bind
+        source: ${CHIPLOAD_CREDENTIALS:?}
+        target: /run/chipload/credentials
+        read_only: true
+        bind: {create_host_path: false}
+networks:
+  adapter:
+    external: true
+    name: ${CHIPLOAD_ADAPTER_NETWORK:?}

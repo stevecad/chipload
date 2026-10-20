@@ -2,9 +2,10 @@
 
 A shop can publish typed call contracts alongside its capabilities and business
 rules. Authorized clients submit calls through REST or MCP, then inspect durable
-execution records. The separate executor currently supplies simulated adapters;
-real equipment, human-task systems, external services, and ERP connections still
-need concrete adapters and scoped secret delivery.
+execution records. The separate executor supplies simulated adapters and a
+[bounded HTTPS adapter with scoped OpenBao credentials](ADAPTERS.md). Equipment,
+human-task systems, and ERP products need bridges implementing the receiver
+contract and their own qualified acceptance/recovery procedures.
 
 The example [callable_shop.py](../examples/callable_shop.py) defines four calls:
 document review, sample manufacture, inspection, and an outside process. Its
@@ -74,8 +75,9 @@ uv run --extra server python -m chipload.local --database .local/chipload.db \
 
 Bindings contain no credentials or connection URLs. Shop source cannot register
 Python adapter implementations or change this authority through REST/MCP.
-The executor registry is trusted infrastructure. The bundled launcher only loads
-simulators; a `live` binding alone does not install a real adapter.
+The executor registry is trusted infrastructure. HTTPS bindings also pin the
+operator configuration in `adapter_sha256`; see [ADAPTERS.md](ADAPTERS.md). A
+`live` binding alone does not provision a receiver or qualify its effects.
 
 Keycloak's `shop:operate` role permits operation read/execute/cancel actions as a
 ceiling. The subject must also have each action in an explicit shop grant.
@@ -87,7 +89,8 @@ do not imply execution permissions.
 The executor rechecks operator-owned grants before dispatch and reloads its
 settings between claims. It does not introspect Keycloak sessions for queued
 work; token roles are checked at submission. Updating an operator grant requires
-updating the configuration used by both API and executor and restarting the API.
+updating the configuration used by both API and executor and recreating both
+containers when using individually mounted settings files.
 Revocation after dispatch cannot undo an accepted external action.
 
 ## Submit and inspect
@@ -176,12 +179,13 @@ locks. Backups reject queued, running, or indeterminate operations. Before backu
 stop new submissions, settle/cancel queued work, reconcile uncertain results,
 and stop separate executors. Restoring a database cannot roll back equipment or
 an ERP. Recovery of external receiver ledgers remains part of each real adapter's
-future integration design; never replay old effects merely because of a restore.
+integration design; never replay old effects merely because of a restore.
 
 ## Run the simulator
 
 Use private files owned by the deployment user, mode 0600. The executor's settings
-use the server settings schema, explicit subject/shop grants, and the same paired
+require `database` and explicit `bindings` (subject/shop grants); other API
+settings are ignored. Use the same grants and paired
 repository as the API. When running on the host alongside the container API,
 set `database` to the host's absolute path to `state/data/chipload.db`; the API's
 container path `/data/chipload.db` is different. Keep grants synchronized.
@@ -202,9 +206,10 @@ uv run --extra server python -m chipload.executor \
 ```
 
 Omit `--once` to poll the queue and reconcile uncertain calls. This is a separate
-trusted process, currently launched by the operator. The API and build workers
-never execute adapters. Container supervision for the executor, bounded real
-adapter calls, OpenBao delivery, and shutdown handling remain work.
+trusted process. For a supervised container with no network, use
+`scripts/executor --simulators` as described in [ADAPTERS.md](ADAPTERS.md). The
+API and build workers never execute adapters. The HTTPS adapter runs each call
+in a bounded child process and uses scoped OpenBao credentials.
 `--once` reports whether it dispatched a call and how many outcomes it reconciled.
 
 Each deployment/shop/identity scope defaults to 100 pending operations, one

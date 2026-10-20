@@ -25,12 +25,39 @@ Steve integration is planned for a later stage.
 - Capacity policy and request balances use a separate durable store, keeping public admission independent of shop write locks. Resumable migration preserves existing policy history and spent allowances; tests exercise concurrent startup, interruption, store pairing, and discovery during authoring writes. Both database files belong to one backup/restore set.
 - API and broker container packaging now uses pinned images, locked wheels, non-root users, private shared storage, process limits, and graceful shutdown. The API has no Docker access; the broker has a daemon socket and no IP network. A live container test covers MCP authoring, isolated builds, REST discovery, restart, rollback, and withdrawal. See `docs/RUNTIME.md`.
 - The TLS topology adds a pinned Caddy gateway, production-mode Keycloak, private application/database networks, explicit CA trust, and one-shop agent provisioning. Its separate client/admin host listeners bind to loopback. Live checks exercise real tokens, verified HTTPS, certificate/CA replacement, the agent lifecycle, restart persistence, trust failures, forwarding-header spoofing, and network/port restrictions. See `docs/TLS.md`; public routing, production secrets delivery, automatic renewal, and deployment load qualification remain open.
-- Additional dependency environments, custom executable evaluation, production process supervision, privileged equipment adapters, and hardened internet deployment remain to be implemented.
+- A contained executor now supports offline simulators and the bounded `chipload-receiver-1` HTTPS protocol with scoped OpenBao AppRole credentials. Configuration fingerprints pin receiver routes; uncertain work queries durable receipts without repeating commands. See `docs/ADAPTERS.md`. Production OpenBao lifecycle, qualified vendor bridges, additional dependency environments, custom executable evaluation, and hardened internet deployment remain work.
 - Encrypted recovery now snapshots both shop databases, Keycloak, grants, and TLS/secrets state together. Restore targets fresh state, retains spent request capacity, blocks application startup during interruption, and resumes the same recovery attempt. A live drill checks real identity/signing keys, publication and observation history, REST/MCP discovery, and interruption before backup completion and after identity restore commits. See `docs/RECOVERY.md`; external secrets and off-host disaster recovery remain operational work.
 - Operator credential rotation now journals agent-secret and identity-database password changes, retries the same pending credential, verifies old-credential rejection, and preserves subjects and grants. Startup and backups reject unfinished rotations. See `docs/CREDENTIALS.md`; operator-account lifecycle, signing-key rotation, and production OpenBao delivery/rotation remain work.
 - No open GitHub issues existed when this plan was written. The milestones below are a local implementation backlog; they have not been published as issues.
 
 The existing Compose configuration is for local development. Completing a local demo will not complete the deployment goal.
+
+## Next interface priority: shop as code
+
+Consolidate the agent interface before extending its tool catalog. The current
+MCP server exposes all 23 internal operations individually. That mapping is an
+implementation convenience, not the intended authoring experience.
+
+Use a small code-centered workflow: read/edit the Python project, run an exact
+revision, inspect diagnostics and results, and publish a tested revision.
+Functions, imports, loops, and the Python SDK should express whole shop
+definitions, business rules, and composed queries. Steve's CAD workflow provides
+a concrete reference: source editing feeds a bounded build, and the agent inspects
+the resulting model. It also preserves revisions and reuses ongoing builds.
+
+Keep internal services and the REST API available to ordinary clients. A Python
+client can compose service calls without exposing every method as an MCP tool.
+Executing agent-authored code must retain isolated process limits and the
+caller's shop/action scope. Publication and external effects still pass through
+trusted service checks and durable records; Python execution does not itself
+grant access to the database, administrator functions, or equipment credentials.
+
+Acceptance requires an agent to create and update a multi-file shop, exercise
+technical and business cases, inspect failures, publish, query public results,
+and roll back through the compact interface. Include concurrent edits, safe
+retries, cross-shop denial, and an equivalent REST client. The compact interface
+is pending implementation; the current tools remain available until its
+replacement is verified.
 
 ## Design commitments
 
@@ -152,7 +179,7 @@ Expose discovery, evaluation, and the authoring/publication lifecycle through bo
 
 ### 6. Make authorized shop operations callable
 
-**Progress:** Python operation contracts, explicit simulation/live intent, operator-owned adapter bindings, operation-level grants, shared REST/MCP submission/inspection/cancellation, quotas, resource exclusion, audit events, and a separate simulated executor are implemented. Tests cover retries, changing preconditions, cancellation races, claim fencing, uncertain outcomes, reconciliation, migration, and recovery snapshots. The callable shop example covers machine, human-review, inspection, and external-service contracts with business conditions. See `docs/OPERATIONS.md`. Real adapter protocols, scoped OpenBao delivery, executor containment/supervision, durable orchestration between operations, and the ERP integration contract remain unfinished.
+**Progress:** Python operation contracts, explicit simulation/live intent, operator-owned adapter bindings, operation-level grants, shared REST/MCP submission/inspection/cancellation, quotas, resource exclusion, audit events, and a separate simulated executor are implemented. Tests cover retries, changing preconditions, cancellation races, claim fencing, uncertain outcomes, reconciliation, migration, and recovery snapshots. The callable shop example covers machine, human-review, inspection, and external-service contracts with business conditions. See `docs/OPERATIONS.md`. The HTTPS receiver protocol, exact-path OpenBao delivery, executor containment, child termination, and supervised restart are implemented; see `docs/ADAPTERS.md`. Vendor bridges, physical qualification, durable orchestration between operations, external-state recovery, and the ERP integration contract remain unfinished.
 
 The live TLS/Keycloak check authors and builds the actual example through MCP,
 then exercises all four simulated calls through REST/MCP and a separate executor.
@@ -161,7 +188,7 @@ reconciliation recovers the result without repeating the effect.
 
 Define operation inputs, outputs, side effects, permissions, preconditions, and job states. Implement adapter contracts with narrowly scoped secrets, durable request identities, audit records, timeouts, cancellation semantics, and recovery from ambiguous outcomes. Retries must not silently repeat physical effects.
 
-Provide a simulated adapter and end-to-end workflows covering equipment operations, human tasks, inspection, and external services. Choose the first real adapter protocol through a concrete integration design. A simulation passing must not be recorded as equipment qualification.
+Provide a simulated adapter and end-to-end workflows covering equipment operations, human tasks, inspection, and external services. The first network protocol is the documented Chipload HTTPS receiver contract, exercised with an external evidence service; vendor adapters require their own integration design. A simulation passing must not be recorded as equipment qualification.
 
 Define an ERP integration contract for reading relevant business observations and exposing shop capabilities and operation results. Preserve external record references and freshness, and test failure and retry behavior. ERP business workflows and record ownership stay in the ERP.
 
@@ -201,8 +228,9 @@ external systems, or a qualified recovery onto a replacement host.
 Agent-secret and identity-database password rotation now have durable retry,
 old-credential rejection, unchanged-grant checks, and a recovery drill using the
 rotated credentials. Already-issued JWTs retain their normal expiry. Managed
-operator lifecycle, signing-key rotation, and OpenBao/adapter secret delivery
-remain separate work.
+operator lifecycle, signing-key rotation, and production OpenBao provisioning
+and recovery remain separate work. Per-adapter HTTPS secret delivery is
+implemented and exercises actual KV and AppRole rotation in the live test.
 
 **Complete when:** a clean installation can be configured from documented inputs; automated security and integration checks pass; backup/restore and credential rotation are exercised; failed identity/secrets dependencies fail safely; deployment tests verify exposed ports and network access; load-test results and operational requirements are documented. Local development settings must not pass production validation.
 
