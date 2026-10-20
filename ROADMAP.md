@@ -22,6 +22,7 @@ Steve integration is planned for a later stage.
 - Bounded caches retain validated immutable builds and public catalog bytes while database publication selection, report integrity, permissions, observations, and evaluation time remain live. Concurrent misses share validation; saturation is retryable. `scripts/benchmark-data --service` measures compact/large-catalog reads with retention disabled and enabled. Cold validation, process containment, and deployment load qualification remain open.
 - Durable source/build quotas now cover deployment, shop, and verified identity scopes, including pending/running jobs, hourly admissions, retained records, and payload storage reservations. Brokers claim work atomically with persistent dispatch turns. Tests exercise competing processes, transport parity, idempotent retries, migration, and operator policy changes.
 - HTTP admission now shares deployment, connection-peer, identity, and mutation budgets across API processes. Limiter state is bounded; contention and saturation return retry details. Tests exercise two actual HTTP servers, process restart, forwarded-header spoofing, and MCP client recovery. `scripts/benchmark-requests` measures admission overhead. Network-edge controls and full deployment load qualification remain open.
+- Capacity policy and request balances use a separate durable store, keeping public admission independent of shop write locks. Resumable migration preserves existing policy history and spent allowances; tests exercise concurrent startup, interruption, store pairing, and discovery during authoring writes. Both database files belong to one backup/restore set.
 - Additional dependency environments, custom executable evaluation, production process supervision, privileged equipment adapters, and hardened internet deployment remain to be implemented.
 - No open GitHub issues existed when this plan was written. The milestones below are a local implementation backlog; they have not been published as issues.
 
@@ -169,8 +170,9 @@ measurements. Immutable build/projection caching now reduces repeated-read cost
 under memory and concurrency budgets, with publication/corruption/withdrawal
 tests. Source/build quotas and fair dispatch are enforced across processes using
 the same repository. Shared HTTP and mutation rate controls now reject excess
-traffic before shop work. Trusted data-process containment, contention from request
-accounting, network-edge controls, broader storage/retention, deployment load
+traffic before shop work. Request accounting no longer competes with shop writes;
+its own concurrent writers can still contend. Trusted data-process containment,
+network-edge controls, broader storage/retention, deployment load
 targets, and full adversarial deployment verification remain open. The component benchmarks and HTTP admission tests cover
 these implemented boundaries; production deployment remains a separate gate.
 

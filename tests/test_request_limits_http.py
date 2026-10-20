@@ -88,6 +88,13 @@ class RequestLimitHTTPTests(unittest.TestCase):
                 _, first = start(200)
                 second_process, second = start(200)
                 repository = operations.service.repository
+                with repository.transaction() as db:
+                    db.execute("UPDATE shops SET head=head WHERE id='thermal-example'")
+                    with httpx.Client(trust_env=False, timeout=2) as client:
+                        for base in (first, second):
+                            reply = client.get(base + "/v1/shops/thermal-example/catalog")
+                            self.assertEqual(reply.status_code, 200, reply.text)
+                            self.assertEqual(reply.json(), before)
                 status = repository.read_quotas()
                 status["policy"]["requests"]["deployment"] = {"per_minute": 1, "burst": 5}
                 repository.set_quotas(

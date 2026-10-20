@@ -1,6 +1,5 @@
 """Shared request budgets under process contention, clock changes, and saturation."""
 
-import json
 import multiprocessing
 import tempfile
 import time
@@ -148,7 +147,7 @@ class RequestLimitTests(unittest.TestCase):
         self.limiter.identity("owner")
 
     def test_database_contention_fails_closed_with_a_short_wait(self):
-        with self.repository.transaction():
+        with self.repository.admission.transaction():
             started = time.monotonic()
             with self.assertRaises(RequestCapacity):
                 self.peer(1)
@@ -156,27 +155,18 @@ class RequestLimitTests(unittest.TestCase):
         self.peer(1)
 
     def test_storage_failure_cannot_admit_requests(self):
-        with self.repository.transaction() as db:
+        with self.repository.admission.transaction() as db:
             db.execute("DROP TABLE request_buckets")
         with self.assertRaises(RequestCapacity):
             self.peer(1)
 
-    def test_schema_three_policy_gains_request_limits_without_changing_other_limits(self):
-        self.policy(peer={"burst": 3})
-        with self.repository.transaction() as db:
-            policy = json.loads(db.execute("SELECT policy FROM quota_policy").fetchone()[0])
-            del policy["requests"]
-            policy["shop"]["pending_builds"] = 3
-            db.execute("UPDATE quota_policy SET policy=?", (json.dumps(policy).encode(),))
-            db.execute("DROP TABLE request_buckets")
-            db.execute("PRAGMA user_version=3")
-        upgraded = Repository(self.path)
-        status = upgraded.read_quotas()
-        self.assertEqual(status["generation"], 1)
-        self.assertEqual(status["policy"]["shop"]["pending_builds"], 3)
-        self.assertEqual(status["policy"]["requests"]["peer"]["burst"], 40)
-        self.assertEqual(status["usage"]["deployment"]["request_buckets"], 0)
-        RequestLimiter(upgraded).ingress(("198.51.100.1", 80))
+    def test_shop_write_lock_does_not_block_requests_or_operator_policy_updates(self):
+        with self.repository.transaction():
+            self.peer(1)
+            self.limiter.identity("owner")
+            self.policy(peer={"burst": 2})
+            reopened = Repository(self.path)
+            RequestLimiter(reopened, clock=lambda: self.at).ingress(("198.51.100.2", 80))
 
     def test_peer_normalization_groups_ipv6_subnets_and_mapped_ipv4(self):
         self.assertEqual(peer_key(("2001:db8::1", 123)), peer_key(("2001:db8::999", 456)))

@@ -155,9 +155,6 @@ def quota_usage(db, *, at: datetime, shop: str | None = None, identity: str | No
             parameters,
         ).fetchone()
         result[scope] = {**dict(builds), **dict(sources)}
-    result["deployment"]["request_buckets"] = db.execute(
-        "SELECT COUNT(*) FROM request_buckets"
-    ).fetchone()[0]
     return result
 
 

@@ -100,10 +100,10 @@ class RequestLimiter:
         # Keep lock waits short so saturation cannot occupy the request pool for seconds.
         # Work after admission runs outside this write transaction.
         try:
-            with self.repository.connection(timeout=0.05) as db:
+            with self.repository.admission.connection(timeout=0.05) as db:
                 db.execute("BEGIN IMMEDIATE")
                 try:
-                    limits = self.repository.policy(db).requests
+                    limits = self.repository.admission.policy(db).requests
                     at = self.clock()
                     updates = []
                     missing = 0
@@ -160,7 +160,7 @@ class RequestLimiter:
                 except BaseException:
                     db.execute("ROLLBACK")
                     raise
-        except sqlite3.Error as error:
+        except (sqlite3.Error, OSError) as error:
             # No request is admitted when shared accounting cannot be completed.
             raise RequestCapacity() from error
 

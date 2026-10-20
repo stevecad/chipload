@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Literal
 
 from .access import Principal, require
+from .admission import AdmissionStore, PolicyConflict
 from .artifact import Artifact, Digest, canonical_json, digest, read_artifact
 from .cache import DEFAULT_CACHE_BYTES, DataCache
 from .discovery import public_catalog
@@ -24,7 +25,7 @@ from .limits import bounded_json
 from .model import Id, Model, Timestamp
 from .project import MAX_OUTPUT_BYTES, MAX_PROJECT_BYTES, BuildReport, SourceProject
 from .quotas import QUOTA_SCHEMA, QuotaPolicy, admit_build, admit_running, admit_source, quota_usage
-from .request_limits import REQUEST_SCHEMA, update_request_rates
+from .request_limits import REQUEST_SCHEMA
 from .sandbox import DockerBuilder
 from .validation import Diagnostic
 
@@ -123,14 +124,27 @@ class Repository:
         finally:
             os.close(fd)
         with self.connection() as db:
-            if db.execute("PRAGMA user_version").fetchone()[0] not in {0, 1, 2, 3, 4}:
+            version = db.execute("PRAGMA user_version").fetchone()[0]
+            if version not in {0, 1, 2, 3, 4, 5}:
                 raise ValueError("unsupported repository schema")
+            if version == 5:
+                reference = db.execute("SELECT * FROM admission_store WHERE id=1").fetchone()
+                if reference is None:
+                    raise IntegrityError("missing admission store reference")
+                if reference["state"] == "ready":
+                    self.admission = self._admission(reference["identity"])
+                    self.admission.snapshot()
+                    return
             db.execute("PRAGMA journal_mode=WAL")
             db.execute("BEGIN IMMEDIATE")
             try:
                 version = db.execute("PRAGMA user_version").fetchone()[0]
-                if version not in {0, 1, 2, 3, 4}:
+                if version not in {0, 1, 2, 3, 4, 5}:
                     raise ValueError("unsupported repository schema")
+                if version == 5:
+                    db.execute("COMMIT")
+                    self._initialize_admission()
+                    return
                 # execute(), rather than executescript(), preserves this migration's transaction.
                 for statement in SCHEMA.split(";"):
                     if statement.strip():
@@ -165,49 +179,59 @@ class Repository:
                         "FROM builds GROUP BY " + column,
                         (scope,),
                     )
-                db.execute("PRAGMA user_version=4")
+                db.execute("CREATE TABLE admission_store ("
+                           "id INTEGER PRIMARY KEY CHECK(id=1), identity TEXT NOT NULL,"
+                           "state TEXT NOT NULL CHECK(state IN ('pending','ready')))")
+                db.execute("INSERT INTO admission_store VALUES(1,?,'pending')", (uuid.uuid4().hex,))
+                # Commit the pending marker before copying. Old code rejects version 5;
+                # new processes finish migration before accepting any work.
+                db.execute("PRAGMA user_version=5")
                 db.execute("COMMIT")
             except BaseException:
-                db.execute("ROLLBACK")
+                if db.in_transaction:
+                    db.execute("ROLLBACK")
                 raise
+        self._initialize_admission()
 
-    @staticmethod
-    def policy(db) -> QuotaPolicy:
-        row = db.execute("SELECT policy FROM quota_policy WHERE id=1").fetchone()
-        if row is None:
-            raise IntegrityError("missing quota policy")
+    def _admission(self, identity: str) -> AdmissionStore:
+        return AdmissionStore(self.path.with_name(self.path.name + ".admission"), identity)
+
+    def _initialize_admission(self):
+        with self.transaction() as db:
+            row = db.execute("SELECT * FROM admission_store WHERE id=1").fetchone()
+            if row is None:
+                raise IntegrityError("missing admission store reference")
+            self.admission = self._admission(row["identity"])
+            if row["state"] == "pending":
+                self.admission.initialize(db)
+                for table in ("quota_policy", "quota_changes", "request_buckets"):
+                    db.execute(f"DROP TABLE {table}")
+                db.execute("UPDATE admission_store SET state='ready' WHERE id=1")
+            else:
+                self.admission.snapshot()
+
+    def policy(self) -> QuotaPolicy:
         try:
-            return QuotaPolicy.model_validate(bounded_json(row["policy"], max_bytes=16 * 1024))
-        except ValueError as error:
-            raise IntegrityError("invalid quota policy") from error
+            with self.admission.connection() as db:
+                return self.admission.policy(db)
+        except (sqlite3.Error, OSError) as error:
+            raise IntegrityError("capacity policy is unavailable") from error
 
     def read_quotas(self, *, shop: str | None = None, identity: str | None = None) -> dict:
         """Local operator API; never exposed through shop grants."""
+        capacity = self.admission.snapshot()
         with self.connection() as db:
             db.execute("BEGIN")
-            generation = db.execute("SELECT generation FROM quota_policy WHERE id=1").fetchone()[0]
-            return {
-                "generation": generation, "policy": self.policy(db).model_dump(mode="json"),
-                "usage": quota_usage(db, at=now(), shop=shop, identity=identity),
-            }
+            usage = quota_usage(db, at=now(), shop=shop, identity=identity)
+        usage["deployment"]["request_buckets"] = capacity.pop("request_buckets")
+        return {**capacity, "usage": usage}
 
     def set_quotas(self, policy: QuotaPolicy, *, expected_generation: int) -> dict:
-        policy = QuotaPolicy.model_validate(policy.model_dump(mode="python"))
-        payload = canonical_json(policy)
-        with self.transaction() as db:
-            generation = db.execute("SELECT generation FROM quota_policy WHERE id=1").fetchone()[0]
-            if generation != expected_generation:
-                raise Conflict("quota policy changed; read its generation before updating")
-            update_request_rates(db, self.policy(db).requests, policy.requests)
-            db.execute(
-                "UPDATE quota_policy SET generation=?,policy=? WHERE id=1",
-                (generation + 1, payload),
-            )
-            db.execute(
-                "INSERT INTO quota_changes VALUES(?,?,?)",
-                (generation + 1, payload, now().isoformat()),
-            )
-            return {"generation": generation + 1, "policy": policy.model_dump(mode="json")}
+        try:
+            return self.admission.set_policy(policy, expected_generation=expected_generation,
+                                             at=now().isoformat())
+        except PolicyConflict as error:
+            raise Conflict(str(error)) from error
 
     @contextmanager
     def connection(self, *, timeout=5):
@@ -321,12 +345,12 @@ class Repository:
     def claim(self, build_id: str, seconds: float) -> tuple[str, SourceProject]:
         with self.transaction() as db:
             row = db.execute("SELECT * FROM builds WHERE id=?", (build_id,)).fetchone()
-            return self._claim(db, row, seconds, self.policy(db))
+            return self._claim(db, row, seconds, self.policy())
 
     def claim_next(self, seconds: float) -> tuple[str, str, SourceProject] | None:
         """Select and claim one eligible job atomically across all broker processes."""
         with self.transaction() as db:
-            policy = self.policy(db)
+            policy = self.policy()
             running = db.execute("SELECT COUNT(*) FROM builds WHERE state='running'").fetchone()[0]
             if running >= policy.deployment.running_builds:
                 return None
@@ -439,7 +463,7 @@ class ShopService:
             ).fetchone()
             if not existing:
                 admit_source(
-                    db, self.repository.policy(db), project.shop_id, principal.subject, len(payload)
+                    db, self.repository.policy(), project.shop_id, principal.subject, len(payload)
                 )
             if row is None:
                 db.execute("INSERT INTO shops(id) VALUES(?)", (project.shop_id,))
@@ -493,7 +517,7 @@ class ShopService:
                     )
             build_id = uuid.uuid4().hex
             at = now()
-            admit_build(db, self.repository.policy(db), shop, principal.subject, at)
+            admit_build(db, self.repository.policy(), shop, principal.subject, at)
             # Full source decoding is reserved for an admitted new build. A
             # saturated caller cannot hold the write lock repeatedly parsing it.
             self.repository.source(db, shop, revision)

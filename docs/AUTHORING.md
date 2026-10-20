@@ -203,11 +203,25 @@ pressure, eviction, requests from multiple shops, and quotas. See
 
 ## Storage, authorization, and recovery
 
-The default database is `.local/chipload.db`, opened with owner-only permissions.
-Use `--database PATH` before the subcommand to select another database. SQLite
-transactions preserve source revisions, build states, publication history, and
-an audit trail. This is single-node storage. Live backup must use SQLite's backup
-mechanism, not an uncoordinated copy of the main file while WAL writes continue.
+The default repository uses `.local/chipload.db` for shop data and
+`.local/chipload.db.admission` for capacity policy, policy history, and request
+balances. Both files have owner-only permissions. Use `--database PATH` before
+the subcommand to select another repository; its capacity store is always
+`PATH.admission`. A persistent identity pairs the files. Missing or mismatched
+capacity storage stops startup and request admission; it is never silently
+recreated with fresh allowances.
+
+This is single-node storage. SQLite transactions preserve source revisions,
+build states, publication history, and an audit trail. The separate capacity
+store lets request admission proceed during shop writes. For backup or restore,
+stop all API, broker, and local writer processes and preserve both databases as
+one recovery set. Use [SQLite's backup API](https://www.sqlite.org/backup.html)
+for each file while writers remain stopped. Do not copy only the main files
+while uncheckpointed [WAL data](https://www.sqlite.org/wal.html#the_wal_file)
+exists. Restore both files from the same recovery set with their expected names
+and private permissions. Pairing rejects another repository's store, but cannot
+detect an older copy from the same repository. Automated backup/restore
+qualification remains deployment work.
 
 `ShopService` requires these independent grants:
 
@@ -252,7 +266,7 @@ recovery continuously. The local CLI also supports explicit operator recovery.
 
 ## Authoring and build quotas
 
-Platform capacity policy is stored in the repository and applies below REST,
+Platform capacity policy is stored in the paired capacity database and applies below REST,
 MCP, and the local shop services. A verified identity's usage spans its shops.
 Shop business terms remain in the Python shop model.
 
@@ -273,9 +287,12 @@ Expired running jobs retain their slots and reservations until their containers
 have been removed and failure recorded. Quotas do not silently discard source,
 reports, publications, rollback history, or accepted work.
 
-Admission, policy checks, and dispatch claims use one
-[SQLite write transaction](https://www.sqlite.org/lang_transaction.html).
-Separate API/broker processes cannot race past the limits. Dispatch selects an
+Source/build usage checks, admissions, and dispatch claims use a
+[SQLite write transaction](https://www.sqlite.org/lang_transaction.html) in the
+shop database. Each reads a committed policy snapshot from the capacity store;
+an admission already in progress may finish under its earlier policy when the
+operator changes limits. Separate API/broker processes cannot race past a shared
+usage limit. Dispatch selects an
 eligible shop with the oldest dispatch turn, then identity turn and queued
 time/ID. New queues start at the current turn so creating new shops does not
 jump ahead of waiting queues. This is fairness of job dispatch, not equal CPU
@@ -294,7 +311,9 @@ uv run python -m chipload.local --database .local/chipload.db quotas \
 ```
 
 Output contains the policy generation, the complete `policy` object, deployment
-usage, and requested shop/identity usage. Save an edited **policy object only**
+usage, and requested shop/identity usage. Policy/request balances and shop/build
+usage are read in separate snapshots, not one transaction across both files.
+Save an edited **policy object only**
 to `.local/quota-policy.json`, then apply it using the generation just read:
 
 ```sh
@@ -313,14 +332,18 @@ The policy's `requests` object controls shared HTTP and mutation rates; see
 and no-op calls, independently of source/build storage and job quotas. Deployment
 usage also reports the number of retained request buckets.
 
-Opening an older database upgrades schema 0/1/2/3 to schema 4 in one transaction.
-Build requester identities are recovered from request audit events, falling
-back to source ownership or a shared `legacy` identity when necessary. Existing
-usage may exceed the defaults and is preserved. Existing quota policies gain
-default request limits. Before upgrading a deployment,
-stop old API/broker processes and make a consistent backup. Do not run old code
-alongside the new schema. SQLite remains a single-node database; this does not
-establish safe use over a network filesystem or across independent databases.
+Opening schema 0–4 upgrades the shop database to schema 5 and creates the paired
+capacity store. Migration first commits a pending marker, copies policy,
+history, and request balances, then marks the pair ready and removes the old
+tables. Interrupted startup resumes that copy before serving requests. Existing
+limits, policy generations, and spent allowances are preserved. Older stores
+without request policy gain defaults. Build requester identities are recovered
+from request audit events, falling back to source ownership or a shared `legacy`
+identity when necessary. Existing usage may exceed defaults and is preserved.
+Before upgrading, stop old API/broker processes and make a consistent backup.
+Do not run old code alongside the new schema. SQLite remains single-node
+storage; this does not establish safe use over a network filesystem or across
+independent repositories.
 
 Payload quotas exclude SQLite/WAL/index overhead, observation snapshots, and
 audit/publication history. Network-edge controls, filesystem quotas,

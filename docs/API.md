@@ -317,12 +317,15 @@ trusted services directly and is outside HTTP rate accounting.
 
 Operators edit `policy.requests` using the existing
 [`quotas` and `set-quotas` commands](AUTHORING.md#authoring-and-build-quotas).
-The same database stores policy and balances. Checks and debits use a
+The paired `PATH.admission` database stores policy and balances. Checks and debits use a
 [SQLite write transaction](https://www.sqlite.org/lang_transaction.html), so
 API processes and restarts share the allowance. A failed combined check charges
 none of its buckets. Later authentication, validation, or domain failures do not
 refund earlier admission. Policy edits retain spent credit, capped by the new
 burst, and update existing refill rates and expiration times atomically.
+Shop source/build/publication writes use the main database and do not acquire
+this accounting lock. Both files must be preserved together; see
+[storage and recovery](AUTHORING.md#storage-authorization-and-recovery).
 
 The peer is the ASGI connection address. IPv4-mapped IPv6 is normalized to IPv4;
 IPv6 addresses share a `/64` allowance. Missing/invalid peers share one fallback
@@ -358,18 +361,27 @@ Measure the limiter separately from HTTP, authentication, and shop evaluation:
 ```sh
 uv run python scripts/benchmark-requests --calls 2000 --processes 4
 uv run python scripts/benchmark-requests --calls 2000 --processes 4 --policy defaults
+uv run python scripts/benchmark-requests --calls 2000 --processes 4 --shop-writer
 ```
 
-On the development host (Python 3.14.6), the capacity run used raised request
-allowances and admitted 1,909 calls in 4.05 seconds including process startup;
-91 calls returned capacity errors. Median admission latency was 2.28 ms and
-p95 was 51.11 ms. With default allowances, 440 calls were admitted, 1,520
-rate-limited, and 40 returned capacity errors in 2.90 seconds. The initial burst
-is included in those counts. These component measurements expose SQLite write
-contention; they are not HTTP throughput or a production capacity target.
-Admission currently shares the shop database's write lock. A long authoring or
-broker write can therefore produce temporary 503 responses on public reads.
-Reducing that contention is part of deployment performance qualification.
+Measurements on the development host (Python 3.14.6), with four spawned processes
+and 2,000 calls per run:
+
+| Policy / shop write lock | Accepted | Rate-limited | Capacity errors | Elapsed including startup | Median / p95 admission |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Raised allowances / free | 1,903 | 0 | 97 | 3.98 s | 2.04 / 51.10 ms |
+| Defaults / free | 421 | 1,546 | 33 | 2.78 s | 1.08 / 20.26 ms |
+| Raised allowances / held | 1,912 | 0 | 88 | 4.24 s | 2.23 / 51.05 ms |
+
+The capacity policy raises deployment/peer refill to 60,000 per minute and burst
+to 10,000. Each worker has a 512 MiB address-space limit and 20-second CPU limit.
+Counts include the initial burst. These component measurements expose SQLite
+write contention; they are not HTTP throughput or a production capacity target.
+The `--shop-writer` variant holds the shop database write lock throughout the
+run, including worker startup. Request accounting uses its separate store, so
+that lock does not prevent admission. Contention between request writers can
+still produce temporary 503 responses; deployment performance qualification
+remains open.
 
 ## Verification
 
@@ -383,7 +395,9 @@ Tests exercise signed-token failures, shop/role intersections, REST/MCP result
 parity, public filtering, pagination, revision conflicts, observation freshness,
 the official MCP client over real HTTP, and real Keycloak-issued tokens.
 Request-limit tests also launch two independent HTTP server processes, share
-one allowance, restart a process, and verify that published data remains intact.
+one allowance, restart a process, and read published data while a shop write is
+open. Migration tests cover interrupted copies, competing processes, preserved
+allowances, and missing or mismatched capacity stores.
 The opt-in agent lifecycle test uses the official client and a separate broker
 process to save broken source, inspect a failed container build, repair it,
 publish, update, roll back, and withdraw; an ordinary HTTP client checks discovery.

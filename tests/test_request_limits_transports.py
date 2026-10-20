@@ -137,7 +137,7 @@ class RequestLimitTransportTests(unittest.TestCase):
         self.assertEqual(saved.status_code, 200)
 
     def test_database_contention_returns_retryable_http_errors_before_either_protocol(self):
-        with self.operations.service.repository.transaction():
+        with self.operations.service.repository.admission.transaction():
             rest = self.client.get("/v1/shops/thermal-example/catalog")
             mcp = self.mcp("shop_catalog", {"shop_id": "thermal-example"})
         self.assertEqual(rest.status_code, 503)
@@ -146,6 +146,15 @@ class RequestLimitTransportTests(unittest.TestCase):
         self.assertEqual(rest.json()["error"]["code"], "request_capacity")
         self.assertEqual(rest.headers["Retry-After"], "1")
         self.assertEqual(self.client.get("/v1/shops/thermal-example/catalog").status_code, 200)
+
+    def test_shop_write_lock_preserves_public_rest_and_mcp_reads(self):
+        with self.operations.service.repository.transaction() as db:
+            db.execute("UPDATE shops SET head=head WHERE id='thermal-example'")
+            rest = self.client.get("/v1/shops/thermal-example/catalog")
+            mcp = self.mcp("shop_catalog", {"shop_id": "thermal-example"})
+        self.assertEqual(rest.status_code, 200, rest.text)
+        self.assertEqual(mcp.status_code, 200, mcp.text)
+        self.assertEqual(mcp.json()["result"]["structuredContent"], rest.json())
 
     def test_allowed_browser_origin_can_read_rate_errors_and_retry_header(self):
         self.policy(peer={"burst": 1})
