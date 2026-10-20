@@ -23,6 +23,7 @@ from .discovery import public_catalog
 from .limits import bounded_json
 from .model import Id, Model, Timestamp
 from .project import MAX_OUTPUT_BYTES, MAX_PROJECT_BYTES, BuildReport, SourceProject
+from .quotas import QUOTA_SCHEMA, QuotaPolicy, admit_build, admit_running, admit_source, quota_usage
 from .sandbox import DockerBuilder
 from .validation import Diagnostic
 
@@ -94,6 +95,7 @@ CREATE TABLE IF NOT EXISTS audit (
     sequence INTEGER PRIMARY KEY AUTOINCREMENT, shop_id TEXT NOT NULL REFERENCES shops(id),
     actor TEXT NOT NULL, action TEXT NOT NULL, target TEXT NOT NULL, time TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS audit_build_origin ON audit(action,target,shop_id,sequence);
 CREATE TABLE IF NOT EXISTS observation_heads (
     shop_id TEXT PRIMARY KEY REFERENCES shops(id), revision TEXT NOT NULL,
     observations BLOB NOT NULL, updated_at TEXT NOT NULL
@@ -120,12 +122,90 @@ class Repository:
         finally:
             os.close(fd)
         with self.connection() as db:
-            version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in {0, 1, 2}:
+            if db.execute("PRAGMA user_version").fetchone()[0] not in {0, 1, 2, 3}:
                 raise ValueError("unsupported repository schema")
             db.execute("PRAGMA journal_mode=WAL")
-            db.executescript(SCHEMA)
-            db.execute("PRAGMA user_version=2")
+            db.execute("BEGIN IMMEDIATE")
+            try:
+                version = db.execute("PRAGMA user_version").fetchone()[0]
+                if version not in {0, 1, 2, 3}:
+                    raise ValueError("unsupported repository schema")
+                # execute(), rather than executescript(), preserves this migration's transaction.
+                for statement in SCHEMA.split(";"):
+                    if statement.strip():
+                        db.execute(statement)
+                columns = {row["name"] for row in db.execute("PRAGMA table_info(builds)")}
+                if "actor" not in columns:
+                    db.execute("ALTER TABLE builds ADD COLUMN actor TEXT NOT NULL DEFAULT 'legacy'")
+                    db.execute(
+                        "UPDATE builds SET actor=COALESCE("
+                        "(SELECT actor FROM audit WHERE action='build.requested' "
+                        "AND target=builds.id AND shop_id=builds.shop_id ORDER BY sequence LIMIT 1),"
+                        "(SELECT actor FROM sources WHERE shop_id=builds.shop_id "
+                        "AND revision=builds.source_revision),'legacy')"
+                    )
+                for statement in QUOTA_SCHEMA.split(";"):
+                    if statement.strip():
+                        db.execute(statement)
+                db.execute(
+                    "INSERT OR IGNORE INTO quota_policy VALUES(1,0,?)",
+                    (canonical_json(QuotaPolicy()),),
+                )
+                db.execute(
+                    "INSERT OR IGNORE INTO quota_changes "
+                    "SELECT generation,policy,? FROM quota_policy WHERE id=1",
+                    (now().isoformat(),),
+                )
+                db.execute("INSERT OR IGNORE INTO dispatch_clock VALUES(1,0)")
+                for scope, column in (("shop", "shop_id"), ("identity", "actor")):
+                    db.execute(
+                        "INSERT OR IGNORE INTO dispatch_turns "
+                        f"SELECT ?,{column},(SELECT turn FROM dispatch_clock WHERE id=1) "
+                        "FROM builds GROUP BY " + column,
+                        (scope,),
+                    )
+                db.execute("PRAGMA user_version=3")
+                db.execute("COMMIT")
+            except BaseException:
+                db.execute("ROLLBACK")
+                raise
+
+    @staticmethod
+    def policy(db) -> QuotaPolicy:
+        row = db.execute("SELECT policy FROM quota_policy WHERE id=1").fetchone()
+        if row is None:
+            raise IntegrityError("missing quota policy")
+        try:
+            return QuotaPolicy.model_validate(bounded_json(row["policy"], max_bytes=16 * 1024))
+        except ValueError as error:
+            raise IntegrityError("invalid quota policy") from error
+
+    def read_quotas(self, *, shop: str | None = None, identity: str | None = None) -> dict:
+        """Local operator API; never exposed through shop grants."""
+        with self.connection() as db:
+            db.execute("BEGIN")
+            generation = db.execute("SELECT generation FROM quota_policy WHERE id=1").fetchone()[0]
+            return {
+                "generation": generation, "policy": self.policy(db).model_dump(mode="json"),
+                "usage": quota_usage(db, at=now(), shop=shop, identity=identity),
+            }
+
+    def set_quotas(self, policy: QuotaPolicy, *, expected_generation: int) -> dict:
+        policy = QuotaPolicy.model_validate(policy.model_dump(mode="python"))
+        payload = canonical_json(policy)
+        with self.transaction() as db:
+            generation = db.execute("SELECT generation FROM quota_policy WHERE id=1").fetchone()[0]
+            if generation != expected_generation:
+                raise Conflict("quota policy changed; read its generation before updating")
+            db.execute(
+                "UPDATE quota_policy SET generation=?,policy=? WHERE id=1",
+                (generation + 1, payload),
+            )
+            db.execute(
+                "INSERT INTO quota_changes VALUES(?,?,?)",
+                (generation + 1, payload, now().isoformat()),
+            )
+            return {"generation": generation + 1, "policy": policy.model_dump(mode="json")}
 
     @contextmanager
     def connection(self):
@@ -239,17 +319,51 @@ class Repository:
     def claim(self, build_id: str, seconds: float) -> tuple[str, SourceProject]:
         with self.transaction() as db:
             row = db.execute("SELECT * FROM builds WHERE id=?", (build_id,)).fetchone()
-            record = self.build_record(row)
-            if record.state != "queued":
-                raise Conflict("build has already been claimed")
-            token = uuid.uuid4().hex
-            deadline = now() + timedelta(seconds=seconds)
+            return self._claim(db, row, seconds, self.policy(db))
+
+    def claim_next(self, seconds: float) -> tuple[str, str, SourceProject] | None:
+        """Select and claim one eligible job atomically across all broker processes."""
+        with self.transaction() as db:
+            policy = self.policy(db)
+            running = db.execute("SELECT COUNT(*) FROM builds WHERE state='running'").fetchone()[0]
+            if running >= policy.deployment.running_builds:
+                return None
+            row = db.execute(
+                "SELECT b.* FROM builds b "
+                "JOIN dispatch_turns s ON s.scope='shop' AND s.subject=b.shop_id "
+                "JOIN dispatch_turns a ON a.scope='identity' AND a.subject=b.actor "
+                "WHERE b.state='queued' "
+                "AND (SELECT COUNT(*) FROM builds r WHERE r.state='running' "
+                "AND r.shop_id=b.shop_id)<? "
+                "AND (SELECT COUNT(*) FROM builds r WHERE r.state='running' AND r.actor=b.actor)<? "
+                "ORDER BY s.turn,a.turn,b.created_at,b.id LIMIT 1",
+                (policy.shop.running_builds, policy.identity.running_builds),
+            ).fetchone()
+            if row is None:
+                return None
+            claim, source = self._claim(db, row, seconds, policy)
+            return row["id"], claim, source
+
+    def _claim(self, db, row, seconds: float, policy: QuotaPolicy) -> tuple[str, SourceProject]:
+        record = self.build_record(row)
+        if record.state != "queued":
+            raise Conflict("build has already been claimed")
+        admit_running(db, policy, record.shop_id, row["actor"])
+        token = uuid.uuid4().hex
+        deadline = now() + timedelta(seconds=seconds)
+        db.execute(
+            "UPDATE builds SET state='running',claim=?,deadline=? WHERE id=?",
+            (token, deadline.isoformat(), record.id),
+        )
+        db.execute("UPDATE dispatch_clock SET turn=turn+1 WHERE id=1")
+        turn = db.execute("SELECT turn FROM dispatch_clock WHERE id=1").fetchone()[0]
+        for scope, subject in (("shop", record.shop_id), ("identity", row["actor"])):
             db.execute(
-                "UPDATE builds SET state='running',claim=?,deadline=? WHERE id=?",
-                (token, deadline.isoformat(), build_id),
+                "UPDATE dispatch_turns SET turn=? WHERE scope=? AND subject=?",
+                (turn, scope, subject),
             )
-            self.event(db, record.shop_id, "worker", "build.started", build_id)
-            return token, self.source(db, record.shop_id, record.source_revision).project
+        self.event(db, record.shop_id, "worker", "build.started", record.id)
+        return token, self.source(db, record.shop_id, record.source_revision).project
 
     def finish(self, build_id: str, claim: str, report: BuildReport) -> None:
         report = BuildReport.model_validate(report.model_dump(mode="python"))
@@ -310,10 +424,21 @@ class ShopService:
         project = SourceProject.model_validate(project.model_dump(mode="python"))
         bounded_json(project.to_json(), max_bytes=MAX_PROJECT_BYTES)
         revision = project.revision
+        payload = project.to_json()
         with self.repository.transaction() as db:
             row = db.execute("SELECT head FROM shops WHERE id=?", (project.shop_id,)).fetchone()
             if (row["head"] if row else None) != expected_head:
                 raise Conflict("source head changed; read it before saving again")
+            if row and row["head"] == revision:
+                return self.repository.source(db, project.shop_id, revision)
+            existing = db.execute(
+                "SELECT 1 FROM sources WHERE shop_id=? AND revision=?",
+                (project.shop_id, revision),
+            ).fetchone()
+            if not existing:
+                admit_source(
+                    db, self.repository.policy(db), project.shop_id, principal.subject, len(payload)
+                )
             if row is None:
                 db.execute("INSERT INTO shops(id) VALUES(?)", (project.shop_id,))
             db.execute(
@@ -321,7 +446,7 @@ class ShopService:
                 (
                     project.shop_id,
                     revision,
-                    project.to_json(),
+                    payload,
                     now().isoformat(),
                     principal.subject,
                 ),
@@ -344,7 +469,13 @@ class ShopService:
         if request_key is not None and not 1 <= len(request_key) <= 100:
             raise ValueError("invalid build request key")
         with self.repository.transaction() as db:
-            self.repository.source(db, shop, revision)
+            if (
+                db.execute(
+                    "SELECT 1 FROM sources WHERE shop_id=? AND revision=?", (shop, revision)
+                ).fetchone()
+                is None
+            ):
+                raise NotFound("source revision not found")
             if request_key is not None:
                 prior = db.execute(
                     "SELECT * FROM build_requests WHERE shop_id=? AND actor=? AND request_key=?",
@@ -359,17 +490,22 @@ class ShopService:
                         ).fetchone()
                     )
             build_id = uuid.uuid4().hex
-            pending = db.execute(
-                "SELECT COUNT(*) FROM builds WHERE shop_id=? AND state IN ('queued','running')",
-                (shop,),
-            ).fetchone()[0]
-            if pending >= 10:
-                raise Conflict("shop already has ten pending builds")
+            at = now()
+            admit_build(db, self.repository.policy(db), shop, principal.subject, at)
+            # Full source decoding is reserved for an admitted new build. A
+            # saturated caller cannot hold the write lock repeatedly parsing it.
+            self.repository.source(db, shop, revision)
             db.execute(
-                "INSERT INTO builds(id,shop_id,source_revision,state,created_at) "
-                "VALUES(?,?,?,'queued',?)",
-                (build_id, shop, revision, now().isoformat()),
+                "INSERT INTO builds(id,shop_id,source_revision,state,created_at,actor) "
+                "VALUES(?,?,?,'queued',?,?)",
+                (build_id, shop, revision, at.isoformat(), principal.subject),
             )
+            # New queues join the current turn, never jump ahead with a zero priority.
+            turn = db.execute("SELECT turn FROM dispatch_clock WHERE id=1").fetchone()[0]
+            for scope, subject in (("shop", shop), ("identity", principal.subject)):
+                db.execute(
+                    "INSERT OR IGNORE INTO dispatch_turns VALUES(?,?,?)", (scope, subject, turn)
+                )
             self.repository.event(db, shop, principal.subject, "build.requested", build_id)
             if request_key is not None:
                 db.execute(
@@ -501,6 +637,16 @@ class BuildProcessor:
 
     def run(self, build_id: str) -> None:
         claim, project = self.repository.claim(build_id, self.builder.seconds + 60)
+        self._run_claimed(build_id, claim, project)
+
+    def run_next(self) -> bool:
+        selected = self.repository.claim_next(self.builder.seconds + 60)
+        if selected is None:
+            return False
+        self._run_claimed(*selected)
+        return True
+
+    def _run_claimed(self, build_id: str, claim: str, project: SourceProject) -> None:
         try:
             report = self.builder.build(project, job_id=build_id)
             if len(report.model_dump_json().encode()) > MAX_OUTPUT_BYTES:

@@ -53,8 +53,7 @@ inspection, and an outsourced finishing service. Its acceptance scenarios are
 in [scenarios.py](../examples/reference_shop/scenarios.py). All values and evidence
 in that example are fictional and explicitly simulated.
 
-The [Swiss-shop profile](../examples/swiss_profile.py) is an anonymized model of
-reported shop practices. It contains shop variables, broad process descriptions,
+The [Swiss shop](../examples/swiss_profile.py) contains shop variables, process descriptions,
 and business policies. Its missing machine inventory, site information,
 specific alloy qualifications, and tolerances remain missing.
 

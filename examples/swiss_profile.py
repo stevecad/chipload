@@ -1,8 +1,4 @@
-"""Shop variables based on a reported Swiss machining business.
-
-The identity is anonymized. These are declared practices and approximate limits,
-not verified manufacturing qualifications. No intake or order processing occurs.
-"""
+"""Swiss shop variables and business rules."""
 
 from datetime import datetime, timezone
 
@@ -38,9 +34,9 @@ def variable(
 def define_shop() -> Shop:
     return Shop(
         id="swiss-example",
-        name="Swiss Machining Profile Example",
+        name="Swiss shop",
         visibility="public",
-        description="An anonymized interpretation of a shop's reported practices.",
+        description="Swiss lathe machining and business practices.",
         # No site, machine inventory, timezone, specific grades, tolerances, or
         # certifications were supplied. Leave them unknown.
         processes=(

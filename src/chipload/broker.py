@@ -6,24 +6,13 @@ import signal
 import threading
 from pathlib import Path
 
-from .lifecycle import BuildProcessor, Conflict, Repository
+from .lifecycle import BuildProcessor, Repository
 from .sandbox import DockerBuilder, WorkerEnvironment
 
 
 def process_next(processor: BuildProcessor) -> bool:
     processor.recover_expired()
-    with processor.repository.connection() as db:
-        row = db.execute(
-            "SELECT id FROM builds WHERE state='queued' ORDER BY created_at,id LIMIT 1"
-        ).fetchone()
-    if row is None:
-        return False
-    try:
-        processor.run(row["id"])
-    except Conflict:
-        # A second broker may have claimed the selected job.
-        pass
-    return True
+    return processor.run_next()
 
 
 def main():

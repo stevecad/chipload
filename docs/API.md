@@ -6,7 +6,7 @@ revisions. Public discovery works without authentication or an agent.
 
 The current server is a local development runtime. It binds to loopback and does
 not import shop source or invoke Docker. A separate broker processes build jobs.
-Production packaging, TLS deployment, distributed quotas, stronger isolation,
+Production packaging, TLS deployment, ingress rate limits, stronger isolation,
 recovery exercises, and load/security qualification remain on the roadmap.
 
 ## Start the services
@@ -26,10 +26,12 @@ uv run python -m chipload.broker
 ```
 
 The server and broker default to `.local/chipload.db`. The broker requires Docker
-access and `.local/worker-image`; the server requires neither. It recovers expired
-claims and processes queued builds one at a time. Multiple brokers use guarded
-claims. Shutdown lets the current bounded job finish. `--once` processes at most
-one queued job, which is useful in tests. Each shop may have ten pending builds.
+access and `.local/worker-image`; the server requires neither. Each broker recovers
+expired claims and processes one build at a time. Multiple brokers share atomic
+dispatch and running-job limits in the database. Eligible shops rotate by their
+last dispatch turn, with identity turns and queued time breaking ties. New
+queues join at the current turn. Shutdown lets the current bounded job finish.
+`--once` processes at most one eligible job, which is useful in tests.
 
 Use the [local authoring walkthrough](AUTHORING.md) to publish an example before
 trying anonymous discovery. Publication through that CLI and through the network
@@ -254,8 +256,24 @@ evaluation, and acceptance-suite limits are exposed by `sdk_reference`; see
 [build contracts](AUTHORING.md#project-and-build-contracts).
 
 These initial bounds do not constitute internet load qualification. Data
-processing still needs deployment process limits, per-identity/shop quotas,
-fair queueing, and concurrent load verification.
+processing still needs deployment process limits, request-rate controls,
+and concurrent load verification.
+
+Source/build admission uses durable quotas shared by every API and broker using
+the same database. Limits apply to the deployment, shop, and verified identity;
+switching transports or shops does not reset identity usage. Rejections use
+HTTP 429 `quota_exceeded` with `quota` and `retry_after` in the error object. REST
+also supplies `Retry-After` when retrying later can help; MCP uses the same error
+and structured status 429. Storage/retained-record limits have `retry_after: null`
+and require operator action. No rejected build is created or charged.
+
+Reusing an accepted build's request key still returns that build when quotas are
+full. Reusing the key for a different source remains a 409 conflict. Keep the
+same key when retrying an uncertain submission; a new key requests a new build.
+See [quota defaults and operator controls](AUTHORING.md#authoring-and-build-quotas).
+These controls cover source/build storage and work admission. Public-request
+rate limits, other mutation rates, filesystem quotas, and retention/backup
+operations remain deployment work.
 
 Validated terminal build records and serialized public catalogs share a bounded
 process-local LRU cache. `data_cache_bytes` defaults to 33,554,432 (32 MiB);

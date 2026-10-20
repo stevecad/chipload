@@ -8,18 +8,19 @@ A shop definition covers resources, manufacturing processes, materials, tooling,
 
 The current stage focuses on the shop itself and all its variables. Include material preferences/exclusions, prototype and production work, recurring contracts, release schedules, inventory services, and qualified service expectations. RFQ intake and processing are deferred. Model reported practices faithfully without turning approximate limits or typical behavior into guarantees.
 
-Steve's CadQuery authoring workflow is a conceptual reference: source code is authoritative, builds produce revisioned artifacts, and diagnostics let an agent repair its work. Steve code is not an implementation dependency. Steve integration comes later.
+Steve integration is planned for a later stage.
 
 ## Current state
 
 - The repository has issue-driven contributor tooling and a legacy v0.1.0 data specification.
 - Local Compose infrastructure provides Keycloak, PostgreSQL, and OpenBao, with bootstrap and access-denial tests.
-- The experimental Python SDK, validation, artifact codec, evaluator, contextual variable queries, and public catalog projection are implemented. A fictional shop has sixteen executable manufacturing scenarios; a heat-treatment-only example adds nine scenarios; an anonymized Swiss-shop profile adds business variables and preserves uncertainty. Tests also cover a document-review service with no physical resources or materials.
+- The experimental Python SDK, validation, artifact codec, evaluator, contextual variable queries, and public catalog projection are implemented. A fictional shop has sixteen executable manufacturing scenarios; a heat-treatment-only example adds nine scenarios; the Swiss shop example covers shop variables and business rules. Tests also cover a document-review service with no physical resources or materials.
 - The process library adds 88 process projects and one mixed shop with 2,147 technical/business cases. Every project has prototype/production acceptance conditions, contextual business variables, and portable Python source. The mixed shop models shared equipment and explicit route compatibility. Exact quantity increments support whole-item business rules without introducing shop types into the engine. See `docs/PROCESS_EXAMPLES.md`.
 - A local application service now stores immutable source revisions, durable build jobs, exact publications, rollback/withdrawal, and audit events. It enforces shop/action grants. A restricted Docker worker and broker build Python projects; the broker validates models and acceptance results. Real-container tests cover hostile source and the publication lifecycle.
 - REST/OpenAPI and Streamable HTTP MCP share discovery, evaluation, authoring, publication, evidence, and observation operations. The server verifies Keycloak access tokens and applies explicit shop grants; a separate broker processes queued jobs. Public results have a distinct privacy projection.
 - Data boundaries now enforce JSON depth/token/number limits, model collection limits, bounded diagnostics, and deterministic evaluation/result/acceptance-suite budgets. Graph ordering avoids repeated scans. Adversarial parser, graph, transport, and container tests cover rejection and continued operation.
-- Bounded caches retain validated immutable builds and public catalog bytes while database publication selection, report integrity, permissions, observations, and evaluation time remain live. Concurrent misses share validation; saturation is retryable. `scripts/benchmark-data --service` measures compact/large-catalog reads with retention disabled and enabled. Cold validation, process containment, quotas, and deployment load qualification remain open.
+- Bounded caches retain validated immutable builds and public catalog bytes while database publication selection, report integrity, permissions, observations, and evaluation time remain live. Concurrent misses share validation; saturation is retryable. `scripts/benchmark-data --service` measures compact/large-catalog reads with retention disabled and enabled. Cold validation, process containment, ingress limits, and deployment load qualification remain open.
+- Durable source/build quotas now cover deployment, shop, and verified identity scopes, including pending/running jobs, hourly admissions, retained records, and payload storage reservations. Brokers claim work atomically with persistent dispatch turns. Tests exercise competing processes, transport parity, idempotent retries, migration, and operator policy changes. Request-rate controls and broader deployment storage/retention remain open.
 - Additional dependency environments, custom executable evaluation, production process supervision, privileged equipment adapters, and hardened internet deployment remain to be implemented.
 - No open GitHub issues existed when this plan was written. The milestones below are a local implementation backlog; they have not been published as issues.
 
@@ -155,10 +156,11 @@ Bound model graph complexity and the CPU/memory spent validating worker output a
 see `docs/SHOP_MODEL.md`. `docs/AUTHORING.md` records reproducible data-operation
 measurements. Immutable build/projection caching now reduces repeated-read cost
 under memory and concurrency budgets, with publication/corruption/withdrawal
-tests. Trusted data-process containment, quotas/fair queueing, deployment load
-targets, and concurrent adversarial deployment verification remain open. Do not
-treat the static budgets, cache, or single-process benchmark as completion of
-this milestone.
+tests. Source/build quotas and fair dispatch are enforced across processes using
+the same repository. Trusted data-process containment, ingress and other mutation
+rate controls, broader storage/retention, deployment load targets, and concurrent
+adversarial deployment verification remain open. Do not treat the static budgets,
+cache, build quotas, or single-process benchmark as completion of this milestone.
 
 **Complete when:** a clean installation can be configured from documented inputs; automated security and integration checks pass; backup/restore and credential rotation are exercised; failed identity/secrets dependencies fail safely; deployment tests verify exposed ports and network access; load-test results and operational requirements are documented. Local development settings must not pass production validation.
 
@@ -177,5 +179,4 @@ Update `SPEC.md`, `AGENTS.md`, README, SDK/API reference, deployment instruction
 - Require evidence for claims about physical capabilities and production readiness.
 - Keep REST clients and agent clients equally supported.
 - Record material design decisions and unresolved questions as implementation proceeds.
-- Do not copy Steve code or couple Chipload's runtime to Steve.
 - Do not publish GitHub issues, send messages, or deploy publicly merely because this local roadmap exists; those actions follow the user's authorized task.

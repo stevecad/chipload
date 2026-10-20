@@ -114,8 +114,9 @@ components of 200 characters each, and 1,000 characters per message.
 
 These bounds apply outside the source container as well. They do not provide
 a separate CPU or memory sandbox for the trusted data-validation process.
-Process containment, queue fairness, per-identity/shop quotas, and concurrent
-load qualification remain required before internet deployment.
+Process containment, ingress rate limits, filesystem capacity/retention, and
+concurrent load qualification remain required before internet deployment.
+Authoring/build quotas and dispatch fairness are described below.
 
 ## Container boundary
 
@@ -142,7 +143,7 @@ is disabled; source output is bounded and is not returned through public
 discovery. The Docker broker itself is privileged infrastructure and must remain
 separate from a future public API. Its Docker access must never be delegated to
 shop source. Containers share the host kernel; production isolation, supervision,
-quotas, and deployment validation remain work under the hardening milestone.
+ingress controls, and deployment validation remain work under the hardening milestone.
 
 These controls use Docker's documented
 [runtime restrictions](https://docs.docker.com/engine/containers/run/) and
@@ -230,8 +231,9 @@ principal from request JSON would bypass authorization.
 
 Publication requires a successful build with at least one passing acceptance
 case. Failed builds and draft edits leave the published revision intact.
-Public reads select the publication in one database snapshot and use no process
-cache. Withdrawal removes access for subsequent reads; an already completed
+Public reads select the publication in a current database snapshot and may reuse
+validated immutable data from the bounded cache. Withdrawal removes access for
+subsequent reads; an already completed
 response cannot be recalled. HTTP reads require revalidation and check withdrawal
 before returning 304; private and evaluation responses use `no-store`.
 
@@ -248,11 +250,84 @@ If container removal fails, recovery raises an error and the job remains
 unpublishable. The separate `python -m chipload.broker` queue process performs
 recovery continuously. The local CLI also supports explicit operator recovery.
 
+## Authoring and build quotas
+
+Platform capacity policy is stored in the repository and applies below REST,
+MCP, and the local shop services. A verified identity's usage spans its shops.
+Shop business terms remain in the Python shop model.
+
+| Limit | Deployment | Per shop | Per identity |
+| --- | --- | --- | --- |
+| Pending builds, including running builds | 100 | 10 | 20 |
+| Running builds across all brokers | 2 | 1 | 1 |
+| Accepted builds in the preceding hour | 600 | 60 | 120 |
+| Retained build records | 10,000 | 1,000 | 2,000 |
+| Stored/reserved build report payloads | 2 GiB | 256 MiB | 512 MiB |
+| Retained source revisions | 10,000 | 1,000 | 2,000 |
+| Source payloads | 1 GiB | 128 MiB | 256 MiB |
+
+An accepted job reserves the full 8 MiB report allowance until it finishes.
+The finished report's actual bytes replace that reservation; failures still
+consume their actual storage and count toward the hourly/retained-build limits.
+Expired running jobs retain their slots and reservations until their containers
+have been removed and failure recorded. Quotas do not silently discard source,
+reports, publications, rollback history, or accepted work.
+
+Admission, policy checks, and dispatch claims use one
+[SQLite write transaction](https://www.sqlite.org/lang_transaction.html).
+Separate API/broker processes cannot race past the limits. Dispatch selects an
+eligible shop with the oldest dispatch turn, then identity turn and queued
+time/ID. New queues start at the current turn so creating new shops does not
+jump ahead of waiting queues. This is fairness of job dispatch, not equal CPU
+time: jobs have their own execution limits. Each broker executes one job at a
+time; a larger running limit only helps when additional brokers are deployed.
+The trusted local single-build command may select a specific job but still
+enforces running capacity.
+
+Only the local operator can inspect or change platform quotas; no shop grant,
+REST operation, or MCP tool grants that authority:
+
+```sh
+uv run python -m chipload.local --database .local/chipload.db quotas
+uv run python -m chipload.local --database .local/chipload.db quotas \
+  --shop thermal-example --identity KEYCLOAK_SUBJECT
+```
+
+Output contains the policy generation, the complete `policy` object, deployment
+usage, and requested shop/identity usage. Save an edited **policy object only**
+to `.local/quota-policy.json`, then apply it using the generation just read:
+
+```sh
+uv run python -m chipload.local --database .local/chipload.db set-quotas \
+  .local/quota-policy.json --expected-generation 0
+```
+
+Updates are recorded, guarded against concurrent edits, and visible to all
+processes on their next admission/claim. Lowering a quota blocks new admissions
+as necessary; it does not cancel or erase existing work. A no-op source save
+does not create another revision or audit event. Reusing existing source or
+build request identities does not double-charge admission.
+
+Opening an older database upgrades schema 0/1/2 to schema 3 in one transaction.
+Build requester identities are recovered from request audit events, falling
+back to source ownership or a shared `legacy` identity when necessary. Existing
+usage may exceed the defaults and is preserved. Before upgrading a deployment,
+stop old API/broker processes and make a consistent backup. Do not run old code
+alongside the new schema. SQLite remains a single-node database; this does not
+establish safe use over a network filesystem or across independent databases.
+
+Payload quotas exclude SQLite/WAL/index overhead, observation snapshots, and
+audit/publication history. Ingress limits, other mutation rates, filesystem
+quotas, and tested retention/backup/restore procedures remain required for
+internet deployment. Reaching a retained-data limit requires deliberate
+operator capacity or retention work; automatic history deletion is not provided.
+
 ## Verification
 
 ```sh
 uv run --extra server python -m unittest discover -s tests -v
 CHIPLOAD_WORKER_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_worker_live.py' -v
+CHIPLOAD_WORKER_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_quota_worker_live.py' -v
 ```
 
 Live worker tests require `./scripts/build-worker` first. They cover multiple
@@ -260,3 +335,6 @@ modules and data files, reproducible model/build identities, actual host and
 network access denials, resource configuration, looping and flooding source,
 forged model output, diagnostics, and publication through repair and rollback.
 They use temporary databases and remove only the worker containers they create.
+The queue test starts two real brokers: one holds a looping shop worker while
+the other builds and publishes a different shop. It then stops only the test's
+looping container and checks that its reservation is released normally.

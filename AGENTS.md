@@ -14,7 +14,7 @@ Chipload is becoming a platform for software-defined shops. Read [ROADMAP.md](RO
 - `src/chipload/limits.py`, `complexity.py`, `graph.py`, `tests/test_data_limits.py`: bounded JSON/model admission, deterministic evaluation budgets, and iterative dependency ordering. `scripts/benchmark-data` measures compact and large-catalog workloads under process limits.
 - `src/chipload/cache.py`, `tests/test_cache.py`: bounded immutable data retention and shared cold loads. The database remains authoritative for publication and changing observations; `scripts/benchmark-data --service` compares published reads with and without retention.
 - `examples/reference_shop/`: a fictional shop composed across Python modules and sixteen executable manufacturing scenarios.
-- `examples/swiss_profile.py`: anonymized reported shop characteristics and business policies, preserving approximate and unknown values.
+- `examples/swiss_profile.py`: Swiss shop variables and business rules.
 - `examples/heat_treatment.py`: a fictional heat-treatment-only shop with nine executable scenarios using the same engine.
 - `examples/process_shops/`, `docs/PROCESS_EXAMPLES.md`: 88 process examples and a mixed shop, with 2,147 technical/business cases and portable multi-module source exports. Process families and business templates live only in these example projects.
 - `tests/test_process_shops.py`, `test_process_transports.py`, `test_process_worker_live.py`: complete process/business matrix, REST/MCP parity for every example, and opt-in isolated builds of all exported projects.
@@ -25,6 +25,7 @@ Chipload is becoming a platform for software-defined shops. Read [ROADMAP.md](RO
 - `src/chipload/server.py`, `operations.py`, `responses.py`, `published.py`: shared REST/MCP operations, public/private projections, pagination, and observation snapshots.
 - `src/chipload/auth.py`, `deploy/api/settings.example.json`: Keycloak access-token verification and explicit operator-owned shop bindings.
 - `src/chipload/broker.py`: separate build-queue process with guarded claims and expired-job recovery.
+- `src/chipload/quotas.py`, `tests/test_quotas.py`: shared source/build admission, report reservations, policy generations, and contention/migration checks. Quotas are operator-owned database policy; use the local `quotas`/`set-quotas` commands.
 - `scripts/build-worker`, `deploy/worker/Dockerfile`: pinned worker environment built from a minimal context.
 - `tests/test_project.py`, `tests/test_lifecycle.py`, `tests/test_worker_live.py`: source boundary, concurrency, permission, publication, and opt-in real-container tests.
 - `tests/test_auth.py`, `test_published.py`, `test_transports.py`, `test_mcp_client.py`, `test_agent_lifecycle_live.py`: identity failures, public-query privacy, transport parity, actual MCP-client interoperability, and an opt-in complete authoring loop using a separate broker.
@@ -41,7 +42,7 @@ Keep the engine abstract. Shop types, resource kinds, processes, input catalogs,
 
 Python source is authoritative; published shop models are versioned build artifacts. Keep source editing, isolated builds/evaluation, publication, public discovery, and privileged equipment operations distinct. Never import shop Python into a public request handler. Capability evaluation must preserve supported, unsupported, conditional, and unknown outcomes, with reasons and freshness. Do not infer physical qualification from a successful build.
 
-Keycloak provides identities and role claims; Chipload enforces explicit shop/action grants on REST and MCP in addition to token roles. OpenBao is provisioned for scoped equipment credentials; adapters remain to be implemented. The SDK, evaluator, lifecycle service, REST/MCP server, JWT verifier, and separate queue broker exist. Production process supervision, dependency environments, privileged operations, and internet deployment remain work. Steve is a future consumer; its repository is conceptual reference only, not a source of code to copy.
+Keycloak provides identities and role claims; Chipload enforces explicit shop/action grants on REST and MCP in addition to token roles. OpenBao is provisioned for scoped equipment credentials; adapters remain to be implemented. The SDK, evaluator, lifecycle service, REST/MCP server, JWT verifier, and separate queue broker exist. Production process supervision, dependency environments, privileged operations, and internet deployment remain work.
 
 The current stage focuses on the shop and its variables, including manufacturing limits, material preferences/exclusions, production arrangements, and business policies. RFQ intake and processing are deferred. Preserve qualifiers from reported practices: approximate dimensions are not exact limits, typical turnaround is not a guarantee, and unspecified quantities remain unknown. Do not turn descriptive variables into physical capability claims.
 
@@ -58,6 +59,8 @@ Use `Operations` for both transports. Public evaluation may expose only the publ
 Apply the shared bounded JSON decoder at data trust boundaries. New model features must have collection and scalar bounds and account for repeated evaluation and output in `complexity.py`; do not bypass budgets by sharing a capability across many workflow steps. Budget failures reject builds, never imply an unsupported physical process. Keep canonical encoding stable for admissible existing artifacts. Scores do not replace process CPU/memory limits, quotas, or deployment load tests.
 
 Cache validated immutable data only. Every request still selects its publication from the database and checks its current identity/grants; stored report bytes and metadata determine reuse. Never cache publication pointers, authorization decisions, live observations, clocks, or evaluation results. Bound retained memory, entries, and concurrent cold loads. Test withdrawal during an ongoing read, cross-shop pointers, data corruption, visibility changes, and independent mutable response containers before changing this policy.
+
+Keep quota admission and queue claims atomic in the repository. Repeated build keys return their existing job without another charge. Charge accepted requests to their verified identity across shops, reserve report storage before execution, and retain running capacity until expired workers are removed. Broker dispatch must use `claim_next`, with shared running limits and persistent shop/identity turns. Never bypass platform quotas in REST/MCP or let shop source change them. Migration, concurrent-process admission/claims, source-head preservation, and publication behavior need tests when these contracts change.
 
 ## Start from an issue
 
@@ -99,6 +102,8 @@ For documentation changes, review links, commands, and examples against the appl
 For infrastructure changes, also run `./scripts/dev-stack up` and the opt-in live checks documented in README.md. Check that recovery files remain ignored and ports remain bound to loopback. OpenBao's container healthcheck is a liveness check that permits sealed/uninitialized states; bootstrap additionally verifies it is unsealed. Test actual access denials when changing policies. Do not give the runtime root/admin credentials or return equipment secrets through MCP.
 
 For source-worker or lifecycle changes, run `./scripts/build-worker`, then `CHIPLOAD_WORKER_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_worker_live.py' -v` and the same command with `test_agent_lifecycle_live.py`. These tests use temporary databases and remove their own containers. Never prune unrelated Docker resources. Review source limits, output limits, cleanup, claim fencing, publication guards, and cross-shop denials when changing this boundary.
+
+For quota or dispatch changes, also run `test_quotas.py` and `test_quota_worker_live.py` (the latter with `CHIPLOAD_WORKER_TESTS=1`). The live test uses two actual brokers and a looping source worker to verify another shop can build and publish while the abusive shop retains its slot.
 
 For changes to the process example bundles, also run `test_process_worker_live.py` with the worker flag. This builds all 89 exported projects from their actual source and runs their acceptance cases. Rebuild the worker only when SDK source changes require it; example source arrives in the job bundle.
 

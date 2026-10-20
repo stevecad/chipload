@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from server_support import IdentityFixture
 
 from chipload.cache import DataBusy
+from chipload.quotas import QuotaPolicy
 from chipload.server import MAX_REQUEST_BYTES, create_app
 from examples.export_project import project
 from examples.heat_treatment import SCENARIOS
@@ -90,6 +91,29 @@ class TransportTests(unittest.TestCase):
         self.assertTrue(mcp["isError"])
         self.assertEqual(mcp["structuredContent"], {"status": 503, **rest.json()})
         self.assertEqual(self.client.get("/v1/shops/thermal-example/catalog").status_code, 200)
+
+    def test_build_quota_and_idempotent_retry_agree_on_rest_and_mcp(self):
+        repository = self.operations.service.repository
+        limits = repository.read_quotas()
+        limits["policy"]["shop"]["pending_builds"] = 1
+        repository.set_quotas(
+            QuotaPolicy.model_validate(limits["policy"]), expected_generation=limits["generation"]
+        )
+        source = self.client.get("/v1/shops/thermal-example/source", headers=self.owner).json()
+        body = {"shop_id": "thermal-example", "revision": source["revision"], "request_key": "one"}
+        path = "/v1/shops/thermal-example/builds"
+        first = self.client.post(path, json=body, headers=self.owner)
+        self.assertEqual(first.status_code, 202, first.text)
+        denied = self.client.post(path, json={**body, "request_key": "two"}, headers=self.owner)
+        self.assertEqual(denied.status_code, 429, denied.text)
+        self.assertEqual(denied.headers["Retry-After"], "5")
+        result = self.mcp("build_request", {**body, "request_key": "two"}, self.owner).json()[
+            "result"
+        ]
+        self.assertTrue(result["isError"])
+        self.assertEqual(result["structuredContent"], {"status": 429, **denied.json()})
+        retried = self.structured(self.mcp("build_request", body, self.owner))
+        self.assertEqual(retried["id"], first.json()["id"])
 
     def test_public_catalog_and_resources_need_no_agent_or_login(self):
         rest = self.client.get("/v1/shops/thermal-example/catalog")

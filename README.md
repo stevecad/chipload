@@ -22,7 +22,7 @@ uv run python -m examples.heat_treatment
 uv run python -m examples.process_shops
 ```
 
-The reference project runs sixteen manufacturing scenarios; `--public` prints its public catalog. The [heat-treatment-only example](examples/heat_treatment.py) runs nine scenarios through the same engine, including batch limits, temperature conversion, missing process approval, and workflow order. Read [the shop model documentation](docs/SHOP_MODEL.md) for semantics, contextual variable queries, limitations, and the [Swiss-shop business profile](examples/swiss_profile.py) based on reported shop practices. These example commands execute trusted source in your local Python process.
+The reference project runs sixteen manufacturing scenarios; `--public` prints its public catalog. The [heat-treatment-only example](examples/heat_treatment.py) runs nine scenarios through the same engine, including batch limits, temperature conversion, missing process approval, and workflow order. Read [the shop model documentation](docs/SHOP_MODEL.md) for semantics, contextual variable queries, limitations, and the [Swiss shop](examples/swiss_profile.py) example. These example commands execute trusted source in your local Python process.
 
 The [process and business example library](docs/PROCESS_EXAMPLES.md) adds 88 process examples and one mixed shop, with 2,147 executable cases. It covers machining, EDM, cutting, forming, joining, additive manufacturing, casting, molding, composites, treatment, finishing, and inspection. Every shop has separate prototype/production terms, quantity limits, input/documentation policies, delivery conditions, and contextual business variables. The mixed shop combines turning, milling, drilling, reaming, Swiss, and inspection while sharing equipment explicitly. Each example can be exported as a self-contained Python source project for the isolated worker.
 
@@ -64,7 +64,7 @@ OpenBao's audit device is declared in `deploy/openbao/config.hcl`. After editing
 
 This is a local development stack. It uses HTTP, Keycloak development mode, a single OpenBao node, disabled memory locking, and one locally stored unseal share. Production deployment needs TLS with stable issuers, production Keycloak configuration, separately secured recovery/auto-unseal, protected backups, and independent workload identities for each shop. This Compose file does not claim production readiness.
 
-The setup follows [Keycloak's container guidance](https://www.keycloak.org/server/containers), [OpenBao's persistent Raft storage](https://openbao.org/docs/configuration/storage/raft/) and [AppRole authentication](https://openbao.org/docs/auth/approle/). Steve integration remains separate; no Steve code is included.
+The setup follows [Keycloak's container guidance](https://www.keycloak.org/server/containers), [OpenBao's persistent Raft storage](https://openbao.org/docs/configuration/storage/raft/) and [AppRole authentication](https://openbao.org/docs/auth/approle/).
 
 ## Agent development setup
 

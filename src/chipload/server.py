@@ -53,6 +53,7 @@ from .operations import (
 from .project import unique_json
 from .published import Collection, ObservationSnapshot
 from .query import VariableResult
+from .quotas import QuotaExceeded
 from .responses import CatalogView, ItemView, PageView, PublicEvaluation
 
 MAX_REQUEST_BYTES = 3 * 1024 * 1024
@@ -73,6 +74,15 @@ def problem(error: Exception) -> tuple[int, dict]:
         status, code, message = 503, "identity_unavailable", "identity verification is unavailable"
     elif isinstance(error, DataBusy):
         status, code, message = 503, "data_busy", str(error)
+    elif isinstance(error, QuotaExceeded):
+        return 429, {
+            "error": {
+                "code": "quota_exceeded",
+                "message": str(error),
+                "quota": error.quota,
+                "retry_after": error.retry_after,
+            }
+        }
     elif isinstance(error, (ValidationError, RequestValidationError)):
         return 422, {
             "error": {
@@ -230,7 +240,9 @@ class Boundary:
                     fields[b"vary"] = b"Authorization, Origin"
                     if origin:
                         fields[b"access-control-allow-origin"] = origin.encode()
-                        fields[b"access-control-expose-headers"] = b"ETag, WWW-Authenticate"
+                        fields[b"access-control-expose-headers"] = (
+                            b"ETag, WWW-Authenticate, Retry-After"
+                        )
                     message["headers"] = list(fields.items())
                 await send(message)
 
@@ -359,6 +371,8 @@ def create_app(
     async def handle_error(request, error):
         status, body = problem(error)
         headers = {"WWW-Authenticate": challenge(settings)} if status == 401 else {}
+        if isinstance(error, QuotaExceeded) and error.retry_after is not None:
+            headers["Retry-After"] = str(error.retry_after)
         return JSONResponse(body, status, headers=headers)
 
     for kind in (
