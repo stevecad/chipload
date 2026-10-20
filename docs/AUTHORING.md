@@ -220,8 +220,12 @@ for each file while writers remain stopped. Do not copy only the main files
 while uncheckpointed [WAL data](https://www.sqlite.org/wal.html#the_wal_file)
 exists. Restore both files from the same recovery set with their expected names
 and private permissions. Pairing rejects another repository's store, but cannot
-detect an older copy from the same repository. Automated backup/restore
-qualification remains deployment work.
+detect an older copy from the same repository. The TLS deployment's
+[encrypted recovery tool](RECOVERY.md) preserves the pair together with identity,
+grants, and TLS material, checks their integrity, and exercises interrupted restore.
+Off-host disaster recovery and external secrets storage remain operational work.
+Runtime initialization reenables WAL on both restored files without resetting
+capacity policy, its history, or request balances.
 
 `ShopService` requires these independent grants:
 

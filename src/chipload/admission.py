@@ -72,6 +72,13 @@ class AdmissionStore:
             self._check_identity(db)
             yield db
 
+    def enable_wal(self):
+        """Restore runtime journaling after an offline SQLite backup is installed."""
+        with self._connection() as db:
+            self._check_identity(db)
+            if db.execute("PRAGMA journal_mode=WAL").fetchone()[0] != "wal":
+                raise sqlite3.DatabaseError("admission database requires WAL journaling")
+
     @contextmanager
     def transaction(self):
         with self.connection() as db:

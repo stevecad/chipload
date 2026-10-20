@@ -1,0 +1,502 @@
+#!/usr/bin/env python3
+"""Encrypted backup and offline restore of the single-host TLS deployment."""
+
+import argparse
+import importlib.machinery
+import importlib.util
+import ipaddress
+import json
+import os
+import re
+import shutil
+import sqlite3
+import subprocess
+import tarfile
+import tempfile
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
+
+import recovery_archive as archive
+
+ROOT = Path(__file__).resolve().parents[1]
+loader = importlib.machinery.SourceFileLoader("recovery_tls_stack", str(ROOT / "scripts/tls-stack"))
+stack = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
+loader.exec_module(stack)
+SERVICES = {"gateway", "api", "broker", "keycloak", "keycloak-db"}
+BACKUP_MARKER = ".backup-incomplete.json"
+RESTORE_MARKER = ".restore-incomplete.json"
+
+
+def run(arguments, *, environment=None, stdin=None, stdout=subprocess.PIPE, timeout=240):
+    result = subprocess.run(
+        arguments,
+        env=environment,
+        stdin=stdin,
+        stdout=stdout,
+        stderr=subprocess.PIPE,
+        timeout=timeout,
+    )
+    if result.returncode:
+        # pg_restore can include private row contents in diagnostics. Never echo them.
+        raise ValueError(f"{Path(arguments[0]).name} operation failed (exit {result.returncode})")
+    return result.stdout
+
+
+def records(kind, name):
+    identifiers = run(
+        [
+            "docker",
+            kind,
+            "ls",
+            "-q",
+            *(["--all"] if kind == "container" else []),
+            "--filter",
+            f"label=com.docker.compose.project={name}",
+        ]
+    ).split()
+    if not identifiers:
+        return []
+    return json.loads(run(["docker", kind, "inspect", *(item.decode() for item in identifiers)]))
+
+
+def compose(command, environment, *arguments, **options):
+    return run([*command, *arguments], environment=environment, **options)
+
+
+def check_containers(state, values, environment, command, *, allow_partial=False):
+    config = json.loads(compose(command, environment, "config", "--format", "json"))
+    images = {name: config["services"][name]["image"] for name in SERVICES}
+    containers = records("container", values["name"])
+    seen, running = set(), set()
+    for container in containers:
+        name = container["Config"]["Labels"]["com.docker.compose.service"]
+        if name not in SERVICES or name in seen:
+            raise ValueError("deployment contains unexpected or duplicate services")
+        seen.add(name)
+        if container["Config"]["Image"] != images[name]:
+            raise ValueError(
+                "running deployment differs from configured images; back up with its matching checkout/images"
+            )
+        source, target = {
+            "api": (state / "data", "/data"),
+            "broker": (state / "data", "/data"),
+            "gateway": (state / "certificates", "/tls"),
+            "keycloak": (state / "realm.json", "/opt/keycloak/data/import/chipload-realm.json"),
+            "keycloak-db": (state / "secrets/db-password", "/run/secrets/db-password"),
+        }[name]
+        if not any(
+            m["Source"] == str(source) and m["Destination"] == target for m in container["Mounts"]
+        ):
+            raise ValueError("deployment containers belong to another state directory")
+        if container["State"].get("Paused") or container["State"].get("Restarting"):
+            raise ValueError("deployment is paused or restarting; stop it before backup")
+        if container["State"]["Running"]:
+            if (
+                not allow_partial
+                and container["State"].get("Health", {}).get("Status", "healthy") != "healthy"
+            ):
+                raise ValueError("deployment is unhealthy; stop it before backup")
+            running.add(name)
+    if not allow_partial and running and running != SERVICES:
+        raise ValueError("stop the whole deployment or make all services healthy before backup")
+    volumes = records("volume", values["name"])
+    if len(volumes) != 1 or volumes[0]["Name"] != values["name"] + "_keycloak-data":
+        raise ValueError("the deployment's existing identity database volume is required")
+    return bool(running), images
+
+
+def finish_backup(state, command, environment):
+    marker = state / BACKUP_MARKER
+    archive.private(marker)
+    status = json.loads(marker.read_bytes())
+    if status.get("version") != 1 or type(status.get("was_running")) is not bool:
+        raise ValueError("invalid interrupted-backup marker")
+    values = stack.configuration(json.loads((state / "deployment.json").read_bytes()))
+    check_containers(state, values, environment, command, allow_partial=True)
+    if status["was_running"]:
+        compose(
+            command,
+            environment,
+            "up",
+            "--detach",
+            "--no-recreate",
+            "--wait",
+            "--wait-timeout",
+            "180",
+        )
+    else:
+        compose(command, environment, "stop", "keycloak-db")
+    marker.unlink()
+    archive.sync_directory(state)
+
+
+def backup(state, output, key, max_bytes):
+    for path in (output, key):
+        if path.resolve().is_relative_to(state.resolve()):
+            raise ValueError("keep the archive and recovery key outside deployment state")
+    archive.check_key(key)
+    if output.exists() or output.is_symlink():
+        raise ValueError("backup output already exists")
+    output.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    archive.private(output.parent, directory=True)
+    with stack.operation_lock(state):
+        stack.require_ready(state)
+        command, environment, values = stack.deployment(state, check=True)
+        runtime_contract = archive.contract()
+        was_running, images = check_containers(state, values, environment, command)
+        backup_id = uuid.uuid4().hex
+        with tempfile.TemporaryDirectory(
+            prefix=".chipload-backup-", dir=output.parent
+        ) as temporary:
+            work = Path(temporary)
+            contents = work / "contents"
+            contents.mkdir(mode=0o700)
+            archive.replace_json(
+                state / BACKUP_MARKER,
+                {
+                    "version": 1,
+                    "was_running": was_running,
+                    "backup_id": backup_id,
+                    "temporary_directory": str(work),
+                },
+            )
+            try:
+                compose(command, environment, "stop", "gateway", "api")
+                compose(command, environment, "stop", "broker", "keycloak")
+                compose(
+                    command,
+                    environment,
+                    "up",
+                    "--detach",
+                    "--wait",
+                    "--wait-timeout",
+                    "60",
+                    "keycloak-db",
+                )
+                names = archive.STATE_FILES | {
+                    name for name in archive.OPTIONAL_FILES if (state / name).exists()
+                }
+                for name in names & archive.OPTIONAL_FILES:
+                    archive.private(state / name)
+                originals = {name: archive.digest(state / name) for name in names}
+                for name in sorted(names):
+                    archive.write(contents / name, (state / name).read_bytes())
+                archive.snapshot_pair(state / "data", contents / "data")
+                archive.write(contents / "keycloak.dump", b"")
+                with (contents / "keycloak.dump").open("wb") as dump:
+                    compose(
+                        command,
+                        environment,
+                        "exec",
+                        "-T",
+                        "keycloak-db",
+                        "pg_dump",
+                        "--username=keycloak",
+                        "--dbname=keycloak",
+                        "--format=custom",
+                        "--no-owner",
+                        "--no-privileges",
+                        stdout=dump,
+                        timeout=1800,
+                    )
+                    dump.flush()
+                    os.fsync(dump.fileno())
+                if originals != {name: archive.digest(state / name) for name in names}:
+                    raise ValueError("deployment settings changed during backup")
+                created = datetime.now(timezone.utc).isoformat()
+            finally:
+                finish_backup(state, command, environment)
+            if archive.contract() != runtime_contract:
+                raise ValueError(
+                    "checkout changed during backup; retry with fixed deployment inputs"
+                )
+            archive.pack(
+                contents,
+                work / "recovery.tar",
+                {
+                    "backup_id": backup_id,
+                    "created_at": created,
+                    "images": images,
+                    "checkout": {
+                        "commit": run(["git", "-C", str(ROOT), "rev-parse", "HEAD"])
+                        .decode()
+                        .strip(),
+                        "dirty": bool(
+                            run(["git", "-C", str(ROOT), "status", "--porcelain"]).strip()
+                        ),
+                    },
+                },
+                max_bytes=max_bytes,
+            )
+            archive.crypt(work / "recovery.tar", work / "recovery.gpg", key, max_bytes=max_bytes)
+            os.link(
+                work / "recovery.gpg", output
+            )  # Atomic publication without overwriting another backup.
+            archive.sync_directory(output.parent)
+        print(f"Encrypted recovery set saved to {output}; backup ID {backup_id}.")
+
+
+def restore_volume(name, recovery_id):
+    volume = name + "_keycloak-data"
+    existing = records("volume", name)
+    if not existing:
+        run(
+            [
+                "docker",
+                "volume",
+                "create",
+                "--label",
+                f"com.docker.compose.project={name}",
+                "--label",
+                "com.docker.compose.volume=keycloak-data",
+                "--label",
+                f"org.chipload.restore-id={recovery_id}",
+                volume,
+            ]
+        )
+        # Docker returns an existing volume when another creator wins this name.
+        existing = records("volume", name)
+    if (
+        len(existing) != 1
+        or existing[0]["Name"] != volume
+        or existing[0]["Labels"].get("org.chipload.restore-id") != recovery_id
+    ):
+        raise ValueError("restore volume does not belong to this recovery attempt")
+
+
+def restore(state, source, key, name, resume, max_bytes):
+    archive.check_key(key)
+    archive.private(source)
+    if key.resolve().is_relative_to(state.resolve()) or source.resolve().is_relative_to(
+        state.resolve()
+    ):
+        raise ValueError("keep the archive and recovery key outside restored state")
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,62}", name):
+        raise ValueError("invalid restore project name")
+    state.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    archive.private(state.parent, directory=True)
+    if not resume and (state.exists() or state.is_symlink()):
+        raise ValueError(
+            "restore requires a new state directory; existing deployments are never overwritten"
+        )
+    if resume:
+        archive.private(state, directory=True)
+        archive.private(state / RESTORE_MARKER)
+    elif records("container", name) or records("volume", name):
+        raise ValueError(
+            "restore project already has containers or volumes; select a new project name"
+        )
+    with tempfile.TemporaryDirectory(prefix=".chipload-restore-", dir=state.parent) as temporary:
+        work = Path(temporary)
+        archive.crypt(source, work / "recovery.tar", key, decrypt=True, max_bytes=max_bytes)
+        manifest = archive.unpack(work / "recovery.tar", work / "contents", max_bytes=max_bytes)
+        fingerprint = archive.digest(source)
+        prepared = work / "contents"
+        dump_path = prepared / "keycloak.dump"
+        if not re.fullmatch(r"[0-9a-f]{32}", manifest.get("backup_id", "")):
+            raise ValueError("invalid recovery set identity")
+        if not resume:
+            values = stack.configuration(json.loads((prepared / "deployment.json").read_bytes()))
+            values.update(name=name, subnet=stack.choose_subnet())
+            stack.configuration(values)
+            archive.replace_json(prepared / "deployment.json", values)
+            settings = json.loads((prepared / "runtime.json").read_bytes())
+            settings["trusted_proxy_ips"] = [str(ipaddress.ip_network(values["subnet"])[2])]
+            archive.replace_json(prepared / "runtime.json", settings)
+            client = json.loads((prepared / "client.json").read_bytes())
+            client.update(
+                client_secret_file=str(state / "secrets/agent-secret"),
+                ca_file=str(state / "identity-ca.pem"),
+            )
+            archive.replace_json(prepared / "client.json", client)
+            (prepared / "secrets/db-password").chmod(0o444)
+            dump_path = work / "keycloak.dump"
+            os.rename(prepared / "keycloak.dump", dump_path)
+            archive.replace_json(
+                prepared / RESTORE_MARKER,
+                {
+                    "version": 1,
+                    "backup_id": manifest["backup_id"],
+                    "archive_sha256": fingerprint,
+                    "recovery_id": uuid.uuid4().hex,
+                    "state_digests": {
+                        path: archive.digest(prepared / path)
+                        for path in manifest["files"]
+                        if path not in {"keycloak.dump", "restore.json"}
+                    },
+                    "name": name,
+                },
+            )
+            # Validate images, grants, private files, and endpoints before creating deployment resources.
+            stack.deployment(prepared, check=True)
+            archive.sync_tree(prepared)
+            os.rename(prepared, state)
+            archive.sync_directory(state.parent)
+        with stack.operation_lock(state):
+            marker = json.loads((state / RESTORE_MARKER).read_bytes())
+            if (
+                marker.get("version") != 1
+                or marker.get("backup_id") != manifest["backup_id"]
+                or marker.get("archive_sha256") != fingerprint
+                or marker.get("name") != name
+            ):
+                raise ValueError("resume requires the same authenticated archive and project name")
+            if not re.fullmatch(r"[0-9a-f]{32}", marker.get("recovery_id", "")):
+                raise ValueError("invalid recovery attempt identity")
+            expected_paths = set(manifest["files"]) - {"keycloak.dump", "restore.json"}
+            if marker.get("state_digests", {}).keys() != expected_paths or any(
+                archive.digest(state / path) != marker["state_digests"][path]
+                for path in expected_paths
+            ):
+                raise ValueError(
+                    "incomplete restore state changed; preserve it and restore into a fresh directory"
+                )
+            command, environment, values = stack.deployment(state, check=True)
+            if values["name"] != name:
+                raise ValueError("restore project differs from the incomplete state")
+            for container in records("container", name):
+                labels = container["Config"]["Labels"]
+                if labels.get("com.docker.compose.service") != "keycloak-db":
+                    raise ValueError("application services exist in an incomplete restore")
+                if not any(
+                    m["Source"] == str(state / "secrets/db-password")
+                    and m["Destination"] == "/run/secrets/db-password"
+                    for m in container["Mounts"]
+                ):
+                    raise ValueError(
+                        "restore database container belongs to another state directory"
+                    )
+            restore_volume(name, marker["recovery_id"])
+            try:
+                compose(
+                    command,
+                    environment,
+                    "up",
+                    "--detach",
+                    "--wait",
+                    "--wait-timeout",
+                    "60",
+                    "keycloak-db",
+                )
+                with dump_path.open("rb") as dump:
+                    compose(
+                        command,
+                        environment,
+                        "exec",
+                        "-T",
+                        "keycloak-db",
+                        "pg_restore",
+                        "--username=keycloak",
+                        "--dbname=keycloak",
+                        "--no-owner",
+                        "--no-privileges",
+                        "--clean",
+                        "--if-exists",
+                        "--single-transaction",
+                        "--exit-on-error",
+                        stdin=dump,
+                        timeout=1800,
+                    )
+            finally:
+                compose(command, environment, "stop", "keycloak-db")
+            archive.validate_pair(state / "data")
+            archive.replace_json(
+                state / "restore.json",
+                {
+                    "version": 1,
+                    "backup_id": manifest["backup_id"],
+                    "archive_sha256": fingerprint,
+                    "restored_at": datetime.now(timezone.utc).isoformat(),
+                    "operator_uid": os.getuid(),
+                    "checkout": manifest.get("checkout"),
+                    "contract": manifest["contract"],
+                },
+            )
+            (state / RESTORE_MARKER).unlink()
+            archive.sync_directory(state)
+        print(
+            f"Restored backup {manifest['backup_id']} to {state}. Services remain stopped; inspect state, then run tls-stack up."
+        )
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--state", type=Path, default=ROOT / ".local/tls")
+    commands = parser.add_subparsers(dest="action", required=True)
+    keygen = commands.add_parser("keygen")
+    keygen.add_argument("--key", type=Path, required=True)
+    for name in ("backup", "restore", "inspect"):
+        command = commands.add_parser(name)
+        command.add_argument("--key", type=Path, required=True)
+        command.add_argument("--archive", type=Path, required=True)
+        command.add_argument("--max-bytes", type=int, default=archive.MAX_BYTES)
+        if name == "restore":
+            command.add_argument("--name", required=True)
+            command.add_argument("--resume", action="store_true")
+    commands.add_parser("resume-backup")
+    args = parser.parse_args()
+    if os.getuid() == 0:
+        parser.error("run as the non-root deployment owner")
+    try:
+        if args.action == "keygen":
+            archive.generate_key(args.key.absolute())
+            print(f"Recovery key saved to {args.key}; keep a separate protected copy.")
+            return
+        state = args.state.absolute()
+        if args.action == "resume-backup":
+            stack.runtime.docker_socket()
+            with stack.operation_lock(state):
+                if (state / RESTORE_MARKER).exists():
+                    raise ValueError("this is an incomplete restore, not an interrupted backup")
+                command, environment, _ = stack.deployment(state, check=True)
+                finish_backup(state, command, environment)
+            print(
+                "Previous deployment running/stopped state restored. Verify any backup separately."
+            )
+            return
+        if not 1024**2 <= args.max_bytes <= 1024**4:
+            raise ValueError("max-bytes must be between 1 MiB and 1 TiB")
+        if not shutil.which("gpg"):
+            raise ValueError("GnuPG 2.4+ is required for encrypted recovery sets")
+        if args.action == "inspect":
+            with tempfile.TemporaryDirectory(prefix=".chipload-inspect-") as temporary:
+                plain = Path(temporary) / "archive.tar"
+                archive.crypt(
+                    args.archive.absolute(),
+                    plain,
+                    args.key.absolute(),
+                    decrypt=True,
+                    max_bytes=args.max_bytes,
+                )
+                metadata = archive.read_manifest(plain)
+                metadata["files"] = {
+                    name: entry["size"] for name, entry in metadata["files"].items()
+                }
+                print(json.dumps(metadata, indent=2))
+            return
+        stack.runtime.docker_socket()
+        if args.action == "backup":
+            backup(state, args.archive.absolute(), args.key.absolute(), args.max_bytes)
+        else:
+            restore(
+                state,
+                args.archive.absolute(),
+                args.key.absolute(),
+                args.name,
+                args.resume,
+                args.max_bytes,
+            )
+    except (
+        OSError,
+        ValueError,
+        KeyError,
+        sqlite3.Error,
+        tarfile.TarError,
+        subprocess.SubprocessError,
+    ) as error:
+        parser.exit(1, f"tls-recovery: {error}\n")
+
+
+if __name__ == "__main__":
+    main()

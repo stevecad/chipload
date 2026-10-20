@@ -2,6 +2,7 @@
 """Configure and run the TLS gateway, Keycloak, API, and broker on one local host."""
 
 import argparse
+import fcntl
 import hashlib
 import http.client
 import importlib.machinery
@@ -17,6 +18,7 @@ import stat
 import subprocess
 import tempfile
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -34,6 +36,32 @@ ROOT = Path(__file__).resolve().parents[1]
 loader = importlib.machinery.SourceFileLoader("runtime_helpers", str(ROOT / "scripts/runtime"))
 runtime = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
 loader.exec_module(runtime)
+
+
+@contextmanager
+def operation_lock(state):
+    runtime.private(state, directory=True)
+    fd = os.open(state / ".operation.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        runtime.private(state / ".operation.lock")
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise ValueError("another deployment or recovery operation is running") from error
+        yield
+    finally:
+        os.close(fd)
+
+
+def require_ready(state):
+    if (state / ".restore-incomplete.json").exists():
+        raise ValueError(
+            "restore is incomplete; resume it with scripts/tls-recovery before starting services"
+        )
+    if (state / ".backup-incomplete.json").exists():
+        raise ValueError(
+            "backup was interrupted; use scripts/tls-recovery resume-backup before starting services"
+        )
 
 
 def origin(host, port):
@@ -483,39 +511,44 @@ def main():
         if args.action == "init":
             initialize(args)
             return
-        command, environment, values = deployment(args.state, check=args.action in {"up", "reload"})
-        action = {
-            "up": ["up", "--detach", "--wait", "--wait-timeout", "180"],
-            "down": ["down"],
-            "status": ["ps"],
-            "logs": ["logs", "--tail", "100"],
-            "reload": [
-                "up",
-                "--detach",
-                "--force-recreate",
-                "--wait",
-                "--wait-timeout",
-                "180",
-                "gateway",
-                "keycloak",
-                "api",
-            ],
-        }[args.action]
-        subprocess.run([*command, *action], env=environment, check=True)
-        if args.action in {"up", "reload"}:
-            base = origin(values["api_host"], values["port"])
-            identity = origin(values["identity_host"], values["port"])
-            ca_file = args.state / "identity-ca.pem"
-            probe(values["api_host"], values["port"], "/healthz", ca_file)
-            discovered = probe(
-                values["identity_host"],
-                values["port"],
-                "/realms/chipload/.well-known/openid-configuration",
-                ca_file,
+        with operation_lock(args.state):
+            if args.action in {"up", "reload"}:
+                require_ready(args.state)
+            command, environment, values = deployment(
+                args.state, check=args.action in {"up", "reload"}
             )
-            if discovered["issuer"] != identity + "/realms/chipload":
-                raise ValueError("Keycloak returned an unexpected issuer")
-            print(f"TLS verified. API/MCP: {base}/mcp; identity: {identity}")
+            action = {
+                "up": ["up", "--detach", "--wait", "--wait-timeout", "180"],
+                "down": ["down"],
+                "status": ["ps"],
+                "logs": ["logs", "--tail", "100"],
+                "reload": [
+                    "up",
+                    "--detach",
+                    "--force-recreate",
+                    "--wait",
+                    "--wait-timeout",
+                    "180",
+                    "gateway",
+                    "keycloak",
+                    "api",
+                ],
+            }[args.action]
+            subprocess.run([*command, *action], env=environment, check=True)
+            if args.action in {"up", "reload"}:
+                base = origin(values["api_host"], values["port"])
+                identity = origin(values["identity_host"], values["port"])
+                ca_file = args.state / "identity-ca.pem"
+                probe(values["api_host"], values["port"], "/healthz", ca_file)
+                discovered = probe(
+                    values["identity_host"],
+                    values["port"],
+                    "/realms/chipload/.well-known/openid-configuration",
+                    ca_file,
+                )
+                if discovered["issuer"] != identity + "/realms/chipload":
+                    raise ValueError("Keycloak returned an unexpected issuer")
+                print(f"TLS verified. API/MCP: {base}/mcp; identity: {identity}")
     except (
         OSError,
         ValueError,

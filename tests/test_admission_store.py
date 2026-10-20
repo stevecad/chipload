@@ -9,6 +9,7 @@ import sqlite3
 import tempfile
 import unittest
 from concurrent.futures import ProcessPoolExecutor
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
@@ -85,6 +86,26 @@ class AdmissionStoreTests(unittest.TestCase):
         self.legacy()
         self.assert_migrated(Repository(self.path))
         self.assert_migrated(Repository(self.path))
+
+    def test_offline_restore_reenables_wal_without_resetting_policy_or_credit(self):
+        self.legacy()
+        original = Repository(self.path)
+        directory = self.path.parent / "restored"
+        directory.mkdir(mode=0o700)
+        for source in (original.path, original.admission.path):
+            target = directory / source.name
+            target.touch(mode=0o600)
+            with (
+                closing(sqlite3.connect(source)) as reader,
+                closing(sqlite3.connect(target)) as copy,
+            ):
+                reader.backup(copy)
+                copy.execute("PRAGMA journal_mode=DELETE")
+        restored = Repository(directory / self.path.name)
+        self.assert_migrated(restored)
+        for target in (restored.path, restored.admission.path):
+            with closing(sqlite3.connect(target)) as db:
+                self.assertEqual(db.execute("PRAGMA journal_mode").fetchone()[0], "wal")
 
     def test_schema_three_gains_default_request_limits_without_changing_other_limits(self):
         self.legacy(version=3)

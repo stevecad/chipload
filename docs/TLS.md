@@ -6,7 +6,7 @@ same HTTPS endpoint and authorization policy. Only the gateway publishes ports;
 both its client and administration listeners bind to host loopback.
 
 This is a tested deployment building block. Public routing, production OpenBao
-delivery, credential rotation, coordinated recovery, deployment load testing,
+delivery, credential rotation, off-host disaster recovery, deployment load testing,
 and stronger worker-host isolation remain deployment gates. Starting this stack
 does not expose a public service.
 
@@ -194,7 +194,10 @@ state or containers/volumes with the selected project name; it never silently
 replaces credentials for an existing database. Keep deployment state, Keycloak
 data, and the paired Chipload databases together in a protected recovery plan.
 Follow [shop storage recovery](AUTHORING.md#storage-authorization-and-recovery).
-Coordinated backup/restore automation across these services is still required.
+The [encrypted recovery workflow](RECOVERY.md) coordinates backups of these
+services and restores into fresh state with startup blocked until completion.
+It includes an interruption/retry drill; off-host recovery and OpenBao recovery
+remain separate operational requirements.
 
 State directories are owner-only. Certificates, grants, realm import, client
 configuration, and most secret files must also be owner-only. `db-password` is

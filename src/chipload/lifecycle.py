@@ -132,7 +132,10 @@ class Repository:
                 if reference is None:
                     raise IntegrityError("missing admission store reference")
                 if reference["state"] == "ready":
+                    if db.execute("PRAGMA journal_mode=WAL").fetchone()[0] != "wal":
+                        raise IntegrityError("repository database requires WAL journaling")
                     self.admission = self._admission(reference["identity"])
+                    self.admission.enable_wal()
                     self.admission.snapshot()
                     return
             db.execute("PRAGMA journal_mode=WAL")
@@ -208,6 +211,7 @@ class Repository:
                     db.execute(f"DROP TABLE {table}")
                 db.execute("UPDATE admission_store SET state='ready' WHERE id=1")
             else:
+                self.admission.enable_wal()
                 self.admission.snapshot()
 
     def policy(self) -> QuotaPolicy:

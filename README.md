@@ -8,6 +8,8 @@ The shop authoring SDK and initial runtime use Python. A documented REST API let
 
 The API and build broker can run in separate containers with locked dependencies, private persistent storage, and process limits. See [application container setup](docs/RUNTIME.md) or the [TLS gateway and Keycloak stack](docs/TLS.md) for verified HTTPS, private networks, and a shop agent identity. Host listeners remain bound to loopback; public deployment and operational qualification remain work.
 
+The TLS deployment has [encrypted backup and restore tooling](docs/RECOVERY.md) for shop data, identity data, grants, and TLS state. Recovery preserves request allowances and keeps a restored service offline until startup.
+
 Chipload is not an ERP. Order management, purchasing, inventory management, production planning, accounting, and invoicing are out of scope. Chipload will work with ERP systems through adapters and APIs. Shop capabilities, business rules, and callable operations belong in Chipload; ERP systems remain the source of truth for their business records.
 
 The repository contains an experimental Python shop model and evaluator, REST/MCP discovery and authoring, Keycloak token verification with explicit shop grants, a separate container build broker, executable examples, and local identity/secrets infrastructure. Production deployment and privileged equipment operations remain to be implemented.

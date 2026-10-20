@@ -8,7 +8,7 @@ the host Docker daemon.
 This packaging adds process and filesystem limits. The supplied Compose file
 exposes HTTP only on host loopback. The [TLS stack](TLS.md) adds a gateway,
 production-mode Keycloak, and private application/identity networks. Production
-OpenBao delivery, credential rotation, backup/restore automation, and deployment
+OpenBao delivery, credential rotation, off-host recovery, and deployment
 load qualification remain required for public deployment.
 
 ## Build and configure
@@ -94,6 +94,7 @@ finish requests; the broker gets 45 seconds to finish its current bounded build.
 
 Back up and restore the shop and `.admission` databases together using the
 [storage recovery procedure](AUTHORING.md#storage-authorization-and-recovery).
+For the complete TLS/Keycloak deployment, use the [encrypted recovery tool](RECOVERY.md).
 Before upgrading a running deployment, stop its API and brokers and take a
 consistent backup; schema migration is not a rolling-upgrade protocol.
 

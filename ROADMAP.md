@@ -26,6 +26,7 @@ Steve integration is planned for a later stage.
 - API and broker container packaging now uses pinned images, locked wheels, non-root users, private shared storage, process limits, and graceful shutdown. The API has no Docker access; the broker has a daemon socket and no IP network. A live container test covers MCP authoring, isolated builds, REST discovery, restart, rollback, and withdrawal. See `docs/RUNTIME.md`.
 - The TLS topology adds a pinned Caddy gateway, production-mode Keycloak, private application/database networks, explicit CA trust, and one-shop agent provisioning. Its separate client/admin host listeners bind to loopback. Live checks exercise real tokens, verified HTTPS, certificate/CA replacement, the agent lifecycle, restart persistence, trust failures, forwarding-header spoofing, and network/port restrictions. See `docs/TLS.md`; public routing, production secrets delivery, automatic renewal, credential rotation, recovery, and deployment load qualification remain open.
 - Additional dependency environments, custom executable evaluation, production process supervision, privileged equipment adapters, and hardened internet deployment remain to be implemented.
+- Encrypted recovery now snapshots both shop databases, Keycloak, grants, and TLS/secrets state together. Restore targets fresh state, retains spent request capacity, blocks application startup during interruption, and resumes the same recovery attempt. A live drill checks real identity/signing keys, publication and observation history, REST/MCP discovery, and interruption before backup completion and after identity restore commits. See `docs/RECOVERY.md`; external secrets and off-host disaster recovery remain operational work.
 - No open GitHub issues existed when this plan was written. The milestones below are a local implementation backlog; they have not been published as issues.
 
 The existing Compose configuration is for local development. Completing a local demo will not complete the deployment goal.
@@ -178,10 +179,16 @@ memory, CPU, process count, temporary storage, and log retention. A TLS gateway
 and production-mode Keycloak now provide verified identity paths, private
 networks, bounded gateway requests, and exact client-address trust. All host
 listeners remain on loopback. Per-request data-process containment, public-edge
-qualification, production secrets delivery/rotation, coordinated recovery,
+qualification, production secrets delivery/rotation, off-host and external-secrets recovery,
 broader storage/retention, deployment load
 targets, and full adversarial deployment verification remain open. The component benchmarks and HTTP admission tests cover
 these implemented boundaries; production deployment remains a separate gate.
+
+Coordinated encrypted backup/restore now preserves identity and shop state,
+including authorization bindings and request balances. Interrupted backup and
+restore are exercised against the actual containers; restored services remain
+offline until completion. This covers the single-host TLS topology, not OpenBao,
+external systems, or a qualified recovery onto a replacement host.
 
 **Complete when:** a clean installation can be configured from documented inputs; automated security and integration checks pass; backup/restore and credential rotation are exercised; failed identity/secrets dependencies fail safely; deployment tests verify exposed ports and network access; load-test results and operational requirements are documented. Local development settings must not pass production validation.
 
