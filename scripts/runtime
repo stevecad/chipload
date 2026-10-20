@@ -1,0 +1,155 @@
+#!/usr/bin/env python3
+"""Run the API and broker containers on a local Linux Docker host."""
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import stat
+import subprocess
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def image(role):
+    value = (ROOT / ".local" / f"{role}-image").read_text().strip()
+    if not re.fullmatch(r"sha256:[0-9a-f]{64}", value):
+        raise ValueError(f"invalid immutable {role} image ID")
+    return value
+
+
+def private(path, *, directory=False):
+    status = path.lstat()
+    expected = stat.S_ISDIR if directory else stat.S_ISREG
+    if not expected(status.st_mode) or status.st_uid != os.getuid() or status.st_mode & 0o077:
+        raise ValueError(
+            f"{path} must be an owner-only {'directory (0700)' if directory else 'file (0600)'} owned by the current user"
+        )
+
+
+def check_images(images):
+    files = sorted((ROOT / "src/chipload").glob("*.py"))
+    expected = hashlib.sha256(
+        b"".join(p.name.encode() + b"\0" + p.read_bytes() + b"\0" for p in files)
+    ).hexdigest()
+    lock = hashlib.sha256((ROOT / "uv.lock").read_bytes()).hexdigest()
+    for role, identifier in images.items():
+        result = subprocess.run(
+            ["docker", "image", "inspect", identifier, "--format", "{{json .Config.Labels}}"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=15,
+        )
+        labels = json.loads(result.stdout) or {}
+        if (
+            labels.get("org.chipload.sdk-sha256") != expected
+            or labels.get("org.chipload.dependencies-sha256") != lock
+        ):
+            raise ValueError(
+                f"{role} image differs from the checkout; rebuild worker and runtime images"
+            )
+        if role == "worker":
+            if labels.get("org.chipload.worker-protocol") != "1":
+                raise ValueError("invalid worker image")
+        elif (
+            labels.get("org.chipload.runtime-role") != role
+            or labels.get("org.chipload.runtime-protocol") != "1"
+        ):
+            raise ValueError(f"invalid {role} image")
+
+
+def check_data(path):
+    private(path, directory=True)
+    allowed = {
+        base + suffix
+        for base in ("chipload.db", "chipload.db.admission")
+        for suffix in ("", "-wal", "-shm", "-journal")
+    }
+    for child in path.iterdir():
+        if child.name not in allowed:
+            raise ValueError(
+                "use a dedicated data directory containing only Chipload database files"
+            )
+        try:
+            private(child)
+        except FileNotFoundError:
+            # A running SQLite process can remove its journal between these checks.
+            pass
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("action", choices=("up", "down", "status", "logs"))
+    parser.add_argument("--config", type=Path, default=ROOT / ".local/runtime.json")
+    parser.add_argument("--data", type=Path, default=ROOT / ".local/runtime-data")
+    parser.add_argument("--port", type=int, default=8088)
+    parser.add_argument("--name", default="chipload-runtime")
+    args = parser.parse_args()
+    if os.getuid() == 0:
+        parser.error("run as the non-root account that owns the configuration and data")
+    if not 1 <= args.port <= 65535 or not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,62}", args.name):
+        parser.error("use a port from 1–65535 and a lowercase Compose project name")
+    try:
+        # Docker gives DOCKER_CONTEXT precedence over DOCKER_HOST.
+        endpoint = None if os.environ.get("DOCKER_CONTEXT") else os.environ.get("DOCKER_HOST")
+        if not endpoint:
+            endpoint = subprocess.check_output(
+                ["docker", "context", "inspect", "--format", "{{.Endpoints.docker.Host}}"],
+                text=True,
+                timeout=15,
+            ).strip()
+        if not endpoint.startswith("unix:///"):
+            raise ValueError("the runtime requires a local Unix Docker socket")
+        socket = Path(endpoint.removeprefix("unix://"))
+        if not stat.S_ISSOCK(socket.stat().st_mode):
+            raise ValueError("Docker endpoint is not a Unix socket")
+        images = {role: image(role) for role in ("api", "broker", "worker")}
+        config, data = args.config.absolute(), args.data.absolute()
+        if args.action == "up":
+            private(config)
+            if json.loads(config.read_bytes()).get("database") != "/data/chipload.db":
+                raise ValueError("runtime configuration must use database /data/chipload.db")
+            data.mkdir(parents=True, mode=0o700, exist_ok=True)
+            check_data(data)
+            check_images(images)
+        environment = {
+            **os.environ,
+            "CHIPLOAD_UID": str(os.getuid()),
+            "CHIPLOAD_GID": str(os.getgid()),
+            "CHIPLOAD_DOCKER_GID": str(socket.stat().st_gid),
+            "CHIPLOAD_DOCKER_SOCKET": str(socket),
+            "CHIPLOAD_CONFIG": str(config),
+            "CHIPLOAD_DATA": str(data),
+            "CHIPLOAD_PORT": str(args.port),
+            **{f"CHIPLOAD_{role.upper()}_IMAGE": value for role, value in images.items()},
+        }
+        action = {
+            "up": ["up", "--detach", "--wait", "--wait-timeout", "60"],
+            "down": ["down"],
+            "status": ["ps"],
+            "logs": ["logs", "--tail", "100"],
+        }[args.action]
+        subprocess.run(
+            [
+                "docker",
+                "compose",
+                "--env-file",
+                "/dev/null",
+                "--project-name",
+                args.name,
+                "--file",
+                str(ROOT / "deploy/runtime/compose.yaml"),
+                *action,
+            ],
+            env=environment,
+            check=True,
+        )
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        parser.exit(1, f"runtime: {error}\n")
+
+
+if __name__ == "__main__":
+    main()

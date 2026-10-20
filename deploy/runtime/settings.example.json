@@ -1,0 +1,11 @@
+{
+  "mode": "production",
+  "database": "/data/chipload.db",
+  "data_cache_bytes": 33554432,
+  "resource_url": "https://shop.example.com/mcp",
+  "issuer": "https://identity.example.com/realms/chipload",
+  "jwks_url": "https://identity.example.com/realms/chipload/protocol/openid-connect/certs",
+  "role_client": "chipload",
+  "bindings": [],
+  "allowed_origins": []
+}

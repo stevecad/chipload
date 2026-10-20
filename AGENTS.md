@@ -29,6 +29,8 @@ Chipload is becoming a platform for software-defined shops. Read [ROADMAP.md](RO
 - `src/chipload/admission.py`, `tests/test_admission_store.py`: separate durable capacity policy and request balances, repository pairing, and resumable migration. Preserve both database files during backup and restore.
 - `src/chipload/request_limits.py`, `tests/test_request_limits*.py`: shared request and mutation rates, bounded limiter storage, and competing HTTP server tests. `scripts/benchmark-requests` measures admission overhead.
 - `scripts/build-worker`, `deploy/worker/Dockerfile`: pinned worker environment built from a minimal context.
+- `scripts/build-runtime`, `scripts/runtime`, `deploy/runtime/`, `docs/RUNTIME.md`: pinned API/broker images and single-host Compose packaging. Rebuild runtime images after SDK or dependency changes. The API has no Docker access; only the trusted broker mounts the local daemon socket.
+- `tests/test_runtime_live.py`: opt-in containerized MCP authoring, broker builds, REST discovery, restart persistence, and actual runtime restrictions.
 - `tests/test_project.py`, `tests/test_lifecycle.py`, `tests/test_worker_live.py`: source boundary, concurrency, permission, publication, and opt-in real-container tests.
 - `tests/test_auth.py`, `test_published.py`, `test_transports.py`, `test_mcp_client.py`, `test_agent_lifecycle_live.py`: identity failures, public-query privacy, transport parity, actual MCP-client interoperability, and an opt-in complete authoring loop using a separate broker.
 - `pyproject.toml`, `uv.lock`: Python package and locked SDK/development dependencies.
@@ -112,6 +114,8 @@ For infrastructure changes, also run `./scripts/dev-stack up` and the opt-in liv
 For source-worker or lifecycle changes, run `./scripts/build-worker`, then `CHIPLOAD_WORKER_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_worker_live.py' -v` and the same command with `test_agent_lifecycle_live.py`. These tests use temporary databases and remove their own containers. Never prune unrelated Docker resources. Review source limits, output limits, cleanup, claim fencing, publication guards, and cross-shop denials when changing this boundary.
 
 For quota or dispatch changes, also run `test_quotas.py` and `test_quota_worker_live.py` (the latter with `CHIPLOAD_WORKER_TESTS=1`). The live test uses two actual brokers and a looping source worker to verify another shop can build and publish while the abusive shop retains its slot.
+
+For application packaging or listener changes, rebuild worker and runtime images and run `CHIPLOAD_RUNTIME_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_runtime_live.py' -v`. Preserve loopback host exposure, non-root execution, private paired storage, process limits, and separation of Docker access. Runtime packaging does not complete the TLS or production deployment gates.
 
 For changes to the process example bundles, also run `test_process_worker_live.py` with the worker flag. This builds all 89 exported projects from their actual source and runs their acceptance cases. Rebuild the worker only when SDK source changes require it; example source arrives in the job bundle.
 

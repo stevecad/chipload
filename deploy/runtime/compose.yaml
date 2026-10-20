@@ -1,0 +1,76 @@
+# Application containers on one Linux Docker host. The host port is loopback only.
+name: chipload-runtime
+
+x-runtime: &runtime
+  user: ${CHIPLOAD_UID:?}:${CHIPLOAD_GID:?}
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  init: true
+  restart: unless-stopped
+  pids_limit: 128
+  cpus: 1
+  mem_limit: 512m
+  memswap_limit: 512m
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,size=32m,mode=1777
+  ulimits:
+    nofile: {soft: 1024, hard: 1024}
+    core: {soft: 0, hard: 0}
+  logging:
+    driver: local
+    options: {max-size: 10m, max-file: "3"}
+
+services:
+  api:
+    <<: *runtime
+    image: ${CHIPLOAD_API_IMAGE:?Run ./scripts/build-runtime}
+    pull_policy: never
+    stop_grace_period: 20s
+    ports:
+      - 127.0.0.1:${CHIPLOAD_PORT:-8088}:8088
+    volumes:
+      - type: bind
+        source: ${CHIPLOAD_DATA:?}
+        target: /data
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${CHIPLOAD_CONFIG:?}
+        target: /etc/chipload/settings.json
+        read_only: true
+        bind: {create_host_path: false}
+    networks: [identity]
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -I
+        - -c
+        - "import json,urllib.request,urllib.parse; c=json.load(open('/etc/chipload/settings.json')); r=urllib.request.Request('http://127.0.0.1:8088/healthz',headers={'Host':urllib.parse.urlsplit(c['resource_url']).netloc}); urllib.request.build_opener(urllib.request.ProxyHandler({})).open(r,timeout=3).close()"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  broker:
+    <<: *runtime
+    image: ${CHIPLOAD_BROKER_IMAGE:?Run ./scripts/build-runtime}
+    pull_policy: never
+    command: [--database, /data/chipload.db, --image, '${CHIPLOAD_WORKER_IMAGE:?Run ./scripts/build-worker}']
+    # The broker needs the Docker API but no IP network or incoming port.
+    network_mode: none
+    group_add: ['${CHIPLOAD_DOCKER_GID:?}']
+    stop_grace_period: 45s
+    volumes:
+      - type: bind
+        source: ${CHIPLOAD_DATA:?}
+        target: /data
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${CHIPLOAD_DOCKER_SOCKET:-/var/run/docker.sock}
+        target: /var/run/docker.sock
+        read_only: true
+        bind: {create_host_path: false}
+
+networks:
+  identity: {}

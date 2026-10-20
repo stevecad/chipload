@@ -4,9 +4,10 @@ Chipload serves REST and Streamable HTTP MCP from one application. Both call the
 same operation contracts, application services, permission checks, and published
 revisions. Public discovery works without authentication or an agent.
 
-The current server is a local development runtime. It binds to loopback and does
-not import shop source or invoke Docker. A separate broker processes build jobs.
-Production packaging, TLS deployment, network-edge controls, stronger isolation,
+The server defaults to a loopback listener and does not import shop source or
+invoke Docker. A separate broker processes build jobs. Both can run in
+[separate application containers](RUNTIME.md) with process and filesystem limits.
+TLS deployment, network-edge controls, stronger isolation,
 recovery exercises, and load/security qualification remain on the roadmap.
 
 ## Start the services
@@ -32,6 +33,12 @@ dispatch and running-job limits in the database. Eligible shops rotate by their
 last dispatch turn, with identity turns and queued time breaking ties. New
 queues join at the current turn. Shutdown lets the current bounded job finish.
 `--once` processes at most one eligible job, which is useful in tests.
+
+`--bind` and `--port` configure the API listener independently of its public
+resource URL. Container packaging uses `--bind 0.0.0.0 --port 8088` and publishes
+that port only on host loopback. Host/Origin checks still use the resource URL;
+proxy-header rewriting remains disabled. The launcher allows 15 seconds for
+graceful request completion during shutdown.
 
 Use the [local authoring walkthrough](AUTHORING.md) to publish an example before
 trying anonymous discovery. Publication through that CLI and through the network

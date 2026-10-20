@@ -1,0 +1,81 @@
+#!/usr/bin/env python3
+"""Build the API and broker from locked dependencies and a minimal source context."""
+
+import hashlib
+import os
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+
+
+def main():
+    root = Path(__file__).resolve().parents[1]
+    source = {p.name: p.read_bytes() for p in sorted((root / "src/chipload").glob("*.py"))}
+    sdk_hash = hashlib.sha256(
+        b"".join(name.encode() + b"\0" + content + b"\0" for name, content in source.items())
+    ).hexdigest()
+    lock = (root / "uv.lock").read_bytes()
+    with tempfile.TemporaryDirectory(prefix="chipload-runtime-image-") as directory:
+        context = Path(directory)
+        (context / "chipload").mkdir()
+        for name, content in source.items():
+            (context / "chipload" / name).write_bytes(content)
+        (context / "uv.lock").write_bytes(lock)
+        shutil.copyfile(root / "pyproject.toml", context / "pyproject.toml")
+        shutil.copyfile(root / "deploy/runtime/Dockerfile", context / "Dockerfile")
+        shutil.copyfile(root / "LICENSE", context / "LICENSE")
+        shutil.copytree(root / "deploy/runtime/licenses", context / "licenses")
+        for role in ("api", "broker"):
+            subprocess.run(
+                [
+                    "uv",
+                    "export",
+                    "--locked",
+                    "--no-dev",
+                    "--no-emit-project",
+                    *(["--extra", "server"] if role == "api" else []),
+                    "--format",
+                    "requirements-txt",
+                    "--output-file",
+                    str(context / f"{role}-requirements.txt"),
+                ],
+                cwd=context,
+                stdout=subprocess.DEVNULL,
+                check=True,
+            )
+        images = {}
+        for role in ("api", "broker"):
+            subprocess.run(
+                [
+                    "docker",
+                    "build",
+                    "--target",
+                    role,
+                    "--build-arg",
+                    f"SDK_SHA256={sdk_hash}",
+                    "--build-arg",
+                    f"DEPENDENCIES_SHA256={hashlib.sha256(lock).hexdigest()}",
+                    "--iidfile",
+                    str(context / "image-id"),
+                    str(context),
+                ],
+                check=True,
+            )
+            images[role] = (context / "image-id").read_text().strip()
+        local = root / ".local"
+        local.mkdir(mode=0o700, exist_ok=True)
+        for role, image in images.items():
+            fd, temporary = tempfile.mkstemp(prefix=f"{role}-image-", dir=local)
+            try:
+                with os.fdopen(fd, "w") as output:
+                    output.write(image + "\n")
+                os.replace(temporary, local / f"{role}-image")
+            finally:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
+            print(f"{role}: {image}; saved .local/{role}-image", flush=True)
+
+
+if __name__ == "__main__":
+    main()

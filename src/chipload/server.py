@@ -621,17 +621,22 @@ def main():
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
+    parser.add_argument("--bind", default="127.0.0.1", help="listener address; use 0.0.0.0 in a container")
+    parser.add_argument("--port", type=int, help="listener port, independent of the public resource URL")
     args = parser.parse_args()
+    if args.port is not None and not 1 <= args.port <= 65535:
+        parser.error("port must be between 1 and 65535")
     settings = ServerSettings.model_validate_json(args.config.read_bytes())
     address = urlsplit(settings.resource_url)
     uvicorn.run(
         create_app(settings),
-        host="127.0.0.1",
-        port=address.port or 8088,
+        host=args.bind,
+        port=args.port or address.port or 8088,
         proxy_headers=False,
         access_log=False,
         limit_concurrency=64,
         timeout_keep_alive=5,
+        timeout_graceful_shutdown=15,
         h11_max_incomplete_event_size=32 * 1024,
     )
 

@@ -148,7 +148,7 @@ def main():
         print(f"Keycloak: http://localhost:{keycloak_port} (realm: chipload)")
         print(f"OpenBao:  http://localhost:{bao_port} (initialized and unsealed)")
         print("Admin login is in .env; local recovery keys and restricted workload credentials are in .local/dev-stack/.")
-        print("Development infrastructure is ready. The Python shop runtime and MCP server are not implemented yet.")
+        print("Development infrastructure is ready. See docs/API.md for the host runtime and docs/RUNTIME.md for application containers.")
     elif args.command == "down":
         compose("down")  # Preserve volumes and bootstrap material.
     else:

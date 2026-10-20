@@ -23,6 +23,7 @@ Steve integration is planned for a later stage.
 - Durable source/build quotas now cover deployment, shop, and verified identity scopes, including pending/running jobs, hourly admissions, retained records, and payload storage reservations. Brokers claim work atomically with persistent dispatch turns. Tests exercise competing processes, transport parity, idempotent retries, migration, and operator policy changes.
 - HTTP admission now shares deployment, connection-peer, identity, and mutation budgets across API processes. Limiter state is bounded; contention and saturation return retry details. Tests exercise two actual HTTP servers, process restart, forwarded-header spoofing, and MCP client recovery. `scripts/benchmark-requests` measures admission overhead. Network-edge controls and full deployment load qualification remain open.
 - Capacity policy and request balances use a separate durable store, keeping public admission independent of shop write locks. Resumable migration preserves existing policy history and spent allowances; tests exercise concurrent startup, interruption, store pairing, and discovery during authoring writes. Both database files belong to one backup/restore set.
+- API and broker container packaging now uses pinned images, locked wheels, non-root users, private shared storage, process limits, and graceful shutdown. The API has no Docker access; the broker has a daemon socket and no IP network. The Compose listener is bound to host loopback. A live container test covers MCP authoring, isolated builds, REST discovery, restart, rollback, and withdrawal. See `docs/RUNTIME.md`; production identity/TLS topology remains open.
 - Additional dependency environments, custom executable evaluation, production process supervision, privileged equipment adapters, and hardened internet deployment remain to be implemented.
 - No open GitHub issues existed when this plan was written. The milestones below are a local implementation backlog; they have not been published as issues.
 
@@ -171,8 +172,9 @@ under memory and concurrency budgets, with publication/corruption/withdrawal
 tests. Source/build quotas and fair dispatch are enforced across processes using
 the same repository. Shared HTTP and mutation rate controls now reject excess
 traffic before shop work. Request accounting no longer competes with shop writes;
-its own concurrent writers can still contend. Trusted data-process containment,
-network-edge controls, broader storage/retention, deployment load
+its own concurrent writers can still contend. API/broker containers now bound
+memory, CPU, process count, temporary storage, and log retention. Per-request
+data-process containment, network-edge controls, broader storage/retention, deployment load
 targets, and full adversarial deployment verification remain open. The component benchmarks and HTTP admission tests cover
 these implemented boundaries; production deployment remains a separate gate.
 

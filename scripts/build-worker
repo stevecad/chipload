@@ -26,6 +26,7 @@ def main():
         (context / "uv.lock").write_bytes(lock)
         shutil.copyfile(root / "pyproject.toml", context / "pyproject.toml")
         shutil.copyfile(root / "deploy/worker/Dockerfile", context / "Dockerfile")
+        shutil.copyfile(root / "LICENSE", context / "LICENSE")
         subprocess.run(
             ["uv", "export", "--locked", "--no-dev", "--no-emit-project",
              "--format", "requirements-txt", "--output-file", str(context / "requirements.txt")],
