@@ -20,6 +20,7 @@ import httpx
 import httpx2
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
+from program_support import agent_call
 from tls_support import ROOT, stack
 
 from chipload.execution import ExecutionService
@@ -344,7 +345,7 @@ audit "file" "file" {
 
                             async def call(tool, body):
                                 for _ in range(6):
-                                    response = await agent.call_tool(tool, {"request": body})
+                                    response = await agent_call(agent, tool, body)
                                     value = response.structured_content or {}
                                     if response.is_error and value.get("status") == 429:
                                         await asyncio.sleep(min(10, value["error"]["retry_after"]))

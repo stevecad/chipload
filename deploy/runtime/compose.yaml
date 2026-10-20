@@ -56,7 +56,7 @@ services:
     <<: *runtime
     image: ${CHIPLOAD_BROKER_IMAGE:?Run ./scripts/build-runtime}
     pull_policy: never
-    command: [--database, /data/chipload.db, --image, '${CHIPLOAD_WORKER_IMAGE:?Run ./scripts/build-worker}']
+    command: [--database, /data/chipload.db, --image, '${CHIPLOAD_WORKER_IMAGE:?Run ./scripts/build-worker}', --settings, /etc/chipload/settings.json]
     # The broker needs the Docker API but no IP network or incoming port.
     network_mode: none
     group_add: ['${CHIPLOAD_DOCKER_GID:?}']
@@ -69,6 +69,11 @@ services:
       - type: bind
         source: ${CHIPLOAD_DOCKER_SOCKET:-/var/run/docker.sock}
         target: /var/run/docker.sock
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${CHIPLOAD_CONFIG:?}
+        target: /etc/chipload/settings.json
         read_only: true
         bind: {create_host_path: false}
 

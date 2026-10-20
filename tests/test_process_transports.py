@@ -1,9 +1,10 @@
 """Every example's technical and commercial contracts through real REST/MCP adapters."""
-
 import tempfile
 import unittest
 
 from fastapi.testclient import TestClient
+from program_support import call as program_call
+from program_support import processor
 from server_support import IdentityFixture
 
 from chipload import BuildIdentity, compile_shop
@@ -46,6 +47,7 @@ class ProcessTransportTests(unittest.TestCase):
             )
             published = PublishedService(service, clock=lambda: AT)
             operations = Operations(service, published)
+            self.programs = processor(operations, settings)
             verifier = TokenVerifier(settings, client=identity.client)
             app = create_app(settings, operations=operations, verifier=verifier)
             with TestClient(app, base_url=settings.base_url) as client:
@@ -152,29 +154,7 @@ class ProcessTransportTests(unittest.TestCase):
                         self.assertIsNone(findings["minimum-charge"]["effective_value"])
 
     def mcp(self, client, name, arguments, headers=None):
-        response = client.post(
-            "/mcp",
-            headers={
-                "Accept": "application/json, text/event-stream",
-                "MCP-Protocol-Version": "2026-07-28",
-                "Mcp-Method": "tools/call",
-                "Mcp-Name": name,
-                **(headers or {}),
-            },
-            json={
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "tools/call",
-                "params": {
-                    "name": name,
-                    "arguments": {"request": arguments},
-                    "_meta": {
-                        "io.modelcontextprotocol/protocolVersion": "2026-07-28",
-                        "io.modelcontextprotocol/clientCapabilities": {},
-                    },
-                },
-            },
-        )
+        response = program_call(client, name, arguments, headers, worker=self.programs)
         self.assertEqual(response.status_code, 200, response.text)
         result = response.json().get("result")
         self.assertIsNotNone(result, response.text)

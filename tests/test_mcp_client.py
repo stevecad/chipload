@@ -11,6 +11,7 @@ import uvicorn
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 from mcp.shared.exceptions import MCPError
+from program_support import agent_call, processor
 from server_support import IdentityFixture
 
 from chipload.quotas import QuotaPolicy
@@ -59,10 +60,15 @@ class MCPClientTests(unittest.IsolatedAsyncioTestCase):
             async with Client(
                 streamable_http_client(self.base + "/mcp", http_client=transport)
             ) as agent:
+                guide = await agent.read_resource("chipload://sdk/python")
+                self.assertIn("save", json.loads(guide.contents[0].text)["shop_methods"])
                 tools = await agent.list_tools()
-                self.assertIn("source_save", {tool.name for tool in tools.tools})
+                self.assertEqual(
+                    {"run_python", "read_run", "cancel_run", "discover_shop"},
+                    {tool.name for tool in tools.tools},
+                )
                 result = await agent.call_tool(
-                    "shop_catalog", {"request": {"shop_id": "thermal-example"}}
+                    "discover_shop", {"request": {"shop_id": "thermal-example"}}
                 )
                 self.assertFalse(result.is_error)
                 resource = await agent.read_resource("chipload://shops/thermal-example/catalog")
@@ -77,13 +83,20 @@ class MCPClientTests(unittest.IsolatedAsyncioTestCase):
             async with Client(
                 streamable_http_client(self.base + "/mcp", http_client=transport)
             ) as agent:
-                original = await agent.call_tool(
-                    "source_read", {"request": {"shop_id": "thermal-example"}}
-                )
+                identity = await agent.read_resource("chipload://identity/current")
+                self.assertEqual(json.loads(identity.contents[0].text)["subject"], "owner")
+
+                async def work():
+                    processor(self.operations, self.identity.settings).run_next()
+
+                async def call(name, arguments):
+                    return await agent_call(agent, name, arguments["request"], work=work)
+
+                original = await call("source_read", {"request": {"shop_id": "thermal-example"}})
                 self.assertFalse(original.is_error)
                 saved = original.structured_content
                 saved["project"]["files"][0]["content"] += "\n# MCP client edit\n"
-                updated = await agent.call_tool(
+                updated = await call(
                     "source_save",
                     {
                         "request": {
@@ -96,11 +109,11 @@ class MCPClientTests(unittest.IsolatedAsyncioTestCase):
                 async with httpx.AsyncClient(headers=headers, trust_env=False) as rest:
                     conventional = await rest.get(self.base + "/v1/shops/thermal-example/source")
                     self.assertEqual(conventional.json(), updated.structured_content)
-                publication = await agent.call_tool(
+                publication = await call(
                     "publication_read", {"request": {"shop_id": "thermal-example"}}
                 )
                 generation = publication.structured_content["generation"]
-                withdrawn = await agent.call_tool(
+                withdrawn = await call(
                     "publication_change",
                     {
                         "request": {
@@ -135,16 +148,16 @@ class MCPClientTests(unittest.IsolatedAsyncioTestCase):
                     expected_generation=quota["generation"],
                 )
                 arguments = {"request": {"shop_id": "thermal-example"}}
-                result = await agent.call_tool("shop_catalog", arguments)
+                result = await agent.call_tool("discover_shop", arguments)
                 self.assertFalse(result.is_error)
                 with self.assertRaises(MCPError) as failure:
-                    await agent.call_tool("shop_catalog", arguments)
+                    await agent.call_tool("discover_shop", arguments)
                 self.assertEqual(failure.exception.code, 429)
                 self.assertEqual(failure.exception.data["status"], 429)
                 self.assertEqual(failure.exception.data["error"]["limit"], "peer")
                 self.assertEqual(failure.exception.data["error"]["retry_after"], 1)
                 clock[0] += 1000
-                recovered = await agent.call_tool("shop_catalog", arguments)
+                recovered = await agent.call_tool("discover_shop", arguments)
                 self.assertEqual(recovered.structured_content, result.structured_content)
 
 

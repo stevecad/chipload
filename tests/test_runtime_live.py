@@ -14,6 +14,7 @@ import httpx
 import httpx2
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
+from program_support import agent_call
 from server_support import IdentityFixture
 
 from examples.export_project import project
@@ -166,7 +167,7 @@ else:
                 )
                 self.assertEqual(
                     {m["Destination"] for m in inspections[1]["Mounts"]},
-                    {"/data", "/var/run/docker.sock"},
+                    {"/data", "/var/run/docker.sock", "/etc/chipload/settings.json"},
                 )
                 await run(
                     "docker",
@@ -229,7 +230,7 @@ else:
                         ) as agent:
 
                             async def call(tool, values):
-                                result = await agent.call_tool(tool, {"request": values})
+                                result = await agent_call(agent, tool, values)
                                 self.assertFalse(result.is_error, result)
                                 return result.structured_content
 

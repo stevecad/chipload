@@ -28,7 +28,6 @@ from .execution_model import ExecutionRecord, ExecutionRequest, OperationInspect
 from .lifecycle import (
     BuildRecord,
     Conflict,
-    IntegrityError,
     NotFound,
     Publication,
     Repository,
@@ -39,11 +38,13 @@ from .operations import (
     AuditRead,
     BuildCreate,
     BuildRead,
+    DiscoverShop,
     Empty,
     EvaluationInput,
     ExecutionRead,
     ItemInput,
     ObservationsWrite,
+    Operation,
     OperationInput,
     Operations,
     PageInput,
@@ -53,58 +54,20 @@ from .operations import (
     SourceWrite,
     VariablesInput,
 )
+from .program_model import ReadRun, RunPython, RunRecord
 from .project import unique_json
 from .published import Collection, ObservationSnapshot
 from .query import VariableResult
 from .quotas import QuotaExceeded
 from .request_limits import RateLimited, RequestCapacity, request_peer
 from .responses import CatalogView, ItemView, PageView, PublicEvaluation
+from .service_errors import problem as service_problem
 
 MAX_REQUEST_BYTES = 3 * 1024 * 1024
 
 
 def problem(error: Exception) -> tuple[int, dict]:
-    if isinstance(error, IntegrityError):
-        status, code, message = 500, "internal_error", "request could not be completed"
-    elif isinstance(error, AuthenticationError):
-        status, code, message = 401, "authentication_required", str(error)
-    elif isinstance(error, Forbidden):
-        status, code, message = 403, "permission_denied", "permission denied"
-    elif isinstance(error, NotFound):
-        status, code, message = 404, "not_found", str(error)
-    elif isinstance(error, Conflict):
-        status, code, message = 409, "revision_conflict", str(error)
-    elif isinstance(error, IdentityUnavailable):
-        status, code, message = 503, "identity_unavailable", "identity verification is unavailable"
-    elif isinstance(error, DataBusy):
-        status, code, message = 503, "data_busy", str(error)
-    elif isinstance(error, RequestCapacity):
-        return 503, {
-            "error": {
-                "code": "request_capacity",
-                "message": str(error),
-                "retry_after": error.retry_after,
-            }
-        }
-    elif isinstance(error, RateLimited):
-        return 429, {
-            "error": {
-                "code": "rate_limited",
-                "message": str(error),
-                "limit": error.limit,
-                "retry_after": error.retry_after,
-            }
-        }
-    elif isinstance(error, QuotaExceeded):
-        return 429, {
-            "error": {
-                "code": "quota_exceeded",
-                "message": str(error),
-                "quota": error.quota,
-                "retry_after": error.retry_after,
-            }
-        }
-    elif isinstance(error, (ValidationError, RequestValidationError)):
+    if isinstance(error, RequestValidationError):
         return 422, {
             "error": {
                 "code": "invalid_request",
@@ -115,11 +78,7 @@ def problem(error: Exception) -> tuple[int, dict]:
                 ],
             }
         }
-    elif isinstance(error, ValueError):
-        status, code, message = 422, "invalid_request", str(error)
-    else:
-        status, code, message = 500, "internal_error", "request could not be completed"
-    return status, {"error": {"code": code, "message": message}}
+    return service_problem(error)
 
 
 def challenge(settings: ServerSettings) -> str:
@@ -256,9 +215,15 @@ class Boundary:
                 params = payload.get("params")
                 if payload.get("method") == "tools/call" and isinstance(params, dict):
                     name = params.get("name")
-                    spec = self.operations.specs.get(name) if isinstance(name, str) else None
-                    if spec and spec.authenticated and principal is None:
+                    if name in ("run_python", "read_run", "cancel_run") and principal is None:
                         raise AuthenticationError("authentication required")
+                if (
+                    payload.get("method") == "resources/read"
+                    and isinstance(params, dict)
+                    and params.get("uri") == "chipload://identity/current"
+                    and principal is None
+                ):
+                    raise AuthenticationError("authentication required")
             delivered = False
 
             async def replay():
@@ -323,15 +288,33 @@ def make_mcp(operations: Operations, settings: ServerSettings):
     mcp = MCPServer(
         "Chipload",
         version="0.2.0.dev0",
-        instructions="Discover published shop capabilities. Authoring tools require shop grants. "
-        "Source, builds, and publication are distinct; simulation is not physical qualification.",
+        instructions="Use discover_shop for public capabilities. Author and query shops with Python through run_python. "
+        "Read chipload://sdk/python for the client API and chipload://identity/current for your grants. "
+        "Code runs in an isolated container with client and inputs available; assign result to return JSON. "
+        "Retry the same request key to inspect the same run; failed or cancelled code may already have committed service calls. "
+        "Build and inspect shop source before publishing. Simulation is not physical qualification.",
     )
-    for name, spec in operations.specs.items():
+    tools = {
+        "run_python": ("code_run", operations.specs["code_run"]),
+        "read_run": ("code_read", operations.specs["code_read"]),
+        "cancel_run": ("code_cancel", operations.specs["code_cancel"]),
+        "discover_shop": (
+            None,
+            Operation(
+                DiscoverShop,
+                "Discover a public shop catalog, page or item, or evaluate capabilities and business variables. See chipload://sdk/reference for query schemas.",
+                lambda who, request: operations.discover(request),
+            ),
+        ),
+    }
+    for tool_name, (name, spec) in tools.items():
 
-        def register(name, spec):
+        def register(tool_name, name, spec):
             async def invoke(request, ctx):
                 principal = ctx.request_context.request.scope.get("chipload.principal")
                 try:
+                    if name is None:
+                        return await run_in_threadpool(operations.discover, request)
                     return await run_in_threadpool(operations.call, name, principal, request)
                 except (
                     AuthenticationError,
@@ -357,18 +340,31 @@ def make_mcp(operations: Operations, settings: ServerSettings):
             }
             mcp.add_tool(
                 invoke,
-                name=name,
+                name=tool_name,
                 description=spec.description,
                 structured_output=True,
                 annotations=ToolAnnotations(
                     read_only_hint=spec.read_only,
                     destructive_hint=not spec.read_only,
-                    idempotent_hint=spec.read_only or name == "build_request",
-                    open_world_hint=False,
+                    idempotent_hint=True,
+                    open_world_hint=tool_name in {"run_python", "cancel_run"},
                 ),
             )
 
-        register(name, spec)
+        register(tool_name, name, spec)
+
+    @mcp.resource("chipload://sdk/python", mime_type="application/json")
+    async def python_reference():
+        from .client import python_reference
+
+        return json.dumps(python_reference())
+
+    @mcp.resource("chipload://identity/{view}", mime_type="application/json")
+    async def identity_reference(view: str, ctx: Context):
+        if view != "current":
+            raise ValueError("unknown identity resource")
+        principal = ctx.request_context.request.scope.get("chipload.principal")
+        return json.dumps(await run_in_threadpool(operations.call, "identity_read", principal, {}))
 
     @mcp.resource("chipload://sdk/reference", mime_type="application/json")
     async def reference():
@@ -477,6 +473,20 @@ def create_app(
     @app.get("/v1/identity")
     async def identity(request: Request):
         return await call("identity_read", request, Empty())
+
+    @app.post("/v1/shops/{shop_id}/runs", status_code=202, response_model=RunRecord)
+    async def code_run(shop_id: str, body: RunPython, request: Request):
+        if body.shop_id != shop_id:
+            raise ValueError("body and path shop IDs must match")
+        return await call("code_run", request, body)
+
+    @app.get("/v1/shops/{shop_id}/runs/{run_id}", response_model=RunRecord)
+    async def code_read(shop_id: str, run_id: str, request: Request):
+        return await call("code_read", request, ReadRun(shop_id=shop_id, run_id=run_id))
+
+    @app.post("/v1/shops/{shop_id}/runs/{run_id}/cancel", response_model=RunRecord)
+    async def code_cancel(shop_id: str, run_id: str, request: Request):
+        return await call("code_cancel", request, ReadRun(shop_id=shop_id, run_id=run_id))
 
     @app.get("/v1/shops/{shop_id}/catalog", response_model=CatalogView)
     async def catalog(shop_id: str, request: Request):
@@ -657,6 +667,7 @@ def create_app(
                         "evidence",
                         "observations",
                         "executions",
+                        "runs",
                     )
                 )
             )

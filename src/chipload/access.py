@@ -7,6 +7,9 @@ from pydantic import Field, StrictStr
 from .model import Id, Model
 
 Action = Literal[
+    "code:run",
+    "code:read",
+    "code:cancel",
     "source:read",
     "source:write",
     "build:read",
@@ -22,6 +25,9 @@ Action = Literal[
     "operation:cancel",
 ]
 ACTIONS: tuple[Action, ...] = (
+    "code:run",
+    "code:read",
+    "code:cancel",
     "source:read",
     "source:write",
     "build:read",
@@ -50,6 +56,14 @@ class Principal(Model):
 
 
 class Forbidden(PermissionError):
+    pass
+
+
+class AuthenticationError(ValueError):
+    pass
+
+
+class IdentityUnavailable(RuntimeError):
     pass
 
 

@@ -8,6 +8,7 @@ from pydantic import Field, StrictInt
 
 from .execution_model import RESULT_RESERVATION_BYTES
 from .model import Model
+from .program_model import PROGRAM_RESERVATION
 from .project import MAX_OUTPUT_BYTES
 from .request_limits import RequestLimits
 
@@ -16,6 +17,11 @@ ByteLimit = Annotated[StrictInt, Field(ge=1, le=1024**4)]
 
 
 class ScopeQuota(Model):
+    pending_programs: Count = 20
+    running_programs: Annotated[StrictInt, Field(ge=1, le=16)] = 1
+    programs_per_hour: Count = 120
+    retained_programs: Count = 1000
+    program_bytes: ByteLimit = 512 * 1024**2
     pending_builds: Count
     running_builds: Annotated[StrictInt, Field(ge=1, le=128)]
     builds_per_hour: Count
@@ -172,6 +178,16 @@ def quota_usage(db, *, at: datetime, shop: str | None = None, identity: str | No
             ((at - timedelta(hours=1)).isoformat(), RESULT_RESERVATION_BYTES, *parameters),
         ).fetchone()
         result[scope].update(dict(operations))
+        programs = db.execute(
+            "SELECT COUNT(*) AS retained_programs, "
+            "COALESCE(SUM(state IN ('queued','running')),0) AS pending_programs, "
+            "COALESCE(SUM(state='running'),0) AS running_programs, "
+            "COALESCE(SUM(created_at>?),0) AS programs_last_hour, "
+            "COUNT(*) * ? AS program_bytes_reserved "
+            f"FROM python_runs {where}",
+            ((at - timedelta(hours=1)).isoformat(), PROGRAM_RESERVATION, *parameters),
+        ).fetchone()
+        result[scope].update(dict(programs))
     return result
 
 

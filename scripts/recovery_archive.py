@@ -208,7 +208,7 @@ def validate_pair(directory):
         closing(readonly(directory / "chipload.db")) as main,
         closing(readonly(directory / "chipload.db.admission")) as capacity,
     ):
-        for db, version in ((main, 6), (capacity, 1)):
+        for db, version in ((main, 7), (capacity, 1)):
             if db.execute("PRAGMA user_version").fetchone()[0] != version:
                 raise ValueError("unsupported recovery database schema")
             if db.execute("PRAGMA integrity_check").fetchall() != [("ok",)]:
@@ -223,6 +223,8 @@ def validate_pair(directory):
             raise ValueError("running builds remain; finish or recover them before backup")
         if main.execute("SELECT 1 FROM executions WHERE state IN ('queued','running','indeterminate') LIMIT 1").fetchone():
             raise ValueError("unfinished operations remain; cancel, finish, or reconcile them before backup")
+        if main.execute("SELECT 1 FROM python_runs WHERE state IN ('queued','running') LIMIT 1").fetchone():
+            raise ValueError("unfinished Python runs remain; cancel or finish them before backup")
 
 
 def snapshot_pair(source, destination):

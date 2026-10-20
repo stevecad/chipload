@@ -4,6 +4,8 @@ import unittest
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
+from program_support import call as program_call
+from program_support import processor
 from server_support import IdentityFixture
 
 from chipload.cache import DataBusy
@@ -34,22 +36,7 @@ class TransportTests(unittest.TestCase):
         self.owner = {"Authorization": "Bearer " + self.identity.token()}
 
     def mcp(self, name, arguments, headers=None):
-        return self.client.post(
-            "/mcp",
-            headers={
-                "Accept": "application/json, text/event-stream",
-                "MCP-Protocol-Version": "2026-07-28",
-                "Mcp-Method": "tools/call",
-                "Mcp-Name": name,
-                **(headers or {}),
-            },
-            json={
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "tools/call",
-                "params": {"name": name, "arguments": {"request": arguments}, "_meta": META},
-            },
-        )
+        return program_call(self.client, name, arguments, headers, worker=processor(self.operations, self.identity.settings))
 
     def structured(self, response):
         self.assertEqual(response.status_code, 200, response.text)
@@ -162,6 +149,13 @@ class TransportTests(unittest.TestCase):
                 self.assertEqual(rest.json()["outcome"], scenario.expected)
 
     def test_machining_scenarios_use_the_same_rest_and_mcp_evaluator(self):
+        # One admitted program per scenario here isolates parity failures; the
+        # composed workflow is covered by live tests. Give this matrix capacity.
+        repository = self.operations.service.repository
+        quota = repository.read_quotas()
+        quota['policy']['requests']['mutation_identity']['burst'] = 100
+        quota['policy']['requests']['mutation_shop']['burst'] = 100
+        repository.set_quotas(QuotaPolicy.model_validate(quota['policy']), expected_generation=quota['generation'])
         from chipload.artifact import BuildIdentity, compile_shop
         from chipload.project import (
             AcceptanceCase,

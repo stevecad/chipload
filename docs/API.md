@@ -5,7 +5,7 @@ same operation contracts, application services, permission checks, and published
 revisions. Public discovery works without authentication or an agent.
 
 The server defaults to a loopback listener and does not import shop source or
-invoke Docker. A separate broker processes build jobs. Both can run in
+invoke Docker. A separate broker processes isolated build and Python jobs. Both can run in
 [separate application containers](RUNTIME.md) with process and filesystem limits.
 The [TLS stack](TLS.md) adds verified HTTPS, production-mode Keycloak, and private
 networks. Public edge qualification, stronger isolation, recovery exercises,
@@ -24,12 +24,14 @@ uv run --extra server python -m chipload.server --config .local/server.json
 In another terminal:
 
 ```sh
-uv run python -m chipload.broker
+chmod 600 .local/server.json
+uv run python -m chipload.broker --settings .local/server.json
 ```
 
 The server and broker default to `.local/chipload.db`. The broker requires Docker
-access and `.local/worker-image`; the server requires neither. Each broker recovers
-expired claims and processes one build at a time. Multiple brokers share atomic
+access and `.local/worker-image`; the server requires neither. With `--settings`, each broker runs a Python loop alongside its build loop.
+Python programs have separate capacity and can wait for a build. Each broker
+recovers expired claims and processes one build at a time. Multiple brokers share atomic
 dispatch and running-job limits in the database. Eligible shops rotate by their
 last dispatch turn, with identity turns and queued time breaking ties. New
 queues join at the current turn. Shutdown lets the current bounded job finish.
@@ -60,15 +62,15 @@ documents the launcher; the settings example contains no identities or grants.
 
 ## Discovery and evaluation
 
-| REST endpoint | MCP tool |
+| REST endpoint | Python client / MCP discovery |
 | --- | --- |
-| `GET /v1/sdk` | `sdk_reference` |
-| `GET /v1/identity` (authenticated) | `identity_read` |
-| `GET /v1/shops/{shop}/catalog` | `shop_catalog` |
-| `GET /v1/shops/{shop}/{collection}` | `shop_list` |
-| `GET /v1/shops/{shop}/{collection}/{id}` | `shop_inspect` |
-| `POST /v1/shops/{shop}/evaluate` | `shop_evaluate` |
-| `POST /v1/shops/{shop}/variables/query` | `shop_variables` |
+| `GET /v1/sdk` | `client.reference()` / `chipload://sdk/reference` |
+| `GET /v1/identity` (authenticated) | `client.identity()` / `chipload://identity/current` |
+| `GET /v1/shops/{shop}/catalog` | `shop.catalog() / discover_shop: catalog` |
+| `GET /v1/shops/{shop}/{collection}` | `shop.page() / discover_shop: page` |
+| `GET /v1/shops/{shop}/{collection}/{id}` | `shop.inspect() / discover_shop: inspect` |
+| `POST /v1/shops/{shop}/evaluate` | `shop.evaluate() / discover_shop: evaluate` |
+| `POST /v1/shops/{shop}/variables/query` | `shop.variables() / discover_shop: variables` |
 
 Collections are `sites`, `resources`, `catalogs`, `processes`, `capabilities`,
 `workflows`, `variables`, and `operations`. Only explicitly public records appear. Private and
@@ -114,24 +116,26 @@ partial disclosure into proof of support.
 
 ## Authenticated operations
 
-| REST endpoint | MCP tool |
+MCP programs compose these calls through the [Python client](PYTHON_API.md).
+
+| REST endpoint | Python client method |
 | --- | --- |
-| `GET /v1/shops/{shop}/source?revision=...` | `source_read` |
-| `PUT /v1/shops/{shop}/source` | `source_save` |
-| `POST /v1/shops/{shop}/builds` | `build_request` |
-| `GET /v1/shops/{shop}/builds/{build}` | `build_inspect` |
-| `GET /v1/shops/{shop}/publication` | `publication_read` |
-| `PUT /v1/shops/{shop}/publication` | `publication_change` |
-| `GET /v1/shops/{shop}/audit?after=0&limit=100` | `audit_read` |
-| `GET /v1/shops/{shop}/evidence` | `evidence_read` |
-| `GET /v1/shops/{shop}/observations` | `observations_read` |
-| `PUT /v1/shops/{shop}/observations` | `observations_write` |
-| `POST /v1/shops/{shop}/private/evaluate` | `shop_evaluate_private` |
-| `POST /v1/shops/{shop}/private/variables/query` | `shop_variables_private` |
-| `GET /v1/shops/{shop}/private/operations/{operation}` | `operation_inspect` |
-| `POST /v1/shops/{shop}/operations/{operation}/executions` | `operation_submit` |
-| `GET /v1/shops/{shop}/operations/{operation}/executions/{execution}` | `operation_execution_read` |
-| `POST /v1/shops/{shop}/operations/{operation}/executions/{execution}/cancel` | `operation_execution_cancel` |
+| `GET /v1/shops/{shop}/source?revision=...` | `shop.source` |
+| `PUT /v1/shops/{shop}/source` | `shop.save` |
+| `POST /v1/shops/{shop}/builds` | `shop.build` |
+| `GET /v1/shops/{shop}/builds/{build}` | `shop.build_result` |
+| `GET /v1/shops/{shop}/publication` | `shop.publication` |
+| `PUT /v1/shops/{shop}/publication` | `shop.publish / rollback / withdraw` |
+| `GET /v1/shops/{shop}/audit?after=0&limit=100` | `shop.audit` |
+| `GET /v1/shops/{shop}/evidence` | `shop.evidence` |
+| `GET /v1/shops/{shop}/observations` | `shop.observations` |
+| `PUT /v1/shops/{shop}/observations` | `shop.set_observations` |
+| `POST /v1/shops/{shop}/private/evaluate` | `shop.evaluate(private=True)` |
+| `POST /v1/shops/{shop}/private/variables/query` | `shop.variables(private=True)` |
+| `GET /v1/shops/{shop}/private/operations/{operation}` | `shop.operation` |
+| `POST /v1/shops/{shop}/operations/{operation}/executions` | `shop.execute` |
+| `GET /v1/shops/{shop}/operations/{operation}/executions/{execution}` | `shop.execution` |
+| `POST /v1/shops/{shop}/operations/{operation}/executions/{execution}/cancel` | `shop.cancel` |
 
 Callable operations use typed inputs/outputs, explicit simulation/live intent,
 shop and operation grants, and separately provisioned adapter bindings. See
@@ -191,7 +195,7 @@ after changing trust material.
 
 The token's `resource_access.chipload.roles` sets a permission ceiling:
 `shop:read` permits read actions, `shop:operate` permits `operation:read`,
-`operation:execute`, and `operation:cancel`, and `shop:admin` permits all current
+`operation:execute`, `operation:cancel` and the three `code:*` actions; `shop:admin` permits all current
 actions. Each action must **also** appear in the operator-owned binding for that
 subject and shop. Grants may restrict operation actions through an `operations`
 ID allowlist. `shop:operate` does not grant authoring privileges. No token
@@ -206,14 +210,14 @@ to `.local/server.json`, for example:
   "grants": [
     {
       "shop_id": "thermal-example",
-      "actions": ["source:read", "source:write", "build:read", "build:run"]
+      "actions": ["code:run", "code:read", "code:cancel", "source:read", "source:write", "build:read", "build:run"]
     }
   ]
 }
 ```
 
 Add `publication:write` only when publication is delegated. Restart the server
-after editing its configuration; bindings are loaded at startup. Runtime grant
+after editing its configuration; bindings are loaded at startup. The broker rereads explicit grants for each hosted SDK call. Runtime grant
 administration and immediate token revocation are not implemented. Keep access
 tokens out of source bundles, query strings, and logs. Send them in an
 `Authorization: Bearer ...` header. Invalid supplied credentials never fall back
@@ -227,8 +231,9 @@ for the remaining production deployment work.
 
 Connect a Streamable HTTP client to `http://localhost:8088/mcp`. The server uses
 the official MCP Python SDK and supports its current 2026-07-28 protocol.
-Tools use a single typed `request` argument containing the same contract as the
-REST operation. For example:
+The four tools are `run_python`, `read_run`, `cancel_run` and `discover_shop`.
+Use [Python programs](PYTHON_API.md) to compose authenticated service calls.
+Tools use a single typed `request` argument. For example:
 
 ```python
 import asyncio
@@ -237,14 +242,15 @@ from mcp import Client
 async def main():
     async with Client("http://localhost:8088/mcp") as client:
         result = await client.call_tool(
-            "shop_catalog", {"request": {"shop_id": "thermal-example"}}
+            "discover_shop", {"request": {"shop_id": "thermal-example"}}
         )
         print(result.structured_content)
 
 asyncio.run(main())
 ```
 
-Resources include `chipload://sdk/reference` and
+Resources include `chipload://sdk/reference`, `chipload://sdk/python`,
+`chipload://identity/current` (authenticated), and
 `chipload://shops/{shop_id}/catalog`. Source projects are never resource URIs
 that map to host files. Public tools/resources are anonymous; protected calls
 without credentials receive HTTP 401 and a protected-resource metadata challenge.
@@ -279,14 +285,14 @@ keys, at most 32 nested containers, and at most 100,000 scan tokens (structural
 punctuation, string openings, and escapes). Rejected JSON returns HTTP 400
 `invalid_json` on both REST and MCP before domain work. Source strings containing
 ordinary JSON punctuation do not consume nesting depth. Model collection,
-evaluation, and acceptance-suite limits are exposed by `sdk_reference`; see
+evaluation, and acceptance-suite limits are exposed by `chipload://sdk/reference`; see
 [model admission limits](SHOP_MODEL.md#units-identities-and-artifacts) and
 [build contracts](AUTHORING.md#project-and-build-contracts).
 
 These initial bounds do not constitute internet load qualification. Data
 processing still needs deployment process limits and concurrent load verification.
 
-Source/build admission uses durable quotas shared by every API and broker using
+Source/build and [Python run](PYTHON_API.md) admission use durable quotas shared by every API and broker using
 the same database. Limits apply to the deployment, shop, and verified identity;
 switching transports or shops does not reset identity usage. Rejections use
 HTTP 429 `quota_exceeded` with `quota` and `retry_after` in the error object. REST
@@ -337,7 +343,8 @@ across shops, routes, transports, and refreshed tokens.
 
 These are token buckets with continuous refill, not counters that reset on a
 minute boundary. The burst is the maximum accumulated allowance. Source saves,
-build requests, publication changes, and observation writes share mutation
+build requests, publication changes, observation writes, code submissions and
+cancellations share mutation
 budgets through the common operation layer. Permission checks precede mutation
 admission. Conflicts, no-op calls, and idempotent retries consume request allowance;
 build request keys still prevent duplicate jobs. The local operator CLI uses

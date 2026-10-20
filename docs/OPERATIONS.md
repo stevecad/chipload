@@ -95,18 +95,18 @@ Revocation after dispatch cannot undo an accepted external action.
 
 ## Submit and inspect
 
-| REST endpoint | MCP tool | Grant |
+| REST endpoint | Python client | Grant |
 | --- | --- | --- |
-| `GET /v1/shops/{shop}/private/operations/{operation}` | `operation_inspect` | `operation:read` |
-| `POST /v1/shops/{shop}/operations/{operation}/executions` | `operation_submit` | `operation:execute` |
-| `GET /v1/shops/{shop}/operations/{operation}/executions/{execution}` | `operation_execution_read` | `operation:read` |
-| `POST /v1/shops/{shop}/operations/{operation}/executions/{execution}/cancel` | `operation_execution_cancel` | `operation:cancel` |
+| `GET /v1/shops/{shop}/private/operations/{operation}` | `shop.operation` | `operation:read` |
+| `POST /v1/shops/{shop}/operations/{operation}/executions` | `shop.execute` | `operation:execute` |
+| `GET /v1/shops/{shop}/operations/{operation}/executions/{execution}` | `shop.execution` | `operation:read` |
+| `POST /v1/shops/{shop}/operations/{operation}/executions/{execution}/cancel` | `shop.cancel` | `operation:cancel` |
 
 Anonymous discovery uses the existing `operations` collection, through REST or
-`shop_list`/`shop_inspect`. The private inspection response includes the published
+`discover_shop` with `page`/`inspect`. The private inspection response includes the published
 contract, generation, model digest, binding generation, and whether it is enabled.
 
-A submit body, also used as the MCP tool's `request` argument:
+A REST submit body, or the equivalent arguments to `shop.execute` in Python:
 
 ```json
 {
@@ -123,9 +123,9 @@ A submit body, also used as the MCP tool's `request` argument:
 }
 ```
 
-Submission returns 202 and an execution record. Read/cancel MCP arguments contain
-`shop_id`, `operation_id`, and `execution_id`; REST read/cancel take those from
-the path. Execution results are private to subjects with the appropriate shop
+REST submission returns 202 and an execution record. MCP programs use
+`shop.execution(operation_id, execution_id)` and `shop.cancel(operation_id, execution_id)`;
+REST read/cancel take those IDs from the path. Execution results are private to subjects with the appropriate shop
 and operation grant, not necessarily restricted to the original requester.
 
 Persist and reuse the same request key and exact payload after a lost response.
@@ -174,7 +174,7 @@ the claim and deadline. Reconciliation uses that receipt or a revoked claim
 under the same writer lock to establish the outcome. This gives the simulator
 a provable boundary; it does not provide universal exactly-once physical effects.
 
-Repository schema 6 preserves bindings, jobs, simulation receipts, and resource
+Repository schema 7 preserves bindings, jobs, simulation receipts, and resource
 locks. Backups reject queued, running, or indeterminate operations. Before backup,
 stop new submissions, settle/cancel queued work, reconcile uncertain results,
 and stop separate executors. Restoring a database cannot roll back equipment or

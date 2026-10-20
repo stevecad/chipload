@@ -98,7 +98,7 @@ This gives clients three distinct questions:
 2. **Do the declared business conditions fit this engagement?** Evaluate its terms.
 3. **Do both fit?** Evaluate the combined offer workflow.
 
-All three are supported through the existing REST evaluation route and MCP tool.
+All three are supported through the REST evaluation route, `discover_shop` evaluation action, or composed Python SDK calls.
 A successful technical query alone does not establish commercial acceptance.
 Successful terms evaluation does not create a quote, order, contract, or capacity
 reservation. RFQ intake remains deferred.

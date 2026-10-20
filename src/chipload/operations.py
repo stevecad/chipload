@@ -3,16 +3,17 @@
 from dataclasses import dataclass, replace
 from typing import Annotated, Callable, Literal
 
-from pydantic import Field, StrictInt, StrictStr, model_validator
+from pydantic import Field, JsonValue, StrictInt, StrictStr, model_validator
 
-from .access import Action, Principal, require, require_operation
+from .access import Action, AuthenticationError, Principal, require, require_operation
 from .artifact import Digest
-from .auth import AuthenticationError
 from .evaluate import EvaluationRequest
 from .execution import ExecutionService
 from .execution_model import ExecutionRecord, ExecutionRequest, OperationInspection
 from .lifecycle import BuildRecord, Publication, ShopService, SourceRevision
 from .model import Id, Model, Observation
+from .program_model import ReadRun, RunPython, RunRecord
+from .programs import ProgramService
 from .project import SourceProject
 from .published import Collection, ObservationSnapshot, PublishedService
 from .query import VariableQuery, VariableResult
@@ -27,6 +28,11 @@ class Empty(Model):
 
 class ShopInput(Model):
     shop_id: Id
+
+
+class DiscoverShop(ShopInput):
+    action: Literal["catalog", "page", "inspect", "evaluate", "variables"] = "catalog"
+    arguments: dict[str, JsonValue] = Field(default_factory=dict, max_length=100)
 
 
 class PageInput(ShopInput):
@@ -114,9 +120,16 @@ class Operations:
         self.limiter = RequestLimiter(service.repository)
         self.published = published or PublishedService(service)
         self.executions = ExecutionService(service.repository)
+        self.programs = ProgramService(service.repository)
         p = self.published
         s = self.service
         self.specs = {
+            "code_run": Operation(RunPython, "Run Python with scoped SDK calls in an isolated container. Retry the same request key to inspect the same run.",
+                                  lambda who, r: self.programs.submit(who, r), True, False, mutation_action="code:run"),
+            "code_read": Operation(ReadRun, "Inspect a Python run, its result, and its service-call journal.",
+                                   lambda who, r: self.programs.read(who, r.shop_id, r.run_id), True),
+            "code_cancel": Operation(ReadRun, "Stop Python execution; previously dispatched service calls may have committed.",
+                                     lambda who, r: self.programs.cancel(who, r.shop_id, r.run_id), True, False, mutation_action="code:cancel"),
             "operation_inspect": Operation(
                 OperationInput,
                 "Inspect an authorized published call contract and its binding status.",
@@ -272,6 +285,9 @@ class Operations:
             ),
         }
         outputs = {
+            "code_run": RunRecord,
+            "code_read": RunRecord,
+            "code_cancel": RunRecord,
             "operation_inspect": OperationInspection,
             "operation_submit": ExecutionRecord,
             "operation_execution_read": ExecutionRecord,
@@ -305,6 +321,12 @@ class Operations:
         return getattr(self.service, request.action)(
             *arguments, expected_generation=request.expected_generation
         )
+
+    def discover(self, request):
+        request = DiscoverShop.model_validate(request)
+        operation = {"catalog": "shop_catalog", "page": "shop_list", "inspect": "shop_inspect",
+                     "evaluate": "shop_evaluate", "variables": "shop_variables"}[request.action]
+        return self.call(operation, None, {**request.arguments, "shop_id": request.shop_id})
 
     def call(self, name, principal, request) -> dict:
         spec = self.specs[name]

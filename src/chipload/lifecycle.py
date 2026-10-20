@@ -24,6 +24,7 @@ from .discovery import public_catalog
 from .execution_model import EXECUTION_SCHEMA
 from .limits import bounded_json
 from .model import Id, Model, Timestamp
+from .program_model import PROGRAM_SCHEMA
 from .project import MAX_OUTPUT_BYTES, MAX_PROJECT_BYTES, BuildReport, SourceProject
 from .quotas import QUOTA_SCHEMA, QuotaPolicy, admit_build, admit_running, admit_source, quota_usage
 from .request_limits import REQUEST_SCHEMA
@@ -126,9 +127,9 @@ class Repository:
             os.close(fd)
         with self.connection() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in {0, 1, 2, 3, 4, 5, 6}:
+            if version not in {0, 1, 2, 3, 4, 5, 6, 7}:
                 raise ValueError("unsupported repository schema")
-            if version in {5, 6}:
+            if version in {5, 6, 7}:
                 reference = db.execute("SELECT * FROM admission_store WHERE id=1").fetchone()
                 if reference is None:
                     raise IntegrityError("missing admission store reference")
@@ -140,14 +141,16 @@ class Repository:
                     self.admission.snapshot()
                     if version == 5:
                         self._initialize_executions()
+                    if version < 7:
+                        self._initialize_programs()
                     return
             db.execute("PRAGMA journal_mode=WAL")
             db.execute("BEGIN IMMEDIATE")
             try:
                 version = db.execute("PRAGMA user_version").fetchone()[0]
-                if version not in {0, 1, 2, 3, 4, 5, 6}:
+                if version not in {0, 1, 2, 3, 4, 5, 6, 7}:
                     raise ValueError("unsupported repository schema")
-                if version in {5, 6}:
+                if version in {5, 6, 7}:
                     db.execute("COMMIT")
                     self._initialize_admission()
                     return
@@ -225,6 +228,15 @@ class Repository:
                 self.admission.enable_wal()
                 self.admission.snapshot()
         self._initialize_executions()
+        self._initialize_programs()
+
+    def _initialize_programs(self):
+        with self.transaction() as db:
+            if db.execute("PRAGMA user_version").fetchone()[0] == 6:
+                for statement in PROGRAM_SCHEMA.split(";"):
+                    if statement.strip():
+                        db.execute(statement)
+                db.execute("PRAGMA user_version=7")
 
     def policy(self) -> QuotaPolicy:
         try:

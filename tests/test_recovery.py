@@ -34,6 +34,22 @@ class RecoveryTests(unittest.TestCase):
         )
         self.saved = self.service.save_source(self.owner, project(), expected_head=None)
 
+    def test_python_runs_must_settle_before_backup_and_journals_survive(self):
+        from chipload.program_model import RunPython
+        from chipload.programs import ProgramService
+
+        programs = ProgramService(self.repository)
+        job = programs.submit(
+            self.owner, RunPython(shop_id="thermal-example", request_key="backup", code="result=1")
+        )
+        with self.assertRaisesRegex(ValueError, "unfinished Python"):
+            archive.validate_pair(self.data)
+        programs.cancel(self.owner, job.shop_id, job.id)
+        destination = self.root / "snapshot"
+        archive.snapshot_pair(self.data, destination)
+        restored = ProgramService(Repository(destination / "chipload.db"))
+        self.assertEqual(restored.read(self.owner, job.shop_id, job.id).state, "cancelled")
+
     def contents(self):
         directory = self.root / "contents"
         directory.mkdir(mode=0o700)

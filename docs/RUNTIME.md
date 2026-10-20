@@ -141,3 +141,5 @@ exercise actual Keycloak tokens and OpenBao access denials.
 
 Only test-owned containers and temporary data are removed. The SDK's existing
 worker and lifecycle live tests remain required when those boundaries change.
+
+The broker also processes [Python automation runs](PYTHON_API.md) in separate restricted workers. It mounts `/etc/chipload/settings.json` read-only to recheck explicit grants before each SDK call. Code and build loops have separate capacity; code cannot inherit the broker's filesystem or Docker socket. On shutdown the code loop terminates its worker and records interruption; completed SDK calls remain committed.

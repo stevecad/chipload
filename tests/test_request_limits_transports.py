@@ -1,10 +1,11 @@
 """Rate limits protect both transports before expensive work and share mutation budgets."""
-
 import tempfile
 import unittest
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
+from program_support import call as program_call
+from program_support import processor
 from server_support import IdentityFixture
 
 from chipload.quotas import QuotaPolicy
@@ -45,22 +46,7 @@ class RequestLimitTransportTests(unittest.TestCase):
         )
 
     def mcp(self, name, arguments, headers=None):
-        return self.client.post(
-            "/mcp",
-            headers={
-                "Accept": "application/json, text/event-stream",
-                "MCP-Protocol-Version": "2026-07-28",
-                "Mcp-Method": "tools/call",
-                "Mcp-Name": name,
-                **(headers or {}),
-            },
-            json={
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "tools/call",
-                "params": {"name": name, "arguments": {"request": arguments}, "_meta": META},
-            },
-        )
+        return program_call(self.client, name, arguments, headers, worker=processor(self.operations, self.identity.settings))
 
     def test_ingress_rejects_before_token_verification_body_parsing_or_domain_calls(self):
         self.policy(peer={"burst": 1})

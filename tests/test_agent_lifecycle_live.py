@@ -15,6 +15,7 @@ import httpx2
 import uvicorn
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
+from program_support import agent_call
 from server_support import IdentityFixture
 
 from chipload.lifecycle import Repository, ShopService
@@ -51,6 +52,10 @@ class AgentLifecycleLiveTests(unittest.IsolatedAsyncioTestCase):
                     or Path(".local/worker-image").read_text().strip()
                 )
 
+                settings_path = Path(directory) / "broker-settings.json"
+                settings_path.write_text(identity.settings.model_dump_json())
+                settings_path.chmod(0o600)
+
                 async def work():
                     completed = await asyncio.to_thread(
                         subprocess.run,
@@ -62,6 +67,8 @@ class AgentLifecycleLiveTests(unittest.IsolatedAsyncioTestCase):
                             str(identity.settings.database),
                             "--image",
                             image,
+                            "--settings",
+                            str(settings_path),
                             "--once",
                         ],
                         capture_output=True,
@@ -78,7 +85,7 @@ class AgentLifecycleLiveTests(unittest.IsolatedAsyncioTestCase):
                     ) as agent:
 
                         async def call(name, values):
-                            result = await agent.call_tool(name, {"request": values})
+                            result = await agent_call(agent, name, values, work=work)
                             self.assertFalse(result.is_error, result)
                             return result.structured_content
 

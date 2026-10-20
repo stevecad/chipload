@@ -14,18 +14,10 @@ import httpx
 import jwt
 from pydantic import Field, StrictInt, StrictStr, field_validator, model_validator
 
-from .access import ACTIONS, Grant, Principal
+from .access import ACTIONS, AuthenticationError, Grant, IdentityUnavailable, Principal
 from .cache import DEFAULT_CACHE_BYTES
 from .model import Model
 from .project import unique_json
-
-
-class AuthenticationError(ValueError):
-    pass
-
-
-class IdentityUnavailable(RuntimeError):
-    pass
 
 
 class ServerSettings(Model):
@@ -222,7 +214,7 @@ class TokenVerifier:
         )
         ceiling = set(ACTIONS) if "shop:admin" in roles else set()
         if "shop:operate" in roles:
-            ceiling.update({"operation:read", "operation:execute", "operation:cancel"})
+            ceiling.update({"operation:read", "operation:execute", "operation:cancel", "code:run", "code:read", "code:cancel"})
         if "shop:read" in roles:
             ceiling.update(action for action in ACTIONS if action.endswith(":read"))
         binding = self._bindings.get(claims["sub"])

@@ -38,7 +38,7 @@ The [process and business example library](docs/PROCESS_EXAMPLES.md) adds 88 pro
 
 The [callable shop example](examples/callable_shop.py) adds simulated document review, sample manufacture, inspection, and an outside process. Each operation applies prototype business conditions; manufacturing also checks its technical envelope. See [operation setup and semantics](docs/OPERATIONS.md) for adapter bindings, grants, retries, cancellation, and recovery.
 
-To save source revisions, build in restricted Docker containers, inspect diagnostics, and publish or roll back an exact build, follow [the authoring walkthrough](docs/AUTHORING.md). See [the API guide](docs/API.md) to run REST and MCP, configure Keycloak/shop permissions, and use ordinary HTTP clients.
+To save source revisions, build in restricted Docker containers, inspect diagnostics, and publish or roll back an exact build, follow [the authoring walkthrough](docs/AUTHORING.md). Use [Python programs through MCP](docs/PYTHON_API.md) to compose shop workflows with four tools. See [the API guide](docs/API.md) to run REST and MCP, configure Keycloak/shop permissions, and use ordinary HTTP clients.
 
 ## Local infrastructure
 
@@ -129,6 +129,8 @@ CHIPLOAD_LIVE_TESTS=1 uv run --extra server python -m unittest discover -s tests
 ```
 
 Live tests create and remove randomly named test secrets. They do not contact equipment or change GitHub issues.
+
+Run `CHIPLOAD_WORKER_TESTS=1 uv run --extra server python -m unittest discover -s tests -p test_program_live.py -v` after building the worker to verify Python composition, partial failures, cancellation and container restrictions.
 
 ## License
 

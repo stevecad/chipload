@@ -32,32 +32,22 @@ Steve integration is planned for a later stage.
 
 The existing Compose configuration is for local development. Completing a local demo will not complete the deployment goal.
 
-## Next interface priority: shop as code
+## Agent interface: shop as code
 
-Consolidate the agent interface before extending its tool catalog. The current
-MCP server exposes all 23 internal operations individually. That mapping is an
-implementation convenience, not the intended authoring experience.
+MCP exposes four tools: run Python, inspect a run, cancel a run, and discover
+public capabilities. `chipload.client` composes the existing service operations
+from ordinary Python, both inside contained runs and over verified HTTPS.
+Steve's source/build/inspect workflow informed this design.
 
-Use a small code-centered workflow: read/edit the Python project, run an exact
-revision, inspect diagnostics and results, and publish a tested revision.
-Functions, imports, loops, and the Python SDK should express whole shop
-definitions, business rules, and composed queries. Steve's CAD workflow provides
-a concrete reference: source editing feeds a bounded build, and the agent inspects
-the resulting model. It also preserves revisions and reuses ongoing builds.
+Each SDK call retains caller and shop scope, service validation, request budgets,
+and a durable call journal. Code has no network, database or equipment secrets.
+Failed or interrupted programs never automatically rerun; committed calls remain
+committed. REST remains independently usable. See `docs/PYTHON_API.md` for the
+execution contract, deployment migration, examples and current bounds.
 
-Keep internal services and the REST API available to ordinary clients. A Python
-client can compose service calls without exposing every method as an MCP tool.
-Executing agent-authored code must retain isolated process limits and the
-caller's shop/action scope. Publication and external effects still pass through
-trusted service checks and durable records; Python execution does not itself
-grant access to the database, administrator functions, or equipment credentials.
-
-Acceptance requires an agent to create and update a multi-file shop, exercise
-technical and business cases, inspect failures, publish, query public results,
-and roll back through the compact interface. Include concurrent edits, safe
-retries, cross-shop denial, and an equivalent REST client. The compact interface
-is pending implementation; the current tools remain available until its
-replacement is verified.
+Additional dependency environments, stronger isolation and public deployment
+qualification remain open. Keep future shop features available through Python
+without multiplying MCP tools.
 
 ## Design commitments
 
@@ -171,7 +161,7 @@ Anonymous visitors must be able to read public shop data using ordinary HTTP. Pr
 
 ### 5. Deliver MCP and REST authoring parity
 
-**Status:** The official MCP SDK exposes typed tools and public resources over the same operations as REST. Tests cover equivalent results and permissions, a real HTTP MCP client, and real Keycloak-issued tokens. The opt-in full authoring test uses an MCP client plus a separate Docker broker. OAuth clients are pre-registered; managed client onboarding and production identity operations remain deployment work.
+**Status:** The official MCP SDK exposes four tools and resources. Contained Python programs compose the same scoped operations as the independent REST API. Tests cover equivalent results and permissions, a real HTTP MCP client, and real Keycloak-issued tokens. The opt-in full authoring test uses an MCP client plus a separate Docker broker. OAuth clients are pre-registered; managed client onboarding and production identity operations remain deployment work.
 
 Expose discovery, evaluation, and the authoring/publication lifecycle through both transports. Derive tool and resource contracts from the working domain model. Implement remote MCP authorization and discovery using the applicable protocol specification, with Keycloak as the identity provider.
 

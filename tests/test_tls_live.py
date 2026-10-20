@@ -18,6 +18,7 @@ import httpx
 import httpx2
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
+from program_support import agent_call
 from tls_support import ROOT, stack
 
 from chipload.lifecycle import Repository
@@ -275,7 +276,7 @@ class TLSLiveTests(unittest.IsolatedAsyncioTestCase):
                         ) as agent:
 
                             async def call(tool, request):
-                                result = await agent.call_tool(tool, {"request": request})
+                                result = await agent_call(agent, tool, request)
                                 self.assertFalse(result.is_error, result)
                                 return result.structured_content
 

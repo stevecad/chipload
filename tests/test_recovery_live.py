@@ -337,7 +337,7 @@ script.backup(Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4]), archive.M
                             )
                         ) as agent:
                             result = await agent.call_tool(
-                                "shop_catalog", {"request": {"shop_id": "thermal-example"}}
+                                "discover_shop", {"request": {"shop_id": "thermal-example"}}
                             )
                             self.assertFalse(result.is_error)
                             self.assertEqual(result.structured_content, catalog)

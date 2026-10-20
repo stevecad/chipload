@@ -112,7 +112,7 @@ class LiveStackTests(unittest.TestCase):
                 resource_url="http://localhost:8088/mcp", issuer=discovery["issuer"],
                 jwks_url=discovery["jwks_uri"],
                 bindings=(Principal(subject=identity["id"], grants=(
-                    Grant(shop_id="example", actions=("source:read", "source:write")),
+                    Grant(shop_id="example", actions=("source:read", "source:write", "code:run")),
                 )),),
             )
             service = ShopService(Repository(settings.database))
@@ -136,18 +136,13 @@ class LiveStackTests(unittest.TestCase):
                     self.assertEqual(api.put("/v1/shops/example/source", headers=headers, json={
                         "project": source.model_dump(mode="json"), "expected_head": source.revision,
                     }).status_code, 403)
-                    mcp = api.post("/mcp", headers={
-                        **headers, "Accept": "application/json, text/event-stream",
-                        "MCP-Protocol-Version": "2026-07-28", "Mcp-Method": "tools/call",
-                        "Mcp-Name": "source_read",
-                    }, json={
-                        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
-                        "params": {"name": "source_read", "arguments": {"request": {"shop_id": "example"}},
-                                   "_meta": {"io.modelcontextprotocol/protocolVersion": "2026-07-28",
-                                             "io.modelcontextprotocol/clientCapabilities": {}}},
-                    })
+                    from program_support import wire
+
+                    mcp = wire(api, "chipload://identity/current", {}, headers, method="resources/read")
                     self.assertEqual(mcp.status_code, 200, mcp.text)
-                    self.assertEqual(mcp.json()["result"]["structuredContent"], response.json())
+                    self.assertEqual(json.loads(mcp.json()["result"]["contents"][0]["text"]), api.get("/v1/identity", headers=headers).json())
+                    denied_code = wire(api, "run_python", {"shop_id": "example", "request_key": "read-only", "code": "result=1"}, headers)
+                    self.assertEqual(denied_code.json()["result"]["structuredContent"]["status"], 403)
             finally:
                 verifier.close()
         with self.assertRaises(HTTPError) as denied:

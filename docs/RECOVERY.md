@@ -10,11 +10,11 @@ The latest credential-rotation receipt is included when present. Backups reject
 unfinished [credential rotations](CREDENTIALS.md); finish the pending cutover
 before taking a new recovery set.
 
-Recovery sets include schema-6 operation bindings, execution history, and
+Recovery sets include schema-7 operation bindings, Python run history, execution history, and
 simulation receipts. Backups reject queued, running, or indeterminate operations.
 Stop new submissions, finish or cancel queued calls, reconcile uncertain outcomes,
 and stop separately launched executors before backup. The stack helper supervises
-its API/build broker; it does not stop an independently launched executor.
+its API/build/Python broker; it does not stop an independently launched executor.
 See [operation recovery semantics](OPERATIONS.md#states-cancellation-and-recovery).
 Restoring these databases cannot undo an equipment action or an ERP transaction;
 external receiver-state recovery remains integration work. The separate
@@ -226,3 +226,5 @@ a new authorized publication change. Unit checks also cover uncheckpointed WAL,
 writer contention, wrong keys, tampered ciphertext, unsafe archive members,
 private file handling, and refusing to overwrite state. Test cleanup is restricted
 to each drill's own containers, volumes, and temporary directories.
+
+Python runs must settle before backup: queued or running code jobs are rejected. Cancel them or let the broker finish, then retry. Code run histories and call journals are preserved by schema-7 backups.

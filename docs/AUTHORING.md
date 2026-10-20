@@ -349,6 +349,9 @@ bindings, executions, resource locks, dispatch turns, and simulation receipts.
 This preserves the paired store, spent request credit, sources, and publications.
 Existing quota policies gain bounded operation defaults. Existing explicit grants
 gain no new operation actions automatically. See [OPERATIONS.md](OPERATIONS.md).
+Schema 6 then migrates atomically to schema 7, adding Python run records and call
+journals. Existing policies gain separate code capacity defaults; explicit bindings
+need the delegated `code:*` actions. See [Python automation](PYTHON_API.md).
 Before upgrading, stop old API/broker/executor processes and make a consistent backup.
 Do not run old code alongside the new schema. SQLite remains single-node
 storage; this does not establish safe use over a network filesystem or across

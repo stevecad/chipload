@@ -6,8 +6,9 @@ from pathlib import Path
 
 from execution_support import ExecutionFixture
 from fastapi.testclient import TestClient
+from program_support import call as program_call
+from program_support import processor
 from server_support import IdentityFixture
-from test_transports import META
 
 from chipload.access import ACTIONS, Grant, Principal
 from chipload.auth import TokenVerifier
@@ -34,6 +35,7 @@ class ExecutionTransportTests(unittest.TestCase):
         )
         operations = Operations(self.f.service)
         operations.executions = self.f.execution
+        self.programs = processor(operations, settings)
         app = create_app(
             settings,
             operations=operations,
@@ -46,26 +48,7 @@ class ExecutionTransportTests(unittest.TestCase):
         self.path = "/v1/shops/callable-example/operations/make-sample/executions"
 
     def mcp(self, name, request, headers=None):
-        response = self.client.post(
-            "/mcp",
-            headers={
-                "Accept": "application/json, text/event-stream",
-                "MCP-Protocol-Version": "2026-07-28",
-                "Mcp-Method": "tools/call",
-                "Mcp-Name": name,
-                **(headers if headers is not None else self.headers),
-            },
-            json={
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "tools/call",
-                "params": {
-                    "name": name,
-                    "arguments": {"request": request},
-                    "_meta": META,
-                },
-            },
-        )
+        response = program_call(self.client, name, request, headers if headers is not None else self.headers, worker=self.programs)
         self.assertEqual(response.status_code, 200, response.text)
         return response.json()["result"]
 
