@@ -69,7 +69,7 @@ class RequestCapacity(RuntimeError):
 
 
 def peer_key(client) -> str:
-    """Use the ASGI connection peer, never caller-supplied forwarding headers."""
+    """Normalize an address already selected by the HTTP trust boundary."""
     try:
         address = ipaddress.ip_address(client[0])
     except (ValueError, TypeError, IndexError):
@@ -80,6 +80,27 @@ def peer_key(client) -> str:
         # Rotating interface addresses within a subnet does not create new allowances.
         return str(ipaddress.ip_network((address, 64), strict=False))
     return str(address)
+
+
+def request_peer(client, forwarded: str | None, trusted: tuple[str, ...]):
+    """Accept one gateway-replaced address only from an explicitly trusted peer."""
+    try:
+        connection = ipaddress.ip_address(client[0])
+    except (ValueError, TypeError, IndexError):
+        return client
+    connection = str(getattr(connection, "ipv4_mapped", None) or connection)
+    if connection not in trusted:
+        return client
+    if not isinstance(forwarded, str) or "%" in forwarded:
+        raise ValueError("missing or invalid proxy client address")
+    try:
+        address = ipaddress.ip_address(forwarded)
+    except ValueError as error:
+        raise ValueError("missing or invalid proxy client address") from error
+    address = getattr(address, "ipv4_mapped", None) or address
+    if address.is_unspecified or address.is_multicast:
+        raise ValueError("missing or invalid proxy client address")
+    return (str(address), 0)
 
 
 class RequestLimiter:

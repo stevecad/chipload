@@ -6,7 +6,7 @@ Chipload is becoming a platform for software-defined shops. A shop defines its r
 
 The shop authoring SDK and initial runtime use Python. A documented REST API lets websites, scripts, and other clients query shop data without an agent. MCP exposes the same domain services and permission rules for agents. Public discovery exposes the capabilities a shop explicitly publishes.
 
-The API and build broker can run in separate containers with locked dependencies, private persistent storage, and process limits. See [application container setup](docs/RUNTIME.md). The provided listener is bound to host loopback; public TLS deployment and operational qualification remain work.
+The API and build broker can run in separate containers with locked dependencies, private persistent storage, and process limits. See [application container setup](docs/RUNTIME.md) or the [TLS gateway and Keycloak stack](docs/TLS.md) for verified HTTPS, private networks, and a shop agent identity. Host listeners remain bound to loopback; public deployment and operational qualification remain work.
 
 Chipload is not an ERP. Order management, purchasing, inventory management, production planning, accounting, and invoicing are out of scope. Chipload will work with ERP systems through adapters and APIs. Shop capabilities, business rules, and callable operations belong in Chipload; ERP systems remain the source of truth for their business records.
 

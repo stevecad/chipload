@@ -31,6 +31,8 @@ Chipload is becoming a platform for software-defined shops. Read [ROADMAP.md](RO
 - `scripts/build-worker`, `deploy/worker/Dockerfile`: pinned worker environment built from a minimal context.
 - `scripts/build-runtime`, `scripts/runtime`, `deploy/runtime/`, `docs/RUNTIME.md`: pinned API/broker images and single-host Compose packaging. Rebuild runtime images after SDK or dependency changes. The API has no Docker access; only the trusted broker mounts the local daemon socket.
 - `tests/test_runtime_live.py`: opt-in containerized MCP authoring, broker builds, REST discovery, restart persistence, and actual runtime restrictions.
+- `scripts/build-tls`, `scripts/tls-stack`, `deploy/tls/`, `docs/TLS.md`: pinned Caddy and production-mode Keycloak, private networks, verified TLS, and explicit shop-agent provisioning. All published host ports stay on loopback.
+- `tests/test_proxy.py`, `test_tls_stack.py`, `test_tls_live.py`: exact gateway trust, private deployment state, TLS verification, and an opt-in real-identity/container lifecycle.
 - `tests/test_project.py`, `tests/test_lifecycle.py`, `tests/test_worker_live.py`: source boundary, concurrency, permission, publication, and opt-in real-container tests.
 - `tests/test_auth.py`, `test_published.py`, `test_transports.py`, `test_mcp_client.py`, `test_agent_lifecycle_live.py`: identity failures, public-query privacy, transport parity, actual MCP-client interoperability, and an opt-in complete authoring loop using a separate broker.
 - `pyproject.toml`, `uv.lock`: Python package and locked SDK/development dependencies.
@@ -70,7 +72,9 @@ Keep quota admission and queue claims atomic in the repository. Repeated build k
 
 Capacity policy and request balances live in the paired `.admission` database so public request accounting does not acquire the shop database's write lock. Policy edits and request balances change atomically there; source/build admissions read a committed policy snapshot while serializing usage in the shop database. An admission already in progress may finish under its earlier policy. Never silently recreate a missing admission store or reset spent allowances. Test interrupted migration, concurrent startup, store pairing, and published reads during shop writes.
 
-Keep HTTP admission ahead of token verification and body parsing. Use the connection peer and verified identity for request budgets; forwarding headers and refreshed tokens cannot create new allowances. Every mutating operation needs an explicit shop/action grant before charging its mutation budget. Preserve retry details for REST and MCP clients, bound limiter state, and reject requests when shared accounting is unavailable. Test process restarts, competing servers, and actual MCP client recovery when changing this boundary.
+Keep HTTP admission ahead of token verification and body parsing. Use the connection peer and verified identity for request budgets. The TLS topology may select the client address only from one gateway-replaced header received from an exact trusted proxy IP; reject malformed/missing/chained values there and ignore forwarding claims from other peers. Keep Uvicorn proxy rewriting disabled. Forwarding claims and refreshed tokens cannot create new allowances. Every mutating operation needs an explicit shop/action grant before charging its mutation budget. Preserve retry details for REST and MCP clients, bound limiter state, and reject requests when shared accounting is unavailable. Test process restarts, competing servers, and actual MCP client recovery when changing this boundary.
+
+Keep TLS and identity state private and outside images/source bundles. Verify both CA chains and hostnames; use the configured issuer/resource audience even when the internal JWKS port differs. The generated agent is bound to one shop; a Keycloak role alone is insufficient. Never recreate credentials over an existing identity database, silently reinitialize missing state, or expose the administration listener publicly. Test failure of identity trust as well as successful authentication. The TLS stack currently has no production OpenBao integration or automatic certificate renewal.
 
 ## Start from an issue
 
@@ -115,7 +119,9 @@ For source-worker or lifecycle changes, run `./scripts/build-worker`, then `CHIP
 
 For quota or dispatch changes, also run `test_quotas.py` and `test_quota_worker_live.py` (the latter with `CHIPLOAD_WORKER_TESTS=1`). The live test uses two actual brokers and a looping source worker to verify another shop can build and publish while the abusive shop retains its slot.
 
-For application packaging or listener changes, rebuild worker and runtime images and run `CHIPLOAD_RUNTIME_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_runtime_live.py' -v`. Preserve loopback host exposure, non-root execution, private paired storage, process limits, and separation of Docker access. Runtime packaging does not complete the TLS or production deployment gates.
+For application packaging or listener changes, rebuild worker and runtime images and run `CHIPLOAD_RUNTIME_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_runtime_live.py' -v`. Preserve loopback host exposure, non-root execution, private paired storage, process limits, and separation of Docker access.
+
+For TLS, proxy trust, identity topology, or CA changes, also run `./scripts/build-tls` and `CHIPLOAD_TLS_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_tls_live.py' -v`. Follow `docs/TLS.md` for private initialization and certificate profiles. Keep the checkout and image fingerprints fixed while live tests run. TLS packaging does not complete production rotation, recovery, or load qualification.
 
 For changes to the process example bundles, also run `test_process_worker_live.py` with the worker flag. This builds all 89 exported projects from their actual source and runs their acceptance cases. Rebuild the worker only when SDK source changes require it; example source arrives in the job bundle.
 

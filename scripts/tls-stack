@@ -1,0 +1,530 @@
+#!/usr/bin/env python3
+"""Configure and run the TLS gateway, Keycloak, API, and broker on one local host."""
+
+import argparse
+import hashlib
+import http.client
+import importlib.machinery
+import importlib.util
+import ipaddress
+import json
+import os
+import re
+import secrets
+import socket
+import ssl
+import stat
+import subprocess
+import tempfile
+import uuid
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
+from pydantic import TypeAdapter
+
+from chipload.access import ACTIONS, Grant, Principal
+from chipload.auth import ServerSettings
+from chipload.model import Id
+
+ROOT = Path(__file__).resolve().parents[1]
+loader = importlib.machinery.SourceFileLoader("runtime_helpers", str(ROOT / "scripts/runtime"))
+runtime = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
+loader.exec_module(runtime)
+
+
+def origin(host, port):
+    return f"https://{host}" + ("" if port == 443 else f":{port}")
+
+
+def probe(host, port, path, ca_file):
+    """Verify the local listener using the configured TLS name and Host header.
+
+    This does not require changing host DNS before a deployment's public routing
+    is configured, and does not disable certificate or hostname verification.
+    """
+    context = ssl.create_default_context(cafile=ca_file)
+    with socket.create_connection(("127.0.0.1", port), timeout=10) as connection:
+        with context.wrap_socket(connection, server_hostname=host) as secured:
+            authority = origin(host, port).removeprefix("https://")
+            secured.sendall(
+                f"GET {path} HTTP/1.1\r\nHost: {authority}\r\nConnection: close\r\n\r\n".encode(
+                    "ascii"
+                )
+            )
+            response = http.client.HTTPResponse(secured)
+            response.begin()
+            body = response.read(512 * 1024 + 1)
+            if response.status != 200 or len(body) > 512 * 1024:
+                raise ValueError(f"TLS readiness request failed with HTTP {response.status}")
+            return json.loads(body)
+
+
+def write(path, content, mode=0o600):
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode)
+    with os.fdopen(fd, "wb") as output:
+        output.write(content.encode() if isinstance(content, str) else content)
+
+
+def configuration(values):
+    if values.get("version") != 1 or values.get("profile") not in {"local", "certificates"}:
+        raise ValueError("unsupported TLS deployment configuration")
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,62}", values["name"]):
+        raise ValueError("invalid Compose project name")
+    for name in ("api_host", "identity_host"):
+        host = values[name]
+        if not re.fullmatch(r"(?=.{1,253}$)[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?", host) or any(
+            not label or len(label) > 63 or label.startswith("-") or label.endswith("-")
+            for label in host.split(".")
+        ):
+            raise ValueError("use lowercase DNS hostnames without ports")
+        local = host == "localhost" or host.endswith(".localhost")
+        if local != (values["profile"] == "local"):
+            raise ValueError(
+                "local hostnames require the local profile; supplied certificates require deployment hostnames"
+            )
+    if values["api_host"] == values["identity_host"]:
+        raise ValueError("API and identity hostnames must differ")
+    for field in ("port", "admin_port"):
+        if type(values[field]) is not int or not 1 <= values[field] <= 65535:
+            raise ValueError("use distinct host ports from 1 to 65535")
+    if values["port"] == values["admin_port"]:
+        raise ValueError("TLS and administration ports must differ")
+    network = ipaddress.ip_network(values["subnet"])
+    private_ranges = [
+        ipaddress.ip_network(value) for value in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")
+    ]
+    if (
+        network.version != 4
+        or network.prefixlen != 28
+        or not any(network.subnet_of(block) for block in private_ranges)
+    ):
+        raise ValueError("application network must be a private IPv4 /28")
+    TypeAdapter(Id).validate_python(values["shop_id"])
+    return values
+
+
+def choose_subnet(requested=None):
+    identifiers = subprocess.check_output(["docker", "network", "ls", "-q"], text=True).split()
+    records = (
+        json.loads(
+            subprocess.check_output(["docker", "network", "inspect", *identifiers], text=True)
+        )
+        if identifiers
+        else []
+    )
+    used = [
+        ipaddress.ip_network(item["Subnet"])
+        for record in records
+        for item in (record["IPAM"].get("Config") or [])
+        if item.get("Subnet")
+    ]
+    candidates = (
+        [ipaddress.ip_network(requested)]
+        if requested
+        else list(ipaddress.ip_network("10.240.0.0/15").subnets(new_prefix=28))
+    )
+    if not requested:
+        secrets.SystemRandom().shuffle(candidates)
+    for candidate in candidates:
+        if all(candidate.version != old.version or not candidate.overlaps(old) for old in used):
+            return str(candidate)
+    raise ValueError("application subnet overlaps an existing Docker network")
+
+
+def local_certificates(state, hosts):
+    current = datetime.now(timezone.utc)
+    root_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    root_name = x509.Name(
+        [x509.NameAttribute(NameOID.COMMON_NAME, "Chipload local development CA")]
+    )
+    root = (
+        x509.CertificateBuilder()
+        .subject_name(root_name)
+        .issuer_name(root_name)
+        .public_key(root_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(current - timedelta(minutes=1))
+        .not_valid_after(current + timedelta(days=30))
+        .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
+        .add_extension(
+            x509.KeyUsage(False, False, False, False, False, True, True, False, False),
+            critical=True,
+        )
+        .add_extension(
+            x509.SubjectKeyIdentifier.from_public_key(root_key.public_key()), critical=False
+        )
+        .sign(root_key, hashes.SHA256())
+    )
+    write(state / "identity-ca.pem", root.public_bytes(serialization.Encoding.PEM))
+    write(
+        state / "recovery/local-ca-key.pem",
+        root_key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        ),
+    )
+    for role, host in hosts.items():
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        leaf = (
+            x509.CertificateBuilder()
+            .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, host)]))
+            .issuer_name(root.subject)
+            .public_key(key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(current - timedelta(minutes=1))
+            .not_valid_after(current + timedelta(days=7))
+            .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+            .add_extension(x509.SubjectAlternativeName([x509.DNSName(host)]), critical=False)
+            .add_extension(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False)
+            .add_extension(
+                x509.KeyUsage(True, False, True, False, False, False, False, False, False),
+                critical=True,
+            )
+            .add_extension(
+                x509.AuthorityKeyIdentifier.from_issuer_public_key(root_key.public_key()),
+                critical=False,
+            )
+            .sign(root_key, hashes.SHA256())
+        )
+        write(state / f"certificates/{role}.crt", leaf.public_bytes(serialization.Encoding.PEM))
+        write(
+            state / f"certificates/{role}.key",
+            key.private_bytes(
+                serialization.Encoding.PEM,
+                serialization.PrivateFormat.PKCS8,
+                serialization.NoEncryption(),
+            ),
+        )
+
+
+def initialize(args):
+    state = args.state.absolute()
+    if state.exists() or state.is_symlink():
+        raise ValueError(
+            "state already exists; preserve it rather than replacing identity or TLS keys"
+        )
+    for kind in ("volume", "container"):
+        command = [
+            "docker",
+            kind,
+            "ls",
+            "-q",
+            "--filter",
+            f"label=com.docker.compose.project={args.name}",
+        ]
+        if kind == "container":
+            command.insert(3, "--all")
+        if subprocess.check_output(command, text=True).strip():
+            raise ValueError(
+                "deployment resources already exist; restore their matching state directory"
+            )
+    values = configuration(
+        {
+            "version": 1,
+            "profile": "local" if args.local else "certificates",
+            "name": args.name,
+            "api_host": args.api_host,
+            "identity_host": args.identity_host,
+            "port": args.port,
+            "admin_port": args.admin_port,
+            "subnet": choose_subnet(args.subnet),
+            "shop_id": args.shop,
+        }
+    )
+    if not args.local and (args.certificates is None or args.ca_bundle is None):
+        raise ValueError("supply --certificates and --ca-bundle, or explicitly choose --local")
+    state.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".chipload-tls-", dir=state.parent) as temporary:
+        prepared = Path(temporary) / "state"
+        prepared.mkdir(mode=0o700)
+        if args.local:
+            local_certificates(prepared, {"api": args.api_host, "identity": args.identity_host})
+        else:
+            for role in ("api", "identity"):
+                for suffix in ("crt", "key"):
+                    write(
+                        prepared / f"certificates/{role}.{suffix}",
+                        (args.certificates / f"{role}.{suffix}").read_bytes(),
+                    )
+            write(prepared / "identity-ca.pem", args.ca_bundle.read_bytes())
+        ssl.create_default_context(cafile=prepared / "identity-ca.pem")
+        for role in ("api", "identity"):
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            context.load_cert_chain(
+                prepared / f"certificates/{role}.crt", prepared / f"certificates/{role}.key"
+            )
+        for name in ("db-password", "admin-password", "agent-secret"):
+            write(prepared / "secrets" / name, secrets.token_urlsafe(32))
+        # PostgreSQL uses its image's postgres UID. The parent directory is 0700;
+        # only this individual read-only file is mounted into the database container.
+        (prepared / "secrets/db-password").chmod(0o444)
+        subject = str(uuid.uuid4())
+        resource = origin(args.api_host, args.port) + "/mcp"
+        issuer = origin(args.identity_host, args.port) + "/realms/chipload"
+        network = ipaddress.ip_network(values["subnet"])
+        settings = ServerSettings(
+            mode="production",
+            database=Path("/data/chipload.db"),
+            resource_url=resource,
+            issuer=issuer,
+            jwks_url=f"https://{args.identity_host}:8443/realms/chipload/protocol/openid-connect/certs",
+            jwks_ca_file=Path("/etc/chipload/identity-ca.pem"),
+            trusted_proxy_ips=(str(network[2]),),
+            bindings=(
+                Principal(subject=subject, grants=(Grant(shop_id=args.shop, actions=ACTIONS),)),
+            ),
+        )
+        write(prepared / "runtime.json", settings.model_dump_json(indent=2))
+        realm = json.loads((ROOT / "deploy/keycloak/chipload-realm.json").read_bytes())
+        realm.update(displayName="Chipload", sslRequired="all")
+        cli = next(client for client in realm["clients"] if client["clientId"] == "chipload-cli")
+        for mapper in cli["protocolMappers"]:
+            if mapper["name"] == "chipload-resource-uri":
+                mapper["config"]["included.custom.audience"] = resource
+        realm["clients"].append(
+            {
+                "clientId": "chipload-agent",
+                "protocol": "openid-connect",
+                "publicClient": False,
+                "secret": (prepared / "secrets/agent-secret").read_text(),
+                "serviceAccountsEnabled": True,
+                "standardFlowEnabled": False,
+                "directAccessGrantsEnabled": False,
+                "protocolMappers": cli["protocolMappers"],
+            }
+        )
+        realm["users"] = [
+            {
+                "id": subject,
+                "username": "service-account-chipload-agent",
+                "enabled": True,
+                "serviceAccountClientId": "chipload-agent",
+                "clientRoles": {"chipload": ["shop:admin"]},
+            }
+        ]
+        write(prepared / "realm.json", json.dumps(realm, indent=2))
+        write(prepared / "deployment.json", json.dumps(values, indent=2))
+        write(
+            prepared / "client.json",
+            json.dumps(
+                {
+                    "issuer": issuer,
+                    "resource_url": resource,
+                    "client_id": "chipload-agent",
+                    "subject": subject,
+                    "shop_id": args.shop,
+                    "client_secret_file": str(state / "secrets/agent-secret"),
+                    "ca_file": str(state / "identity-ca.pem"),
+                },
+                indent=2,
+            ),
+        )
+        (prepared / "data").mkdir(mode=0o700)
+        os.rename(prepared, state)
+    print(f"Initialized {state}. Agent connection settings: {state / 'client.json'}")
+
+
+def check_material(state):
+    for directory in ("certificates", "secrets"):
+        runtime.private(state / directory, directory=True)
+    for name in (
+        "realm.json",
+        "client.json",
+        "identity-ca.pem",
+        "secrets/admin-password",
+        "secrets/agent-secret",
+    ):
+        runtime.private(state / name)
+    password = (state / "secrets/db-password").lstat()
+    if (
+        not stat.S_ISREG(password.st_mode)
+        or password.st_uid != os.getuid()
+        or stat.S_IMODE(password.st_mode) != 0o444
+    ):
+        raise ValueError(
+            "db-password must be an owned regular file with mode 0444 inside the private secrets directory"
+        )
+    ssl.create_default_context(cafile=state / "identity-ca.pem")
+    for role in ("api", "identity"):
+        certificate, key = (state / f"certificates/{role}.{suffix}" for suffix in ("crt", "key"))
+        runtime.private(certificate)
+        runtime.private(key)
+        ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER).load_cert_chain(certificate, key)
+    if (state / "recovery").exists():
+        runtime.private(state / "recovery", directory=True)
+        runtime.private(state / "recovery/local-ca-key.pem")
+
+
+def check_tls_images(images):
+    for role, identifier in images.items():
+        paths = [ROOT / f"deploy/tls/{role}.Dockerfile", ROOT / "LICENSE"]
+        if role == "keycloak":
+            paths.append(ROOT / "deploy/tls/keycloak-entrypoint.sh")
+        expected = hashlib.sha256(b"".join(path.read_bytes() for path in paths)).hexdigest()
+        labels = (
+            json.loads(
+                subprocess.check_output(
+                    [
+                        "docker",
+                        "image",
+                        "inspect",
+                        identifier,
+                        "--format",
+                        "{{json .Config.Labels}}",
+                    ],
+                    text=True,
+                    timeout=15,
+                )
+            )
+            or {}
+        )
+        if (
+            labels.get("org.chipload.tls-role") != role
+            or labels.get("org.chipload.tls-sha256") != expected
+        ):
+            raise ValueError(f"{role} image differs from the checkout; run ./scripts/build-tls")
+
+
+def deployment(state, *, check=False):
+    state = state.absolute()
+    runtime.private(state, directory=True)
+    runtime.private(state / "deployment.json")
+    values = configuration(json.loads((state / "deployment.json").read_bytes()))
+    socket = runtime.docker_socket()
+    images = {role: runtime.image(role) for role in ("api", "broker", "worker")}
+    tls_images = {role: runtime.image(role) for role in ("gateway", "keycloak")}
+    if check:
+        runtime.check_images(images)
+        check_tls_images(tls_images)
+        runtime.check_data(state / "data")
+        check_material(state)
+        runtime.private(state / "runtime.json")
+        settings = ServerSettings.model_validate_json((state / "runtime.json").read_bytes())
+        network = ipaddress.ip_network(values["subnet"])
+        if (
+            settings.mode != "production"
+            or settings.database != Path("/data/chipload.db")
+            or settings.resource_url != origin(values["api_host"], values["port"]) + "/mcp"
+            or settings.issuer
+            != origin(values["identity_host"], values["port"]) + "/realms/chipload"
+            or settings.jwks_url
+            != f"https://{values['identity_host']}:8443/realms/chipload/protocol/openid-connect/certs"
+            or settings.jwks_ca_file != Path("/etc/chipload/identity-ca.pem")
+            or settings.trusted_proxy_ips != (str(network[2]),)
+        ):
+            raise ValueError(
+                "runtime endpoints, CA path, storage, or proxy trust disagree with the TLS deployment"
+            )
+    network = ipaddress.ip_network(values["subnet"])
+    environment = {
+        **os.environ,
+        "CHIPLOAD_UID": str(os.getuid()),
+        "CHIPLOAD_GID": str(os.getgid()),
+        "CHIPLOAD_DOCKER_SOCKET": str(socket),
+        "CHIPLOAD_DOCKER_GID": str(socket.stat().st_gid),
+        "CHIPLOAD_CONFIG": str(state / "runtime.json"),
+        "CHIPLOAD_DATA": str(state / "data"),
+        "CHIPLOAD_TLS_STATE": str(state),
+        "CHIPLOAD_TLS_PORT": str(values["port"]),
+        "CHIPLOAD_ADMIN_PORT": str(values["admin_port"]),
+        "CHIPLOAD_API_HOST": values["api_host"],
+        "CHIPLOAD_IDENTITY_HOST": values["identity_host"],
+        "CHIPLOAD_IDENTITY_URL": origin(values["identity_host"], values["port"]),
+        "CHIPLOAD_ADMIN_URL": origin(values["identity_host"], values["admin_port"]),
+        "CHIPLOAD_APP_SUBNET": str(network),
+        "CHIPLOAD_GATEWAY_IP": str(network[2]),
+        "CHIPLOAD_API_IP": str(network[3]),
+        "CHIPLOAD_KEYCLOAK_IP": str(network[4]),
+        "CHIPLOAD_KEYCLOAK_IMAGE": tls_images["keycloak"],
+        "CHIPLOAD_GATEWAY_IMAGE": tls_images["gateway"],
+        **{f"CHIPLOAD_{role.upper()}_IMAGE": value for role, value in images.items()},
+    }
+    command = [
+        "docker",
+        "compose",
+        "--env-file",
+        "/dev/null",
+        "--project-name",
+        values["name"],
+        "--file",
+        str(ROOT / "deploy/tls/compose.yaml"),
+    ]
+    return command, environment, values
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--state", type=Path, default=ROOT / ".local/tls")
+    commands = parser.add_subparsers(dest="action", required=True)
+    initialize_parser = commands.add_parser("init")
+    initialize_parser.add_argument("--local", action="store_true")
+    initialize_parser.add_argument("--api-host", default="chipload.localhost")
+    initialize_parser.add_argument("--identity-host", default="identity.localhost")
+    initialize_parser.add_argument("--port", type=int, default=8443)
+    initialize_parser.add_argument("--admin-port", type=int, default=8444)
+    initialize_parser.add_argument("--name", default="chipload-tls")
+    initialize_parser.add_argument("--shop", default="example")
+    initialize_parser.add_argument("--subnet")
+    initialize_parser.add_argument("--certificates", type=Path)
+    initialize_parser.add_argument("--ca-bundle", type=Path)
+    for action in ("up", "down", "status", "logs", "reload"):
+        commands.add_parser(action)
+    args = parser.parse_args()
+    if os.getuid() == 0:
+        parser.error("run as a non-root account with access to the local Docker daemon")
+    try:
+        runtime.docker_socket()
+        if args.action == "init":
+            initialize(args)
+            return
+        command, environment, values = deployment(args.state, check=args.action in {"up", "reload"})
+        action = {
+            "up": ["up", "--detach", "--wait", "--wait-timeout", "180"],
+            "down": ["down"],
+            "status": ["ps"],
+            "logs": ["logs", "--tail", "100"],
+            "reload": [
+                "up",
+                "--detach",
+                "--force-recreate",
+                "--wait",
+                "--wait-timeout",
+                "180",
+                "gateway",
+                "keycloak",
+                "api",
+            ],
+        }[args.action]
+        subprocess.run([*command, *action], env=environment, check=True)
+        if args.action in {"up", "reload"}:
+            base = origin(values["api_host"], values["port"])
+            identity = origin(values["identity_host"], values["port"])
+            ca_file = args.state / "identity-ca.pem"
+            probe(values["api_host"], values["port"], "/healthz", ca_file)
+            discovered = probe(
+                values["identity_host"],
+                values["port"],
+                "/realms/chipload/.well-known/openid-configuration",
+                ca_file,
+            )
+            if discovered["issuer"] != identity + "/realms/chipload":
+                raise ValueError("Keycloak returned an unexpected issuer")
+            print(f"TLS verified. API/MCP: {base}/mcp; identity: {identity}")
+    except (
+        OSError,
+        ValueError,
+        KeyError,
+        subprocess.SubprocessError,
+        http.client.HTTPException,
+    ) as error:
+        parser.exit(1, f"tls-stack: {error}\n")
+
+
+if __name__ == "__main__":
+    main()

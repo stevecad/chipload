@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+"""Build pinned gateway and Keycloak images without deployment credentials."""
+
+import hashlib
+import os
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+
+
+def main():
+    root = Path(__file__).resolve().parents[1]
+    images = {}
+    with tempfile.TemporaryDirectory(prefix="chipload-tls-image-") as directory:
+        context = Path(directory)
+        shutil.copyfile(
+            root / "deploy/tls/keycloak-entrypoint.sh", context / "keycloak-entrypoint.sh"
+        )
+        shutil.copyfile(root / "LICENSE", context / "LICENSE")
+        for role in ("gateway", "keycloak"):
+            shutil.copyfile(root / f"deploy/tls/{role}.Dockerfile", context / "Dockerfile")
+            paths = [context / "Dockerfile", context / "LICENSE"]
+            if role == "keycloak":
+                paths.append(context / "keycloak-entrypoint.sh")
+            fingerprint = hashlib.sha256(b"".join(path.read_bytes() for path in paths)).hexdigest()
+            subprocess.run(
+                [
+                    "docker",
+                    "build",
+                    "--build-arg",
+                    f"TLS_SHA256={fingerprint}",
+                    "--iidfile",
+                    str(context / "image-id"),
+                    str(context),
+                ],
+                check=True,
+            )
+            images[role] = (context / "image-id").read_text().strip()
+        local = root / ".local"
+        local.mkdir(mode=0o700, exist_ok=True)
+        for role, value in images.items():
+            fd, temporary = tempfile.mkstemp(dir=local, prefix=f"{role}-image-")
+            try:
+                with os.fdopen(fd, "w") as output:
+                    output.write(value + "\n")
+                os.replace(temporary, local / f"{role}-image")
+            finally:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
+            print(f"{role}: {value}; saved .local/{role}-image")
+
+
+if __name__ == "__main__":
+    main()

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import ipaddress
+import ssl
 import threading
 import time
 from pathlib import Path
@@ -10,7 +12,7 @@ from urllib.parse import urlsplit
 
 import httpx
 import jwt
-from pydantic import Field, StrictInt, StrictStr, model_validator
+from pydantic import Field, StrictInt, StrictStr, field_validator, model_validator
 
 from .access import ACTIONS, Grant, Principal
 from .cache import DEFAULT_CACHE_BYTES
@@ -33,9 +35,32 @@ class ServerSettings(Model):
     resource_url: StrictStr
     issuer: StrictStr
     jwks_url: StrictStr
+    jwks_ca_file: Path | None = None
+    trusted_proxy_ips: Annotated[tuple[StrictStr, ...], Field(max_length=16)] = ()
     role_client: StrictStr = "chipload"
     bindings: Annotated[tuple[Principal, ...], Field(max_length=1000)] = ()
     allowed_origins: tuple[StrictStr, ...] = ()
+
+    @field_validator("trusted_proxy_ips")
+    @classmethod
+    def exact_proxy_addresses(cls, values):
+        result = []
+        for value in values:
+            address = ipaddress.ip_address(value)
+            address = getattr(address, "ipv4_mapped", None) or address
+            if "%" in value or address.is_unspecified or address.is_multicast:
+                raise ValueError("trusted proxies must be individual unicast IP addresses")
+            result.append(str(address))
+        if len(set(result)) != len(result):
+            raise ValueError("trusted proxy addresses must be unique")
+        return tuple(result)
+
+    @field_validator("jwks_ca_file")
+    @classmethod
+    def absolute_ca_path(cls, value):
+        if value is not None and not value.is_absolute():
+            raise ValueError("JWKS CA bundle path must be absolute")
+        return value
 
     @model_validator(mode="after")
     def endpoints_and_bindings(self) -> Self:
@@ -85,7 +110,14 @@ class ServerSettings(Model):
 class TokenVerifier:
     def __init__(self, settings: ServerSettings, *, client: httpx.Client | None = None):
         self.settings = settings
-        self.client = client or httpx.Client(timeout=3, follow_redirects=False, trust_env=False)
+        self.client = client or httpx.Client(
+            timeout=3,
+            follow_redirects=False,
+            trust_env=False,
+            verify=ssl.create_default_context(cafile=settings.jwks_ca_file)
+            if settings.jwks_ca_file
+            else True,
+        )
         self._owned_client = client is None
         self._keys: dict[str, jwt.PyJWK] = {}
         self._valid_until = 0.0

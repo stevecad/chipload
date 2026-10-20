@@ -7,8 +7,9 @@ revisions. Public discovery works without authentication or an agent.
 The server defaults to a loopback listener and does not import shop source or
 invoke Docker. A separate broker processes build jobs. Both can run in
 [separate application containers](RUNTIME.md) with process and filesystem limits.
-TLS deployment, network-edge controls, stronger isolation,
-recovery exercises, and load/security qualification remain on the roadmap.
+The [TLS stack](TLS.md) adds verified HTTPS, production-mode Keycloak, and private
+networks. Public edge qualification, stronger isolation, recovery exercises,
+and deployment load/security qualification remain on the roadmap.
 
 ## Start the services
 
@@ -37,7 +38,8 @@ queues join at the current turn. Shutdown lets the current bounded job finish.
 `--bind` and `--port` configure the API listener independently of its public
 resource URL. Container packaging uses `--bind 0.0.0.0 --port 8088` and publishes
 that port only on host loopback. Host/Origin checks still use the resource URL;
-proxy-header rewriting remains disabled. The launcher allows 15 seconds for
+general proxy-header rewriting remains disabled. The TLS stack keeps port 8088
+private and configures the gateway trust described below. The launcher allows 15 seconds for
 graceful request completion during shutdown.
 
 Use the [local authoring walkthrough](AUTHORING.md) to publish an example before
@@ -169,6 +171,12 @@ token-supplied key URLs are not used. Redirects and proxy environment settings
 are disabled for this fetch. Key sets are bounded, cached for five minutes,
 and refreshed at most once per five seconds. An expired cache plus an unavailable
 identity provider fails closed. Cached valid keys can remain usable until expiry.
+
+`jwks_ca_file` optionally selects an absolute path to an operator-provided PEM
+CA bundle. The default uses the system CA store. Both modes verify the TLS chain
+and hostname; there is no setting to skip verification. The container TLS stack
+mounts its public CA bundle at `/etc/chipload/identity-ca.pem`. Restart the API
+after changing trust material.
 
 The token's `resource_access.chipload.roles` sets a permission ceiling:
 `shop:read` permits read actions, and `shop:admin` permits the current authoring
@@ -334,12 +342,21 @@ Shop source/build/publication writes use the main database and do not acquire
 this accounting lock. Both files must be preserved together; see
 [storage and recovery](AUTHORING.md#storage-authorization-and-recovery).
 
-The peer is the ASGI connection address. IPv4-mapped IPv6 is normalized to IPv4;
-IPv6 addresses share a `/64` allowance. Missing/invalid peers share one fallback
-bucket. Forwarded headers are ignored. Clients behind a NAT or reverse proxy
-share that peer allowance; verified-identity limits still distinguish users.
-Keep proxy-header rewriting disabled in the ASGI launcher. A production gateway
-and its trusted-client-address contract remain deployment work.
+By default the peer is the ASGI connection address and forwarding headers are
+ignored. `trusted_proxy_ips` can name up to sixteen exact gateway IP addresses;
+CIDRs, wildcards, multicast, and unspecified addresses are rejected. Only a
+connection from one of those peers may supply `X-Forwarded-For`, and it must
+contain exactly one literal IP. Missing, duplicate, malformed, or chained values
+are rejected before token verification and body parsing. Other forwarding headers
+do not select identity or budgets. Keep general proxy rewriting disabled in the
+ASGI launcher.
+
+The [TLS gateway](TLS.md#trust-and-network-boundaries) overwrites that header with
+its connection peer and keeps the API on a private network. Do not trust a whole
+network or accept a client-appended forwarding chain. IPv4-mapped IPv6 normalizes
+to IPv4; IPv6 addresses share a `/64` allowance. Missing/invalid connection peers
+share a fallback bucket. Clients behind NAT or an unconfigured upstream proxy
+share their peer allowance; verified-identity limits still distinguish users.
 
 `max_buckets` defaults to 4,096 and is bounded to 8–65,536. New peer/identity
 records cannot evict active budgets. Fully replenished buckets are reclaimed

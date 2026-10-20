@@ -1,0 +1,140 @@
+name: chipload-tls
+
+x-control: &control
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  restart: unless-stopped
+  pids_limit: 256
+  cpus: 2
+  mem_limit: 1g
+  memswap_limit: 1g
+  ulimits:
+    core: {soft: 0, hard: 0}
+    nofile: {soft: 1024, hard: 1024}
+  logging:
+    driver: local
+    options: {max-size: 10m, max-file: "3"}
+
+services:
+  api:
+    extends: {file: ../runtime/compose.yaml, service: api}
+    ports: !reset []
+    networks: !override
+      application:
+        ipv4_address: ${CHIPLOAD_API_IP:?}
+    volumes:
+      - type: bind
+        source: ${CHIPLOAD_TLS_STATE:?}/identity-ca.pem
+        target: /etc/chipload/identity-ca.pem
+        read_only: true
+        bind: {create_host_path: false}
+
+  broker:
+    extends: {file: ../runtime/compose.yaml, service: broker}
+
+  gateway:
+    <<: *control
+    image: ${CHIPLOAD_GATEWAY_IMAGE:?Run ./scripts/build-tls}
+    pull_policy: never
+    user: ${CHIPLOAD_UID:?}:${CHIPLOAD_GID:?}
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 1
+    pids_limit: 64
+    ports:
+      - 127.0.0.1:${CHIPLOAD_TLS_PORT:?}:8443
+      - 127.0.0.1:${CHIPLOAD_ADMIN_PORT:?}:8444
+    environment:
+      CHIPLOAD_API_HOST: ${CHIPLOAD_API_HOST:?}
+      CHIPLOAD_IDENTITY_HOST: ${CHIPLOAD_IDENTITY_HOST:?}
+      CHIPLOAD_TLS_PORT: ${CHIPLOAD_TLS_PORT:?}
+      CHIPLOAD_ADMIN_PORT: ${CHIPLOAD_ADMIN_PORT:?}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${CHIPLOAD_TLS_STATE:?}/certificates:/tls:ro
+      - ${CHIPLOAD_TLS_STATE:?}/identity-ca.pem:/etc/chipload/identity-ca.pem:ro
+    tmpfs:
+      - /data:rw,noexec,nosuid,nodev,size=16m,uid=${CHIPLOAD_UID},gid=${CHIPLOAD_GID}
+      - /config:rw,noexec,nosuid,nodev,size=4m,uid=${CHIPLOAD_UID},gid=${CHIPLOAD_GID}
+      - /tmp:rw,noexec,nosuid,nodev,size=4m
+    networks:
+      edge: {}
+      application:
+        ipv4_address: ${CHIPLOAD_GATEWAY_IP:?}
+        aliases: ['${CHIPLOAD_API_HOST:?}', '${CHIPLOAD_IDENTITY_HOST:?}']
+
+  keycloak:
+    <<: *control
+    image: ${CHIPLOAD_KEYCLOAK_IMAGE:?Run ./scripts/build-tls}
+    pull_policy: never
+    user: ${CHIPLOAD_UID:?}:${CHIPLOAD_GID:?}
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_POOL_MAX_SIZE: "10"
+      KC_HOSTNAME: ${CHIPLOAD_IDENTITY_URL:?}
+      KC_HOSTNAME_ADMIN: ${CHIPLOAD_ADMIN_URL:?}
+      KC_HOSTNAME_STRICT: "true"
+      KC_HTTP_ENABLED: "false"
+      KC_HTTPS_CERTIFICATE_FILE: /tls/identity.crt
+      KC_HTTPS_CERTIFICATE_KEY_FILE: /tls/identity.key
+      KC_HTTP_MANAGEMENT_SCHEME: http
+      KC_PROXY_HEADERS: xforwarded
+      KC_PROXY_TRUSTED_ADDRESSES: ${CHIPLOAD_GATEWAY_IP:?}
+      KC_CACHE: local
+    volumes:
+      - ${CHIPLOAD_TLS_STATE:?}/realm.json:/opt/keycloak/data/import/chipload-realm.json:ro
+      - ${CHIPLOAD_TLS_STATE:?}/certificates/identity.crt:/tls/identity.crt:ro
+      - ${CHIPLOAD_TLS_STATE:?}/certificates/identity.key:/tls/identity.key:ro
+      - ${CHIPLOAD_TLS_STATE:?}/secrets/db-password:/run/secrets/db-password:ro
+      - ${CHIPLOAD_TLS_STATE:?}/secrets/admin-password:/run/secrets/admin-password:ro
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+      - /opt/keycloak/data:rw,noexec,nosuid,nodev,size=128m,uid=${CHIPLOAD_UID},gid=${CHIPLOAD_GID}
+    networks:
+      application:
+        ipv4_address: ${CHIPLOAD_KEYCLOAK_IP:?}
+      database: {}
+    depends_on:
+      keycloak-db: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, bash, -ec, "exec 3<>/dev/tcp/127.0.0.1/9000; printf 'GET /health/ready HTTP/1.0\r\nHost: localhost\r\n\r\n' >&3; head -n 1 <&3 | grep -q ' 200 '"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+
+  keycloak-db:
+    <<: *control
+    image: postgres:17.11-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    user: postgres
+    mem_limit: 512m
+    memswap_limit: 512m
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD_FILE: /run/secrets/db-password
+    volumes:
+      - keycloak-data:/var/lib/postgresql/data
+      - ${CHIPLOAD_TLS_STATE:?}/secrets/db-password:/run/secrets/db-password:ro
+    tmpfs: [/tmp, /var/run/postgresql]
+    networks: [database]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U keycloak -d keycloak]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+networks:
+  edge: {}
+  application:
+    internal: true
+    ipam:
+      config: [{subnet: '${CHIPLOAD_APP_SUBNET:?}'}]
+  database:
+    internal: true
+
+volumes:
+  keycloak-data:

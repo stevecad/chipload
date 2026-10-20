@@ -6,9 +6,10 @@ REST and MCP; the broker starts the existing isolated source workers through
 the host Docker daemon.
 
 This packaging adds process and filesystem limits. The supplied Compose file
-exposes HTTP only on host loopback. TLS ingress, production Keycloak/OpenBao
-topology, egress restrictions, credential rotation, backup/restore automation,
-and deployment load qualification remain required for public deployment.
+exposes HTTP only on host loopback. The [TLS stack](TLS.md) adds a gateway,
+production-mode Keycloak, and private application/identity networks. Production
+OpenBao delivery, credential rotation, backup/restore automation, and deployment
+load qualification remain required for public deployment.
 
 ## Build and configure
 
@@ -46,15 +47,15 @@ For loopback HTTP access, use `mode: development` and
 and JWKS URL. The local Keycloak started by `scripts/dev-stack` listens on host
 loopback; `localhost` inside the API container addresses the API container
 itself. The existing host-runtime walkthrough remains available for that local
-identity stack. A complete local TLS identity/application topology is still
-deployment work.
+identity stack. Use the [TLS identity/application topology](TLS.md) to run these
+services together in containers.
 
 Production mode requires HTTPS endpoint URLs. A TLS reverse proxy must preserve
 the configured Host header and forward to host loopback port 8088. Forwarded
-headers do not change request identity or peer budgets. Clients currently share
-the proxy's peer allowance; configuring trusted proxy addresses is separate
-deployment work. Do not expose the container's plain HTTP listener directly to
-the public internet.
+headers are ignored by default. The TLS stack configures an exact trusted gateway
+IP and requires its replacement client-address header for peer budgets; see
+[request admission](API.md#request-admission). Do not expose the
+container's plain HTTP listener directly to the public internet.
 
 ## Run and stop
 

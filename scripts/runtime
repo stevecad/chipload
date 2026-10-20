@@ -80,6 +80,23 @@ def check_data(path):
             pass
 
 
+def docker_socket():
+    # Docker gives DOCKER_CONTEXT precedence over DOCKER_HOST.
+    endpoint = None if os.environ.get("DOCKER_CONTEXT") else os.environ.get("DOCKER_HOST")
+    if not endpoint:
+        endpoint = subprocess.check_output(
+            ["docker", "context", "inspect", "--format", "{{.Endpoints.docker.Host}}"],
+            text=True,
+            timeout=15,
+        ).strip()
+    if not endpoint.startswith("unix:///"):
+        raise ValueError("the runtime requires a local Unix Docker socket")
+    socket = Path(endpoint.removeprefix("unix://"))
+    if not stat.S_ISSOCK(socket.stat().st_mode):
+        raise ValueError("Docker endpoint is not a Unix socket")
+    return socket
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=("up", "down", "status", "logs"))
@@ -93,19 +110,7 @@ def main():
     if not 1 <= args.port <= 65535 or not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,62}", args.name):
         parser.error("use a port from 1–65535 and a lowercase Compose project name")
     try:
-        # Docker gives DOCKER_CONTEXT precedence over DOCKER_HOST.
-        endpoint = None if os.environ.get("DOCKER_CONTEXT") else os.environ.get("DOCKER_HOST")
-        if not endpoint:
-            endpoint = subprocess.check_output(
-                ["docker", "context", "inspect", "--format", "{{.Endpoints.docker.Host}}"],
-                text=True,
-                timeout=15,
-            ).strip()
-        if not endpoint.startswith("unix:///"):
-            raise ValueError("the runtime requires a local Unix Docker socket")
-        socket = Path(endpoint.removeprefix("unix://"))
-        if not stat.S_ISSOCK(socket.stat().st_mode):
-            raise ValueError("Docker endpoint is not a Unix socket")
+        socket = docker_socket()
         images = {role: image(role) for role in ("api", "broker", "worker")}
         config, data = args.config.absolute(), args.data.absolute()
         if args.action == "up":

@@ -54,7 +54,7 @@ from .project import unique_json
 from .published import Collection, ObservationSnapshot
 from .query import VariableResult
 from .quotas import QuotaExceeded
-from .request_limits import RateLimited, RequestCapacity
+from .request_limits import RateLimited, RequestCapacity, request_peer
 from .responses import CatalogView, ItemView, PageView, PublicEvaluation
 
 MAX_REQUEST_BYTES = 3 * 1024 * 1024
@@ -143,7 +143,13 @@ class Boundary:
         headers = {}
         for key, value in scope["headers"]:
             name = key.decode().lower()
-            if name in headers and name in {"authorization", "host", "content-length", "origin"}:
+            if name in headers and name in {
+                "authorization",
+                "host",
+                "content-length",
+                "origin",
+                "x-forwarded-for",
+            }:
                 return await JSONResponse({"error": {"code": "duplicate_header"}}, 400)(
                     scope, receive, send
                 )
@@ -170,7 +176,17 @@ class Boundary:
             )
         self.active += 1
         try:
-            await run_in_threadpool(self.operations.limiter.ingress, scope.get("client"))
+            try:
+                client = request_peer(
+                    scope.get("client"),
+                    headers.get("x-forwarded-for"),
+                    self.settings.trusted_proxy_ips,
+                )
+            except ValueError:
+                return await JSONResponse({"error": {"code": "invalid_proxy_address"}}, 400)(
+                    scope, receive, send
+                )
+            await run_in_threadpool(self.operations.limiter.ingress, client)
             if scope["method"] == "OPTIONS":
                 response = Response(
                     status_code=204,
@@ -621,8 +637,12 @@ def main():
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
-    parser.add_argument("--bind", default="127.0.0.1", help="listener address; use 0.0.0.0 in a container")
-    parser.add_argument("--port", type=int, help="listener port, independent of the public resource URL")
+    parser.add_argument(
+        "--bind", default="127.0.0.1", help="listener address; use 0.0.0.0 in a container"
+    )
+    parser.add_argument(
+        "--port", type=int, help="listener port, independent of the public resource URL"
+    )
     args = parser.parse_args()
     if args.port is not None and not 1 <= args.port <= 65535:
         parser.error("port must be between 1 and 65535")
