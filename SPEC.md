@@ -15,8 +15,6 @@ Chipload fixes both problems:
 - **One description of the shop.** A single file says what the shop has, and every tool reads it.
 - **One vocabulary for machines.** Every machine's status and abilities are described the same way, whatever its brand or protocol.
 
-&#91;embedded content: The problem · before and after Chipload\]
-
 Without a shared description, every tool needs its own link to every machine. With Chipload, each needs only one.
 
 ## What Chipload is
