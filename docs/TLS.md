@@ -397,6 +397,7 @@ Build the worker, runtime and TLS images, then run:
 ```sh
 uv run --extra server python scripts/benchmark-deployment --seconds 150 --require-success
 uv run --extra server python scripts/benchmark-deployment --seconds 60 --noise-rate 60 --require-success
+uv run --extra server python scripts/benchmark-deployment --seconds 60 --noise-rate 60 --noise-profile large-shop --require-success
 uv run --extra server python scripts/benchmark-deployment --seconds 60 --readers 4 --rate 20 --policy capacity
 ```
 
@@ -406,7 +407,7 @@ only the temporary bridge's host address. Separate client containers preserve
 their actual source addresses and verify the gateway's certificate and hostname.
 The script has no option to target an existing deployment. It removes only its
 own containers, network, volume and temporary state. Run it as a non-root account
-with Docker access; Docker Engine 28 or later is required.
+with Docker access; Docker Engine 29 or later is required.
 
 The fixture is the exported three-axis milling Python project, including its
 technical and business acceptance cases. The script saves, builds and publishes
@@ -438,36 +439,53 @@ request in flight and skips missed slots instead of creating a growing queue or
 catch-up burst. Missed slots are reported separately from attempted requests;
 successful throughput uses the entire measurement window. This bounds client
 load and makes failure to sustain the offered schedule visible. Each request has
-an eight-second socket timeout; no failed mutation is automatically replayed.
+an eight-second socket timeout and an 8 MiB response bound; no failed mutation
+is automatically replayed.
 Only inspections of the existing author run/build are polled again after a
 retryable refusal. The admission call itself is never silently resubmitted.
 
 `--policy defaults` retains shipped request and mutation limits. `capacity`
 raises deployment, peer and identity HTTP allowances **only in the disposable
 fixture**, leaving mutation, source, build, Python and container limits intact.
-`--noise-rate` adds a distinct anonymous peer sending invalid bearer tokens and
-changing forged forwarding headers. Its authentication denials and throttling
-are reported separately from useful discovery work. This is a bounded adversarial
-traffic fixture, not a distributed denial-of-service test.
+`--noise-rate` adds a distinct anonymous peer. The default `invalid-token`
+profile sends invalid bearer tokens and changing forged forwarding headers.
+Its authentication denials and throttling are reported separately from useful
+discovery work. `--noise-profile large-shop` instead builds and publishes a
+second ordinary Python project with 500 catalog items, a roughly 2 MB public
+catalog and a 17-step workflow. The peer queries both its catalog and workflow
+through REST and MCP while normal readers and authoring use the first shop.
+The fixture's original agent receives explicit grants to build both shops;
+the competing client stays anonymous. Both shops belong to the same disposable
+organization. These are bounded contention fixtures, not distributed flood or
+independent customer-isolation tests. The larger-shop strict check currently
+fails; see the measurements below.
 
 JSON output records effective policy, image IDs, container limits, fixture size,
-checkout and client-source digest, per-client results, HTTP and MCP service
-statuses, token requests, successful throughput, successful median/p95 latency,
+checkout and client/controller source digests, per-client results, HTTP and MCP
+service statuses, token requests, successful throughput, successful median/p95 latency,
 missed slots and authoring time. MCP errors carried in HTTP 200 responses and
 wrong domain answers never count as successful work. Credentials and returned
 private source are excluded. Progress goes to stderr so stdout can be saved as
 one JSON report.
 
+Version 2 also records explicit latency targets, failed checks, successful
+counts by operation and the larger project's source digest and size when used.
+
 Unexpected failures or wrong answers fail the command. Ordinary 429/503
 backpressure remains visible in a capacity measurement. `--require-success`
-additionally requires every reader request and scheduled slot to succeed and
-authoring to finish within the load window. Compare the offered rate, success
+additionally requires every reader request and scheduled slot to succeed,
+successful reader p95 at most 100 ms, and authoring to finish within both the load
+window and 30 seconds. `--max-p95-ms` and `--max-author-seconds` record explicit
+alternative targets; capacity measurements report them as unenforced. The
+larger-shop profile also requires successful catalog and workflow responses
+through each transport, even without strict mode. Compare the offered rate, success
 ratio and missed slots alongside latency; fast refusals are not useful throughput.
 
-This measures a single Linux host, a compact shop, local routed networks, TLS,
-identity verification, discovery and concurrent authoring. WAN latency,
-independent tenant fairness, larger shops, equipment adapters, certificate
-renewal and long-running operational reliability require further qualification.
+This measures a single Linux host, a compact shop and optional larger simulated
+shop, local routed networks, TLS, identity verification, discovery and concurrent
+authoring. WAN latency, independent tenant fairness, other shop workloads,
+equipment adapters, certificate renewal and long-running operational reliability
+require further qualification.
 
 ### Recorded measurements
 
@@ -507,7 +525,7 @@ not sustained: neither the reported successful p95 nor the process exit status
 should conceal those refused requests and missed slots.
 
 The initial regression target for the default and bounded-noise fixtures is
-every scheduled reader slot succeeding at 10 requests/s, successful p95 below
+every scheduled reader slot succeeding at 10 requests/s, successful p95 at most
 100 ms, authoring within 30 seconds, and preserved publication/rollback checks.
 The strict zero-miss/refusal target is **not consistently met** by these measurements.
 Admission contention and long-tail responses require further work. The capacity
@@ -555,3 +573,40 @@ than the earlier capacity probe. Warming replacements can temporarily reduce
 available slots; these changes do not establish a throughput increase or support
 for the offered 80 requests/s. Publication/rollback checks passed, and no service
 container restarted or reported an OOM kill in these runs.
+
+### Valid queries against a larger shop
+
+The version 2 benchmark applies the documented latency targets as executable
+checks. On the same host and with the same container CPU/memory bounds, the
+second shop's public projection contained 2,070,019 JSON bytes. Its source was
+saved, built, tested and published through the actual API and worker before
+measurement. The competing peer alternated the full catalog and 17-step workflow
+through both REST and MCP, offering 60 requests/s with at most one in flight.
+
+| Workload | Window | Correct reader results / attempts | Missed reader slots | Successful reader p95 | Author completed | Strict result |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| [Larger-shop traffic, initial](benchmarks/deployment-large-initial.json) | 60 s | 588 / 589 | 11 | 169 ms | 9.66 s | Failed |
+| [Larger-shop traffic after JSON scan change](benchmarks/deployment-large-scan.json) | 60 s | 598 / 600 | 0 | 113 ms | 8.54 s | Failed |
+| [Defaults after JSON scan change](benchmarks/deployment-scan-defaults.json) | 150 s | 1,500 / 1,500 | 0 | 56 ms | 8.33 s | Passed |
+
+The scan change uses native string searches while preserving pre-allocation
+byte, token and nesting limits, escape accounting and JSON grammar validation.
+It retains a closing-quote candidate while consuming preceding escape pairs,
+avoiding repeated scans of the remaining string. Unit checks cover long spans,
+escape pairs, quoted punctuation, malformed strings and exact token budgets.
+
+The competing peer completed 374 requests initially and 495 after the change;
+all four operation/transport combinations returned correct answers. It missed
+3,226 and 3,105 scheduled slots respectively, so neither run sustained its offered
+60 requests/s. Normal readers received one `data_busy` refusal initially and two
+after the change. Both larger-shop runs failed the 100 ms reader p95 target;
+the initial run also missed normal reader slots. The improvement does **not**
+complete qualification of availability under expensive discovery traffic.
+
+The default run met every strict target and refreshed its authenticated reader's
+token. In all three runs, returned domain answers were correct, unpublished
+changes stayed private, publication/rollback succeeded, and service containers
+stayed running without restarts or OOM kills. The second publication stayed
+unchanged in both larger-shop runs. Reports preserve the exact images, effective
+policy, source digests and dirty-checkout observations. These measurements leave
+contention from costly valid queries as an explicit deployment limitation.

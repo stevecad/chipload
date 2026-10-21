@@ -15,7 +15,6 @@ MAX_WORKFLOW_STATE = 512
 MAX_CASE_WORK = 1_000_000
 
 _STRUCTURAL = re.compile(r'["{}\[\],:]')
-_STRING_SPECIAL = re.compile(r'["\\]')
 
 
 def bounded_json(
@@ -23,8 +22,8 @@ def bounded_json(
 ) -> object:
     """Preflight allocation/depth, then use the standard JSON grammar decoder.
 
-    The scan visits special characters once, skipping plain string contents in
-    the regex engine. Tokens count structural punctuation, string openings, and
+    The scan skips plain string contents with bounded native string searches.
+    Tokens count structural punctuation, string openings, and
     escapes; escaped punctuation never changes nesting. Limits precede allocation.
     """
     if len(data) > min(max_bytes, MAX_JSON_BYTES):
@@ -38,17 +37,22 @@ def bounded_json(
         if tokens > limit:
             raise ValueError("JSON exceeds the structural token limit")
         if character == '"':
+            closing = source.find('"', position)
             while True:
-                closing = _STRING_SPECIAL.search(source, position)
-                if closing is None:
+                if closing < 0:
                     raise ValueError("unterminated JSON string")
-                position = closing.end()
-                if closing[0] == '"':
+                escape = source.find("\\", position, closing)
+                if escape < 0:
+                    position = closing + 1
                     break
                 tokens += 1
                 if tokens > limit:
                     raise ValueError("JSON exceeds the structural token limit")
-                position += 1  # skip the escaped character, including a quote or backslash
+                position = escape + 2
+                # Retain this quote until an escape consumes it. Searching for
+                # it again after every backslash would make long strings quadratic.
+                if position > closing:
+                    closing = source.find('"', position)
         elif character in "{[":
             depth += 1
             if depth > MAX_JSON_DEPTH:

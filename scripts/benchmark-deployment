@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import ipaddress
 import json
+import math
 import os
 import platform
 import runpy
@@ -18,7 +19,8 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
-from deployment_load import summary
+from deployment_fixtures import large_project, large_workload
+from deployment_load import Connection, Transport, failed_checks, summary
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -105,12 +107,20 @@ def main():
         "--noise-rate",
         type=int,
         default=0,
-        help="invalid-token requests/second from one separate peer",
+        help="scheduled requests/second from one separate competing peer",
     )
+    parser.add_argument(
+        "--noise-profile", choices=("invalid-token", "large-shop"), default="invalid-token",
+        help="invalid tokens, or valid public queries against a second, larger shop",
+    )
+    parser.add_argument("--max-p95-ms", type=float, default=100,
+                        help="strict-mode successful reader p95 ceiling")
+    parser.add_argument("--max-author-seconds", type=float, default=30,
+                        help="strict-mode author completion deadline from load start")
     parser.add_argument(
         "--require-success",
         action="store_true",
-        help="fail if any reader request is refused, fails, or misses its scheduled slot",
+        help="enforce every reader slot, author completion and both latency targets",
     )
     args = parser.parse_args()
     if not (
@@ -118,14 +128,19 @@ def main():
         and 2 <= args.readers <= 8
         and 1 <= args.rate <= 50
         and 0 <= args.noise_rate <= 100
+        and math.isfinite(args.max_p95_ms) and 0 < args.max_p95_ms <= 60000
+        and math.isfinite(args.max_author_seconds) and 0 < args.max_author_seconds <= 300
+        and (args.noise_profile != "large-shop" or args.noise_rate > 0)
     ):
-        parser.error("seconds: 15–300; readers: 2–8; rate: 1–50; noise-rate: 0–100")
+        parser.error("seconds: 15–300; readers: 2–8; rate: 1–50; noise-rate: 0–100 (positive for large-shop); p95: (0,60000] ms; author: (0,300] seconds")
     if os.getuid() == 0:
         parser.error("run as a non-root account with Docker access")
     # The fixture is repository source, separate from the installed SDK package.
     sys.path.insert(0, str(ROOT))
     from mcp.types import LATEST_PROTOCOL_VERSION
 
+    from chipload.access import ACTIONS, Grant
+    from chipload.auth import ServerSettings
     from chipload.client import Client, route
     from chipload.lifecycle import Repository
     from chipload.quotas import QuotaPolicy
@@ -135,6 +150,7 @@ def main():
     helpers = runpy.run_path(str(ROOT / "scripts/tls-credentials"))
     stack = helpers["stack"]
     source_project = project("milling-3axis")
+    competing_project = large_project() if args.noise_profile == "large-shop" else None
     shop_id = source_project.shop_id
     name = "chipload-load-" + uuid.uuid4().hex[:12]
     network_name = name + "-clients"
@@ -191,8 +207,24 @@ def main():
                 "--ca-bundle",
                 str(root / "certs/identity-ca.pem"),
             )
+            if competing_project is not None:
+                # Operator-owned fixture setup before first startup. The original
+                # agent builds both shops; the competing public reader is anonymous.
+                settings = ServerSettings.model_validate_json((state / "runtime.json").read_bytes())
+                original = settings.bindings[0]
+                settings = settings.model_copy(update={"bindings": (
+                    original.model_copy(update={"grants": (*original.grants,
+                        Grant(shop_id=competing_project.shop_id, actions=ACTIONS))}),
+                )})
+                staged = state / "runtime-load.json"
+                stack.write(staged, settings.model_dump_json(indent=2))
+                staged.replace(state / "runtime.json")
             run(*cli, "up")
             values = stack.configuration(json.loads((state / "deployment.json").read_bytes()))
+            connection_config = {
+                "address": address, "api_host": hosts["api"], "identity_host": hosts["identity"],
+                "port": port, "ca": (state / "identity-ca.pem").read_text(),
+            }
             secret = (state / "secrets/agent-secret").read_text()
             status, auth = helpers["agent_token"](state, values, secret)
             if status != 200:
@@ -200,37 +232,46 @@ def main():
 
             def call(operation, request):
                 method, path, data = route(operation, request)
-                status, value = helpers["request"](
-                    state,
-                    values,
-                    path,
-                    method=method,
-                    data=data,
-                    api=True,
-                    token=auth["access_token"],
-                )
+                connection = Connection(connection_config)
+                try:
+                    status, value = Transport.send(
+                        connection, method, path,
+                        json.dumps(data) if data is not None else None,
+                        {"Content-Type": "application/json",
+                         "Authorization": "Bearer " + auth["access_token"]},
+                    )
+                finally:
+                    connection.close()
                 if status not in (200, 202):
                     raise RuntimeError(f"fixture {operation} returned {status}")
                 return value
 
-            shop = Client(call).shop(shop_id)
-            saved = shop.save(source_project, expected_head=None)
-            build = shop.build(saved["revision"], request_key="load-initial")
-            deadline = time.monotonic() + 90
-            while time.monotonic() < deadline:
-                build = shop.build_result(build["id"])
-                if build["state"] in {"succeeded", "failed"}:
-                    break
-                time.sleep(0.5)
-            if build["state"] != "succeeded":
-                raise RuntimeError("fixture build failed")
-            shop.publish(build["id"], expected_generation=0)
+            def publish(project):
+                selected = Client(call).shop(project.shop_id)
+                saved = selected.save(project, expected_head=None)
+                built = selected.build(saved["revision"], request_key="load-initial")
+                deadline = time.monotonic() + 90
+                while time.monotonic() < deadline:
+                    built = selected.build_result(built["id"])
+                    if built["state"] in {"succeeded", "failed"}:
+                        break
+                    time.sleep(0.5)
+                if built["state"] != "succeeded":
+                    raise RuntimeError("fixture build failed")
+                selected.publish(built["id"], expected_generation=0)
+                return selected, built
+
+            shop, build = publish(source_project)
             observations = [
                 o.model_copy(update={"time": datetime.now(timezone.utc)})
                 for o in BY_ID["milling-3axis"].observations()
             ]
             shop.set_observations(observations, expected_revision=None)
             catalog = shop.catalog()
+            competing_catalog = None
+            if competing_project is not None:
+                competing_shop, _ = publish(competing_project)
+                competing_catalog = competing_shop.catalog()
             repository = Repository(state / "data/chipload.db")
             if args.policy == "capacity":
                 quotas = repository.read_quotas()
@@ -252,11 +293,7 @@ def main():
             client_code = (ROOT / "scripts/deployment_load.py").read_text()
             start = time.time() + 8
             common = {
-                "address": address,
-                "api_host": hosts["api"],
-                "identity_host": hosts["identity"],
-                "port": port,
-                "ca": (state / "identity-ca.pem").read_text(),
+                **connection_config,
                 "shop": shop_id,
                 "name": catalog["shop"]["name"],
                 "revision": catalog["public_sha256"],
@@ -314,10 +351,20 @@ def main():
             ]
             configs.append({"role": "author", "secret": secret})
             if args.noise_rate:
-                configs.append({"role": "noise", "rate": args.noise_rate, "phase": 0})
+                options = {"role": "noise", "rate": args.noise_rate, "phase": 0,
+                           "noise_profile": args.noise_profile}
+                if competing_project is not None:
+                    options.update({
+                        "shop": competing_project.shop_id,
+                        "name": competing_catalog["shop"]["name"],
+                        "revision": competing_catalog["public_sha256"],
+                        "capabilities": [c["id"] for c in competing_catalog["capabilities"]],
+                        "cases": large_workload(competing_project),
+                    })
+                configs.append(options)
             client_names.extend(name + "-client-" + str(i) for i in range(len(configs)))
             print(
-                f"Measuring {args.seconds}s with {args.readers} readers, authoring and {args.noise_rate}/s invalid-token traffic...",
+                f"Measuring {args.seconds}s with {args.readers} readers, authoring and {args.noise_rate}/s {args.noise_profile} traffic...",
                 file=sys.stderr,
                 flush=True,
             )
@@ -332,6 +379,8 @@ def main():
                 raise RuntimeError("post-load authentication failed")
             if shop.catalog() != catalog:
                 raise RuntimeError("unpublished draft changed discovery")
+            if competing_catalog is not None and competing_shop.catalog() != competing_catalog:
+                raise RuntimeError("competing publication changed during discovery")
             authored = author["state"] == "succeeded"
             if authored:
                 publication = shop.publication()
@@ -365,11 +414,12 @@ def main():
             aggregate = summary(all_samples, args.seconds)
             missed = sum(r["missed_slots"] for r in readers)
             report = {
-                "version": 1,
+                "version": 2,
                 "date": datetime.now(timezone.utc).isoformat(),
                 "checkout": run("git", "-C", str(ROOT), "rev-parse", "HEAD"),
                 "worktree_dirty": bool(run("git", "-C", str(ROOT), "status", "--porcelain")),
                 "client_sha256": hashlib.sha256(client_code.encode()).hexdigest(),
+                "controller_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                 "host": platform.platform(),
                 "logical_cpus": os.cpu_count(),
                 "docker": run("docker", "version", "--format", "{{.Server.Version}}"),
@@ -381,6 +431,22 @@ def main():
                     "shop": shop_id,
                     "source_bytes": len(source_project.to_json()),
                     "acceptance_cases": len(source_project.tests),
+                },
+                "competing_fixture": {
+                    "shop": competing_project.shop_id,
+                    "source_bytes": len(competing_project.to_json()),
+                    "source_sha256": hashlib.sha256(competing_project.to_json()).hexdigest(),
+                    "public_catalog_bytes": len(json.dumps(competing_catalog).encode()),
+                    "catalog_items": 500, "workflow_steps": 17,
+                    "acceptance_cases": len(competing_project.tests),
+                    "public_revision": competing_catalog["public_sha256"],
+                    "required_operations": [f"{transport}:{case['id']}"
+                        for transport in ("rest", "mcp") for case in large_workload(competing_project)],
+                } if competing_project is not None else None,
+                "performance_targets": {
+                    "enforced": args.require_success,
+                    "max_successful_p95_ms": args.max_p95_ms,
+                    "max_author_finished_offset_seconds": args.max_author_seconds,
                 },
                 "readers": [
                     {
@@ -396,7 +462,8 @@ def main():
                 "author_completed_during_load": authored
                 and author["finished_offset_seconds"] <= args.seconds,
                 "noise": [
-                    {**summary(r["samples"], args.seconds), "missed_slots": r["missed_slots"]}
+                    {**summary(r["samples"], args.seconds), "missed_slots": r["missed_slots"],
+                     "profile": args.noise_profile}
                     for r in results
                     if r["role"] == "noise"
                 ],
@@ -404,22 +471,15 @@ def main():
                     "unpublished_draft_stayed_private": True,
                     "publication_and_rollback_verified": authored,
                     "services_running_without_restart_or_oom": True,
+                    "competing_publication_unchanged": True if competing_catalog is not None else None,
                 },
-                "scope": "Single-host routed IPv4 clients, TLS, real Keycloak tokens, REST/MCP business and capability queries, contained Python editing/building. No WAN, equipment, multi-tenant fairness or certificate renewal.",
+                "scope": "Single-host routed IPv4 clients, TLS, real Keycloak tokens, REST/MCP business and capability queries, contained Python editing/building; optional anonymous queries against a second larger shop. No WAN, equipment, independent-tenant fairness or certificate renewal.",
             }
-            failure = (
-                not authored
-                or aggregate["unexpected"]
-                or any(n["unexpected"] for n in report["noise"])
+            report["failed_checks"] = failed_checks(
+                report, strict=args.require_success, max_p95_ms=args.max_p95_ms,
+                max_author_seconds=args.max_author_seconds,
             )
-            if args.require_success:
-                failure = (
-                    failure
-                    or missed
-                    or aggregate["successes"] != len(all_samples)
-                    or not report["author_completed_during_load"]
-                )
-            report["passed"] = not bool(failure)
+            report["passed"] = not report["failed_checks"]
         finally:
             print(
                 "Removing benchmark containers, deployment and private test storage...",

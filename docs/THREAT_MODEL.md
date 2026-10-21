@@ -161,8 +161,12 @@ establish reachability from a shop caller.
   [deployment benchmark](TLS.md#measure-the-deployed-path) adds routed clients,
   TLS/JWT, business queries and simultaneous Python authoring to the component
   measurements. It counts actual correct results, refusals and missed scheduled
-  requests. Its compact, single-shop fixture does not establish WAN capacity or
-  independent tenant fairness.
+  requests and enforces its declared latency targets in strict mode. The added
+  second-shop fixture sends valid REST/MCP queries against a larger catalog and
+  workflow. Faster JSON scanning reduced contention, but its recorded run still
+  exceeded the reader latency target and returned two capacity refusals. These
+  fixtures do not establish WAN capacity or independent tenant fairness;
+  availability under costly valid discovery traffic remains unqualified.
 - Reduce worker-host authority and strengthen isolation for hostile tenants.
   The broker's Docker socket remains a host-level trust dependency. Shop-specific
   dependency environments are operator-selected and hash-pinned. Python constraints

@@ -115,6 +115,42 @@ class JSONLimitsTests(unittest.TestCase):
                 bounded_json(payload)
         self.assertEqual(bounded_json(b"[12,-0.25,1e2]"), [12, -0.25, 100.0])
 
+    def test_exact_string_budgets_count_escapes_without_counting_quoted_punctuation(self):
+        samples = [
+            (b'""', 1),
+            (b'"[]{}:,"', 1),
+            (br'"\\"', 2),
+            (br'"\""', 2),
+            (br'"\\\""', 3),
+            (br'"\\\\\\"', 4),
+            (br'"\u0061"', 2),
+            (br'["", "x", "\\", "\"", "\u0061"]', 14),
+        ]
+        for data, tokens in samples:
+            with self.subTest(data=data):
+                self.assertEqual(bounded_json(data, max_tokens=tokens), json.loads(data))
+                with patch("chipload.limits.json.loads") as decode:
+                    with self.assertRaisesRegex(ValueError, "token limit"):
+                        bounded_json(data, max_tokens=tokens - 1)
+                    decode.assert_not_called()
+
+    def test_long_plain_spans_cannot_hide_escape_budget_or_containers(self):
+        plain = b"x" * 1_000_000
+        accepted = b'"' + plain + br'\\\"suffix"'
+        self.assertEqual(bounded_json(accepted, max_tokens=3), json.loads(accepted))
+        # Many escape pairs before a distant quote must preserve that candidate.
+        escaped_prefix = b'"' + b"\\\\" * 20_000 + plain + b'"'
+        self.assertEqual(bounded_json(escaped_prefix, max_tokens=20_001), json.loads(escaped_prefix))
+        for data in (
+            b'"' + plain + b"\\\\" * 100 + b'"',
+            b'"' + plain + br'\"unfinished',
+            b'["' + plain + br'\\",' + b"[" * 33 + b"0" + b"]" * 33 + b"]",
+        ):
+            with self.subTest(size=len(data)), patch("chipload.limits.json.loads") as decode:
+                with self.assertRaises(ValueError):
+                    bounded_json(data, max_tokens=100)
+                decode.assert_not_called()
+
     def test_artifact_reader_uses_same_preflight(self):
         with self.assertRaisesRegex(ValueError, "nesting"):
             read_artifact(b"[" * 33 + b"0" + b"]" * 33)

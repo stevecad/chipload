@@ -1,0 +1,396 @@
+{
+  "version": 2,
+  "date": "2026-10-21T17:42:59.839748+00:00",
+  "checkout": "b84c482ef27caf86c36fcccc029175f6bb4be3d9",
+  "worktree_dirty": true,
+  "client_sha256": "9258e5a3650062e66a635a32996db520193e7f7eb80019bbc3611a87834cfc19",
+  "controller_sha256": "7ff3800a72833971f10f6ca733ddaea6192aeec85ed5e6afd9b407d77a5c138f",
+  "host": "Linux-6.17.0-35-generic-x86_64-with-glibc2.39",
+  "logical_cpus": 16,
+  "docker": "29.8.1",
+  "configuration": {
+    "seconds": 150,
+    "readers": 2,
+    "rate": 5,
+    "policy": "defaults",
+    "noise_rate": 0,
+    "noise_profile": "invalid-token",
+    "max_p95_ms": 100,
+    "max_author_seconds": 30,
+    "require_success": true
+  },
+  "request_policy": {
+    "deployment": {
+      "per_minute": 6000,
+      "burst": 200
+    },
+    "peer": {
+      "per_minute": 1200,
+      "burst": 40
+    },
+    "identity": {
+      "per_minute": 1200,
+      "burst": 40
+    },
+    "mutation_identity": {
+      "per_minute": 60,
+      "burst": 10
+    },
+    "mutation_shop": {
+      "per_minute": 120,
+      "burst": 20
+    },
+    "max_buckets": 4096
+  },
+  "services": {
+    "keycloak": {
+      "image": "sha256:4c8b24583da6bcdb75139247d516075326f5918ae86cb0620d5bfc2522db3bc8",
+      "memory_bytes": 1073741824,
+      "nano_cpus": 2000000000,
+      "pids": 256,
+      "restarts": 0,
+      "oom_killed": false
+    },
+    "api": {
+      "image": "sha256:dfe5978eccd9031a8631a3d8d800e0c32e04c7122210fac061c657a4296f9bc4",
+      "memory_bytes": 1073741824,
+      "nano_cpus": 1000000000,
+      "pids": 128,
+      "restarts": 0,
+      "oom_killed": false
+    },
+    "gateway": {
+      "image": "sha256:4e8d4cf0b5ae1f92770693301d770a7e942c51d7f79135a771be027cf6b4aab6",
+      "memory_bytes": 268435456,
+      "nano_cpus": 1000000000,
+      "pids": 64,
+      "restarts": 0,
+      "oom_killed": false
+    },
+    "keycloak-db": {
+      "image": "sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24",
+      "memory_bytes": 536870912,
+      "nano_cpus": 2000000000,
+      "pids": 256,
+      "restarts": 0,
+      "oom_killed": false
+    },
+    "broker": {
+      "image": "sha256:dc6cc80b733a6d0373e4b7dff59996fba09dc88c6da764c6cd6816806e8b8138",
+      "memory_bytes": 536870912,
+      "nano_cpus": 1000000000,
+      "pids": 128,
+      "restarts": 0,
+      "oom_killed": false
+    }
+  },
+  "worker_image": "sha256:6dbf2e6befb03df9408fd136967e64e2718bf5dd414c5cc357e91b2d323409f4",
+  "fixture": {
+    "shop": "demo-milling-3axis",
+    "source_bytes": 134630,
+    "acceptance_cases": 24
+  },
+  "competing_fixture": null,
+  "performance_targets": {
+    "enforced": true,
+    "max_successful_p95_ms": 100,
+    "max_author_finished_offset_seconds": 30
+  },
+  "readers": [
+    {
+      "requests": 750,
+      "http_statuses": {
+        "200": 750
+      },
+      "service_statuses": {
+        "200": 750
+      },
+      "errors": {},
+      "by_operation": {
+        "rest:catalog": 54,
+        "rest:capabilities": 54,
+        "rest:production-accepted": 54,
+        "rest:production-below-minimum": 54,
+        "rest:incoming-paperwork-needed": 54,
+        "rest:customer-requirements-unreviewed": 54,
+        "mcp:prototype-terms": 54,
+        "mcp:catalog": 54,
+        "mcp:capabilities": 53,
+        "mcp:production-accepted": 53,
+        "mcp:production-below-minimum": 53,
+        "mcp:incoming-paperwork-needed": 53,
+        "mcp:customer-requirements-unreviewed": 53,
+        "rest:prototype-terms": 53
+      },
+      "successful_by_operation": {
+        "rest:catalog": 54,
+        "rest:capabilities": 54,
+        "rest:production-accepted": 54,
+        "rest:production-below-minimum": 54,
+        "rest:incoming-paperwork-needed": 54,
+        "rest:customer-requirements-unreviewed": 54,
+        "mcp:prototype-terms": 54,
+        "mcp:catalog": 54,
+        "mcp:capabilities": 53,
+        "mcp:production-accepted": 53,
+        "mcp:production-below-minimum": 53,
+        "mcp:incoming-paperwork-needed": 53,
+        "mcp:customer-requirements-unreviewed": 53,
+        "rest:prototype-terms": 53
+      },
+      "successes": 750,
+      "successful_per_second": 5.0,
+      "success_ratio": 1.0,
+      "successful_median_ms": 51.182,
+      "successful_p95_ms": 55.851,
+      "slowest": [
+        {
+          "operation": "rest:catalog",
+          "ms": 70.77166996896267,
+          "http": 200,
+          "status": 200,
+          "error": null
+        },
+        {
+          "operation": "mcp:incoming-paperwork-needed",
+          "ms": 61.61049799993634,
+          "http": 200,
+          "status": 200,
+          "error": null
+        },
+        {
+          "operation": "mcp:catalog",
+          "ms": 60.70658192038536,
+          "http": 200,
+          "status": 200,
+          "error": null
+        },
+        {
+          "operation": "mcp:catalog",
+          "ms": 59.73941693082452,
+          "http": 200,
+          "status": 200,
+          "error": null
+        },
+        {
+          "operation": "mcp:catalog",
+          "ms": 59.19266492128372,
+          "http": 200,
+          "status": 200,
+          "error": null
+        }
+      ],
+      "unexpected": 0,
+      "authenticated": false,
+      "missed_slots": 0,
+      "token_requests": []
+    },
+    {
+      "requests": 750,
+      "http_statuses": {
+        "200": 750
+      },
+      "service_statuses": {
+        "200": 750
+      },
+      "errors": {},
+      "by_operation": {
+        "rest:catalog": 54,
+        "rest:capabilities": 54,
+        "rest:production-accepted": 54,
+        "rest:production-below-minimum": 54,
+        "rest:incoming-paperwork-needed": 54,
+        "rest:customer-requirements-unreviewed": 54,
+        "mcp:prototype-terms": 54,
+        "mcp:catalog": 54,
+        "mcp:capabilities": 53,
+        "mcp:production-accepted": 53,
+        "mcp:production-below-minimum": 53,
+        "mcp:incoming-paperwork-needed": 53,
+        "mcp:customer-requirements-unreviewed": 53,
+        "rest:prototype-terms": 53
+      },
+      "successful_by_operation": {
+        "rest:catalog": 54,
+        "rest:capabilities": 54,
+        "rest:production-accepted": 54,
+        "rest:production-below-minimum": 54,
+        "rest:incoming-paperwork-needed": 54,
+        "rest:customer-requirements-unreviewed": 54,
+        "mcp:prototype-terms": 54,
+        "mcp:catalog": 54,
+        "mcp:capabilities": 53,
+        "mcp:production-accepted": 53,
+        "mcp:production-below-minimum": 53,
+        "mcp:incoming-paperwork-needed": 53,
+        "mcp:customer-requirements-unreviewed": 53,
+        "rest:prototype-terms": 53
+      },
+      "successes": 750,
+      "successful_per_second": 5.0,
+      "success_ratio": 1.0,
+      "successful_median_ms": 51.35,
+      "successful_p95_ms": 55.849,
+      "slowest": [
+        {
+          "operation": "rest:catalog",
+          "ms": 139.17338894680142,
+          "http": 200,
+          "status": 200,
+          "error": null
+        },
+        {
+          "operation": "rest:prototype-terms",
+          "ms": 123.83986683562398,
+          "http": 200,
+          "status": 200,
+          "error": null
+        },
+        {
+          "operation": "mcp:production-below-minimum",
+          "ms": 92.53733418881893,
+          "http": 200,
+          "status": 200,
+          "error": null
+        },
+        {
+          "operation": "mcp:customer-requirements-unreviewed",
+          "ms": 88.14655616879463,
+          "http": 200,
+          "status": 200,
+          "error": null
+        },
+        {
+          "operation": "rest:catalog",
+          "ms": 70.49199426546693,
+          "http": 200,
+          "status": 200,
+          "error": null
+        }
+      ],
+      "unexpected": 0,
+      "authenticated": true,
+      "missed_slots": 0,
+      "token_requests": [
+        {
+          "status": 200,
+          "ms": 74.52890230342746
+        },
+        {
+          "status": 200,
+          "ms": 70.3213601373136
+        }
+      ]
+    }
+  ],
+  "aggregate": {
+    "requests": 1500,
+    "http_statuses": {
+      "200": 1500
+    },
+    "service_statuses": {
+      "200": 1500
+    },
+    "errors": {},
+    "by_operation": {
+      "rest:catalog": 108,
+      "rest:capabilities": 108,
+      "rest:production-accepted": 108,
+      "rest:production-below-minimum": 108,
+      "rest:incoming-paperwork-needed": 108,
+      "rest:customer-requirements-unreviewed": 108,
+      "mcp:prototype-terms": 108,
+      "mcp:catalog": 108,
+      "mcp:capabilities": 106,
+      "mcp:production-accepted": 106,
+      "mcp:production-below-minimum": 106,
+      "mcp:incoming-paperwork-needed": 106,
+      "mcp:customer-requirements-unreviewed": 106,
+      "rest:prototype-terms": 106
+    },
+    "successful_by_operation": {
+      "rest:catalog": 108,
+      "rest:capabilities": 108,
+      "rest:production-accepted": 108,
+      "rest:production-below-minimum": 108,
+      "rest:incoming-paperwork-needed": 108,
+      "rest:customer-requirements-unreviewed": 108,
+      "mcp:prototype-terms": 108,
+      "mcp:catalog": 108,
+      "mcp:capabilities": 106,
+      "mcp:production-accepted": 106,
+      "mcp:production-below-minimum": 106,
+      "mcp:incoming-paperwork-needed": 106,
+      "mcp:customer-requirements-unreviewed": 106,
+      "rest:prototype-terms": 106
+    },
+    "successes": 1500,
+    "successful_per_second": 10.0,
+    "success_ratio": 1.0,
+    "successful_median_ms": 51.244,
+    "successful_p95_ms": 55.849,
+    "slowest": [
+      {
+        "operation": "rest:catalog",
+        "ms": 139.17338894680142,
+        "http": 200,
+        "status": 200,
+        "error": null
+      },
+      {
+        "operation": "rest:prototype-terms",
+        "ms": 123.83986683562398,
+        "http": 200,
+        "status": 200,
+        "error": null
+      },
+      {
+        "operation": "mcp:production-below-minimum",
+        "ms": 92.53733418881893,
+        "http": 200,
+        "status": 200,
+        "error": null
+      },
+      {
+        "operation": "mcp:customer-requirements-unreviewed",
+        "ms": 88.14655616879463,
+        "http": 200,
+        "status": 200,
+        "error": null
+      },
+      {
+        "operation": "rest:catalog",
+        "ms": 70.77166996896267,
+        "http": 200,
+        "status": 200,
+        "error": null
+      }
+    ],
+    "unexpected": 0,
+    "missed_slots": 0
+  },
+  "author": {
+    "role": "author",
+    "state": "succeeded",
+    "build_id": "ce7f22f026ef49c38d5ecc20181d0e54",
+    "started_offset_seconds": 1.0,
+    "finished_offset_seconds": 8.325,
+    "tokens": [
+      {
+        "status": 200,
+        "ms": 74.8887830413878
+      }
+    ]
+  },
+  "author_completed_during_load": true,
+  "noise": [],
+  "post_load": {
+    "unpublished_draft_stayed_private": true,
+    "publication_and_rollback_verified": true,
+    "services_running_without_restart_or_oom": true,
+    "competing_publication_unchanged": null
+  },
+  "scope": "Single-host routed IPv4 clients, TLS, real Keycloak tokens, REST/MCP business and capability queries, contained Python editing/building; optional anonymous queries against a second larger shop. No WAN, equipment, independent-tenant fairness or certificate renewal.",
+  "failed_checks": [],
+  "passed": true
+}

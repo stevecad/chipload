@@ -16,6 +16,8 @@ import time
 from collections import Counter
 from urllib.parse import urlencode
 
+MAX_RESPONSE_BYTES = 8 * 1024**2
+
 
 class LoadFailure(ValueError):
     """A diagnostic composed only from fixed fixture messages."""
@@ -64,7 +66,7 @@ def validate(value, case, config):
     if case["action"] == "evaluate":
         if value["outcome"] != case["expected"] or value["simulated"] is not True:
             raise ValueError("incorrect capability or business outcome")
-        if case["reason"] not in {reason["code"] for reason in value["reasons"]}:
+        if case.get("reason") and case["reason"] not in {reason["code"] for reason in value["reasons"]}:
             raise ValueError("missing expected evaluation reason")
     elif case["action"] == "variables":
         findings = {v["definition"]["id"]: v for v in value["variables"]}
@@ -76,15 +78,15 @@ def validate(value, case, config):
 
 
 def summary(samples, seconds):
-    accepted = [
-        s["ms"] for s in samples if s["status"] == 200 and not s["error"] and not s["unexpected"]
-    ]
+    successful = [s for s in samples if s["status"] == 200 and not s["error"] and not s["unexpected"]]
+    accepted = [s["ms"] for s in successful]
     return {
         "requests": len(samples),
         "http_statuses": dict(Counter(str(s["http"]) for s in samples)),
         "service_statuses": dict(Counter(str(s["status"]) for s in samples)),
         "errors": dict(Counter(s["error"] for s in samples if s["error"])),
         "by_operation": dict(Counter(s["operation"] for s in samples)),
+        "successful_by_operation": dict(Counter(s["operation"] for s in successful)),
         "successes": len(accepted),
         "successful_per_second": round(len(accepted) / seconds, 3),
         "success_ratio": round(len(accepted) / len(samples), 6) if samples else 0,
@@ -98,6 +100,38 @@ def summary(samples, seconds):
         ],
         "unexpected": sum(bool(s["unexpected"]) for s in samples),
     }
+
+
+def failed_checks(report, *, strict, max_p95_ms, max_author_seconds):
+    """Keep useful work, pressure actually applied and latency targets explicit."""
+    failures = []
+    if report["author"]["state"] != "succeeded":
+        failures.append("author_failed")
+    if report["aggregate"]["unexpected"]:
+        failures.append("unexpected_reader_response")
+    if any(item["unexpected"] for item in report["noise"]):
+        failures.append("unexpected_noise_response")
+    if report.get("competing_fixture"):
+        exercised = {name for item in report["noise"]
+                     for name, count in item["successful_by_operation"].items() if count > 0}
+        required = set(report["competing_fixture"]["required_operations"])
+        if not required or not required <= exercised:
+            failures.append("competing_work_not_exercised")
+    if strict:
+        aggregate = report["aggregate"]
+        if aggregate["missed_slots"]:
+            failures.append("missed_reader_slots")
+        if not aggregate["requests"] or aggregate["successes"] != aggregate["requests"]:
+            failures.append("refused_reader_requests")
+        if not report["author_completed_during_load"]:
+            failures.append("author_exceeded_window")
+        p95 = aggregate["successful_p95_ms"]
+        if p95 is None or p95 > max_p95_ms:
+            failures.append("reader_latency_target")
+        if (report["author"]["state"] != "succeeded"
+                or report["author"]["finished_offset_seconds"] > max_author_seconds):
+            failures.append("author_latency_target")
+    return failures
 
 
 class Connection(http.client.HTTPSConnection):
@@ -133,8 +167,9 @@ class Transport:
         try:
             connection.request(method, path, body=body, headers=headers or {})
             response = connection.getresponse()
-            raw = response.read(3 * 1024**2 + 1)
-            if len(raw) > 3 * 1024**2:
+            # MCP carries the catalog in both text and structured content.
+            raw = response.read(MAX_RESPONSE_BYTES + 1)
+            if len(raw) > MAX_RESPONSE_BYTES:
                 raise ValueError("response exceeded limit")
             return response.status, json.loads(raw)
         except BaseException:
@@ -235,7 +270,7 @@ def reader(config):
             error = None
             unexpected = False
             try:
-                if config["role"] == "noise":
+                if config["role"] == "noise" and config.get("noise_profile", "invalid-token") == "invalid-token":
                     operation = "invalid_token_with_forged_peer"
                     http, status, value, error = transport.call(
                         "GET",

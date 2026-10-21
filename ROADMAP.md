@@ -10,6 +10,26 @@ The current stage focuses on the shop itself and all its variables. Include mate
 
 Steve integration is planned for a later stage.
 
+## Implementation checkpoint — 2026-10-21
+
+The initial shop-as-code implementation is delivered: ordinary Python authoring
+and maintenance, an abstract capability and business-rule engine, representative
+shop examples, shared REST/MCP services, isolated execution, Keycloak/OpenBao,
+container packaging, and issue-driven contributor tooling. The documented
+acceptance checks exercise these workflows and their authorization boundaries.
+
+The closing checkpoint passed 536 ordinary checks, 44 live Python checks and
+four live TLS/network/operation checks. The preceding checkpoint passed all six
+CI jobs, including recovery and secrets; each push runs that workflow again.
+
+Public-launch qualification remains explicit in [the threat model](docs/THREAT_MODEL.md#remaining-deployment-work).
+It includes host and operator custody, monitoring, off-host recovery, dependency
+exposure review, selected certificate providers and actual workload capacity.
+The [larger-shop load measurement](docs/TLS.md#valid-queries-against-a-larger-shop)
+still misses its strict target. Vendor qualification and Steve integration also
+remain separate work. Closing this implementation goal does not certify those
+deployment conditions or physical equipment.
+
 ## Current state
 
 - The repository has issue-driven contributor tooling and a legacy v0.1.0 data specification.
@@ -40,6 +60,7 @@ Steve integration is planned for a later stage.
 - Initial deployment runs preserved correct answers and publication/rollback while revealing occasional long-tail latency and shared-admission refusals. The 10-request/s default fixture missed three slots; invalid-token runs produced zero to three reader refusals. A capacity probe completed about 46 correct requests/s and did not sustain its offered 80 requests/s. Keep the raw reports and strict target in `docs/TLS.md` when comparing subsequent changes.
 - Service processes now recycle between calls while another ready slot can serve. Exhausted request allowances can be rejected from a read snapshot; accepted requests still recompute and debit under the write lock. Existing database files receive metadata checks without raw descriptor closes that would drop SQLite's process-wide advisory locks. Regression tests exercise blocked replacement, shutdown, policy/credit races, and actual cross-process locks; runtime and recovery checks cover the paired stores.
 - Revised deployment measurements met the 10-request/s default and invalid-token fixture targets, including concurrent Python authoring and publication/rollback. The default run served all 1,500 scheduled queries with a 56 ms p95 and 158 ms maximum. The capacity probe still delivered about 46 correct results/s against an offered 80, with 39 worker refusals and 2,009 missed slots. See `docs/TLS.md` for raw evidence and qualification limits.
+- The deployment benchmark now enforces explicit latency targets and adds valid REST/MCP queries against a second shop with a roughly 2 MB catalog and 17-step workflow. Faster bounded JSON scanning improved normal-reader p95 from 169 to 113 ms in the recorded runs, but two capacity refusals and the unmet 100 ms target keep that check failing. The revised default run passed all 1,500 scheduled queries at a 56 ms p95. Failed and passing reports remain in `docs/TLS.md`; costly-query contention remains deployment work.
 - A contained executor now supports offline simulators and the bounded `chipload-receiver-1` HTTPS protocol with scoped OpenBao AppRole credentials. Configuration fingerprints pin receiver routes; uncertain work queries durable receipts without repeating commands. See `docs/ADAPTERS.md`. Qualified vendor bridges and internet deployment qualification remain work. Operator-provisioned pinned libraries are described in `docs/DEPENDENCIES.md`.
 - Encrypted recovery now snapshots both shop databases, Keycloak, grants, and TLS/secrets state together. Restore targets fresh state, retains spent request capacity, blocks application startup during interruption, and resumes the same recovery attempt. A live drill checks real identity/signing keys, publication and observation history, REST/MCP discovery, and interruption before backup completion and after identity restore commits. See `docs/RECOVERY.md`; external secrets and off-host disaster recovery remain operational work.
 - Operator credential rotation now journals agent-secret and identity-database password changes, retries the same pending credential, verifies old-credential rejection, and preserves subjects and grants. Realm RS256 rotation records its provider/key IDs, verifies new tokens, preserves the old key during a timed overlap, and retires it through a separate command that clears the API key cache. Early revocation requires the exact previous key ID and a verified replacement, with an API stop before disabling the key. Signing receipts and keys belong to encrypted recovery. Startup and backups reject unfinished rotations. See `docs/CREDENTIALS.md`; operator-account lifecycle, coordinated incident response, and production OpenBao qualification remain work.
@@ -198,7 +219,7 @@ Preserve the useful v0.1 invariants: permanent IDs, explicit units and timestamp
 
 ### 3. Implement the authoring and publication lifecycle
 
-**Status:** The local service, operator CLI, SDK schema reference, revision/publication guards, container broker, diagnostics, acceptance cases, rollback, withdrawal, and expired-job recovery are implemented and tested. REST/MCP and verified remote identities now expose the lifecycle; the queue process supervises local jobs. See `docs/AUTHORING.md` and `docs/API.md`. Operator-built hash-pinned libraries, source dependency pins, and separate shop/core interpreters now support additional Python dependencies. The CadQuery fixture example includes technical and business acceptance cases; see `docs/DEPENDENCIES.md`. Production supervision qualification remains; this milestone is not yet complete.
+**Status:** The local service, operator CLI, SDK schema reference, revision/publication guards, container broker, diagnostics, acceptance cases, rollback, withdrawal, and expired-job recovery are implemented and tested. REST/MCP and verified remote identities now expose the lifecycle; the queue process supervises local jobs. See `docs/AUTHORING.md` and `docs/API.md`. Operator-built hash-pinned libraries, source dependency pins, and separate shop/core interpreters now support additional Python dependencies. The CadQuery fixture example includes technical and business acceptance cases; see `docs/DEPENDENCIES.md`. The authoring acceptance criteria below are covered by local and live lifecycle tests. Site-specific supervision and operational qualification remain deployment work.
 
 Private binary assets now travel with source revisions under shared path, count
 and serialized-size limits. Builds and queued assessments materialize the exact
