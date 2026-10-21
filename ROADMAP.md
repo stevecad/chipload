@@ -278,6 +278,9 @@ and a check excluding deprecated OpenPGP packages; the broker's Docker CLI is
 also patched. The optional geometry image now includes a pinned Debian security
 snapshot and Expat fix. An image-specific base-package review distinguishes absent
 components and excluded privileged prerequisites from findings still under review.
+The core-image libacl review records ELF imports and trusted subprocess paths:
+affected utility callers remain installed, with no trusted application call path
+identified. Raw package findings remain visible; this is a scoped exposure review.
 Remaining image findings need exposure review and applicable fixes.
 The ACME issuer now builds released lego with patched Go/HTTP and native
 dependencies, verified module locks and a compiled-package exclusion check.

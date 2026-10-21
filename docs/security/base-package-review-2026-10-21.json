@@ -151,11 +151,14 @@
       "advisories": [
         "CVE-2026-54369"
       ],
-      "assessment": "retained_pending_complete_caller_review",
-      "reason": "The vulnerable pathname ACL functions are in libacl1. Nonroot execution and the absence of shared source mounts limit authority, but these facts alone do not prove every indirect ACL caller safe. No stable Debian fix is recorded by the cited tracker at this review date.",
+      "assessment": "affected_functions_present_no_trusted_application_call_path_identified",
+      "reason": "The vulnerable pathname functions remain installed. ELF imports identify cp, install, mv, sed and tar as direct callers; useradd/usermod import the descriptor-based perm_copy_fd. Trusted-module import snapshots do not load libacl, and review of the recorded runtime source found no trusted invocation of these utilities or ACL functions. Source code can invoke them only within its existing isolated worker authority under the supplied launch policy. Retain the package finding and reassess changes to images, dependencies, entrypoints or trusted process paths. This is not an exhaustive dynamic coverage or patch claim.",
       "sources": [
-        "https://security-tracker.debian.org/tracker/CVE-2026-54369"
-      ]
+        "https://security-tracker.debian.org/tracker/CVE-2026-54369",
+        "https://www.openwall.com/lists/oss-security/2026/06/29/1"
+      ],
+      "evidence": "acl-caller-review-2026-10-21.json",
+      "review_source_revision": "7cf28dc75b86e373574a53b2a157339e25181be5"
     }
   ]
 }

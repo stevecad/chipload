@@ -114,9 +114,14 @@ commands and observations for the exact core images. The affected Perl
 util-linux paths require privileged mount or namespace operations excluded by the
 supplied container policy. The affected `infocmp` utility is present, with no
 trusted application invocation identified; untrusted shop code can already run
-utilities within its container. The libacl finding remains open pending a complete
-caller review. These conclusions must be revisited if images, launch policies or
-trusted subprocess paths change; they do not reduce the broker's Docker authority.
+utilities within its container. The [libacl caller review](security/acl-caller-review-2026-10-21.json)
+identifies five installed utilities importing the affected pathname functions.
+Trusted-module import snapshots did not load libacl, and the reviewed runtime
+paths invoke Python or Docker, with no trusted ACL call identified. The vulnerable
+package remains installed and its scanner finding is retained. These observations
+do not cover every dynamic service path or optional dependency image. Revisit the
+conclusions when images, dependencies, launch policies or trusted subprocess paths
+change; they do not reduce the broker's Docker authority.
 
 The optional geometry image now includes the Debian security snapshot and the
 Expat `2.9.0-1~deb13u1` fix; see [dependency maintenance](DEPENDENCIES.md).

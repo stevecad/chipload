@@ -1,0 +1,538 @@
+{
+  "date": "2026-10-21",
+  "source_revision": "7cf28dc75b86e373574a53b2a157339e25181be5",
+  "sdk_sha256": "cbd2bae7c72770d4c5d22bb987ba5b3d95e131fd083f1db325c3086369f136ff",
+  "advisories": [
+    "CVE-2026-54369"
+  ],
+  "scope": "Exact core API, broker, executor and minimal-worker images below. Disposable inspection containers import trusted modules without starting a service, importing shop source or accessing deployment state. This is a scoped caller review, not a patch, exhaustive dynamic coverage or release clearance.",
+  "assessment": "affected_functions_present_no_trusted_application_call_path_identified",
+  "sources": [
+    "https://security-tracker.debian.org/tracker/CVE-2026-54369",
+    "https://www.openwall.com/lists/oss-security/2026/06/29/1"
+  ],
+  "upstream_context": "The pathname APIs can follow attacker-replaced symlink components when called with authority over a target file. Upstream acl 2.4.0 adds directory-relative APIs; callers must adopt them where needed. Upgrading the library alone does not make legacy pathname callers safe. Debian trixie still lists acl 2.3.2-2 as vulnerable at this review date.",
+  "inventory": {
+    "command": [
+      "docker",
+      "run",
+      "--rm",
+      "--network=none",
+      "--read-only",
+      "--cap-drop=ALL",
+      "--security-opt=no-new-privileges:true",
+      "--user=65532:65532",
+      "--pids-limit=16",
+      "--memory=256m",
+      "--cpus=1",
+      "--entrypoint=/usr/local/bin/python",
+      "IMAGE",
+      "-I",
+      "-B",
+      "-c",
+      "INSPECTION_CODE",
+      "JSON_IMPORT_LIST"
+    ],
+    "code": "import hashlib\nimport importlib\nimport json\nimport os\nimport pathlib\nimport sys\n\nsymbols=(b'acl_get_file',b'acl_set_file',b'acl_extended_file',b'acl_delete_def_file',b'libacl.so.1')\nseen=set(); rows=[]; errors=[]; count=0\nroots=('/usr/bin','/usr/sbin','/usr/lib','/usr/local','/opt','/bin','/sbin','/lib')\nfor root in roots:\n    for parent,dirs,files in os.walk(root,onerror=lambda error: errors.append(str(error.filename))):\n        for name in files:\n            path=pathlib.Path(parent)/name\n            try:\n                path=path.resolve()\n                if path in seen or not path.is_file(): continue\n                seen.add(path)\n                with path.open('rb') as stream:\n                    if stream.read(4)!=b'\\x7fELF':continue\n                    stream.seek(0);data=stream.read()\n                count+=1\n                matches=[s.decode() for s in symbols if s+b'\\0' in data]\n                if matches:\n                    rows.append({'path':str(path),'sha256':hashlib.sha256(data).hexdigest(),'symbol_strings':matches})\n            except (PermissionError,FileNotFoundError):errors.append(str(path))\nimports=json.loads(sys.argv[1])\nfor name in imports: importlib.import_module(name)\nfrom chipload.artifact import sdk_fingerprint\nmaps=sorted({line.split()[-1] for line in pathlib.Path('/proc/self/maps').read_text().splitlines() if len(line.split())>=6 and line.split()[-1].startswith('/')})\nprint(json.dumps({'roots':roots,'elf_file_count':count,'unreadable_paths':errors,'candidates':rows,'trusted_imports':imports,'sdk_sha256':sdk_fingerprint(),'mapped_files_after_imports':maps}))\n",
+    "method": "Walk the recorded roots, deduplicate resolved regular paths, inspect ELF bytes for the four NUL-terminated function names or libacl.so.1, then import each role's trusted modules and read /proc/self/maps. Symbol-string matches select candidates for readelf; they are not proof of a call. The source SDK fingerprint covers every installed chipload/*.py file.",
+    "observations": [
+      {
+        "role": "api",
+        "image": "sha256:6fb93b756209dd77d47cf3e77f4fbd80328283472ea52621a2e0654a7d9bc89d",
+        "roots": [
+          "/usr/bin",
+          "/usr/sbin",
+          "/usr/lib",
+          "/usr/local",
+          "/opt",
+          "/bin",
+          "/sbin",
+          "/lib"
+        ],
+        "elf_file_count": 750,
+        "unreadable_paths": [],
+        "trusted_imports": [
+          "chipload.server",
+          "chipload.service_worker"
+        ],
+        "candidate_paths": [
+          "/usr/bin/cp",
+          "/usr/bin/install",
+          "/usr/bin/mv",
+          "/usr/bin/sed",
+          "/usr/bin/tar",
+          "/usr/lib/x86_64-linux-gnu/libacl.so.1.1.2302",
+          "/usr/sbin/useradd",
+          "/usr/sbin/usermod"
+        ],
+        "candidate_hashes_match_elf_review": true,
+        "mapped_file_count_after_imports": 55,
+        "mapped_files_after_imports_sha256": "9b5c556eabf09b4935002f5c8965baa098452e366e027cfccedb149f9353087c",
+        "mapped_libacl_files_after_imports": []
+      },
+      {
+        "role": "broker",
+        "image": "sha256:9d124ddcc3f06c65e7975b5f234793735d793c6af5776d1558a223acdf7296c6",
+        "roots": [
+          "/usr/bin",
+          "/usr/sbin",
+          "/usr/lib",
+          "/usr/local",
+          "/opt",
+          "/bin",
+          "/sbin",
+          "/lib"
+        ],
+        "elf_file_count": 748,
+        "unreadable_paths": [],
+        "trusted_imports": [
+          "chipload.broker",
+          "chipload.sdk_service"
+        ],
+        "candidate_paths": [
+          "/usr/bin/cp",
+          "/usr/bin/install",
+          "/usr/bin/mv",
+          "/usr/bin/sed",
+          "/usr/bin/tar",
+          "/usr/lib/x86_64-linux-gnu/libacl.so.1.1.2302",
+          "/usr/sbin/useradd",
+          "/usr/sbin/usermod"
+        ],
+        "candidate_hashes_match_elf_review": true,
+        "mapped_file_count_after_imports": 44,
+        "mapped_files_after_imports_sha256": "314b6f5aa436a48397ba50e956410b9bebf0b31bc63199f9165eca9a9476e8d5",
+        "mapped_libacl_files_after_imports": []
+      },
+      {
+        "role": "executor",
+        "image": "sha256:f4db1baf5826a29899f33cdc7820dd425ddaa6751e88d8deabc8c994e38d0b75",
+        "roots": [
+          "/usr/bin",
+          "/usr/sbin",
+          "/usr/lib",
+          "/usr/local",
+          "/opt",
+          "/bin",
+          "/sbin",
+          "/lib"
+        ],
+        "elf_file_count": 747,
+        "unreadable_paths": [],
+        "trusted_imports": [
+          "chipload.executor",
+          "chipload.remote_adapter"
+        ],
+        "candidate_paths": [
+          "/usr/bin/cp",
+          "/usr/bin/install",
+          "/usr/bin/mv",
+          "/usr/bin/sed",
+          "/usr/bin/tar",
+          "/usr/lib/x86_64-linux-gnu/libacl.so.1.1.2302",
+          "/usr/sbin/useradd",
+          "/usr/sbin/usermod"
+        ],
+        "candidate_hashes_match_elf_review": true,
+        "mapped_file_count_after_imports": 47,
+        "mapped_files_after_imports_sha256": "0f9f7a5abb6c83fc9507928ced6a15526c4fe67801a6493ccd72a281bc74fe1d",
+        "mapped_libacl_files_after_imports": []
+      },
+      {
+        "role": "worker",
+        "image": "sha256:2a46602ce5573bf3e3b7fe57edb52f17233cc0eb449577ad4166990a905d511a",
+        "roots": [
+          "/usr/bin",
+          "/usr/sbin",
+          "/usr/lib",
+          "/usr/local",
+          "/opt",
+          "/bin",
+          "/sbin",
+          "/lib"
+        ],
+        "elf_file_count": 747,
+        "unreadable_paths": [],
+        "trusted_imports": [
+          "chipload.worker",
+          "chipload.sdk_worker",
+          "chipload.service_worker",
+          "chipload.program_worker",
+          "chipload.assessment_worker",
+          "chipload.check_worker"
+        ],
+        "candidate_paths": [
+          "/usr/bin/cp",
+          "/usr/bin/install",
+          "/usr/bin/mv",
+          "/usr/bin/sed",
+          "/usr/bin/tar",
+          "/usr/lib/x86_64-linux-gnu/libacl.so.1.1.2302",
+          "/usr/sbin/useradd",
+          "/usr/sbin/usermod"
+        ],
+        "candidate_hashes_match_elf_review": true,
+        "mapped_file_count_after_imports": 47,
+        "mapped_files_after_imports_sha256": "0f9f7a5abb6c83fc9507928ced6a15526c4fe67801a6493ccd72a281bc74fe1d",
+        "mapped_libacl_files_after_imports": []
+      }
+    ]
+  },
+  "elf_review": {
+    "tool": "GNU readelf (GNU Binutils for Ubuntu) 2.42",
+    "method": "Copied candidates from a never-started API image container; SHA-256 matched the inventory in all four images. Parsed ELF metadata on the host without executing the image binaries.",
+    "candidates": [
+      {
+        "path": "/usr/bin/cp",
+        "sha256": "5a3a8808bab81a67c6ac578670f5608595f1569948d4dc7d7d604c1d08d596d9",
+        "symbol_strings": [
+          "acl_set_file",
+          "acl_delete_def_file",
+          "libacl.so.1"
+        ],
+        "needed_libraries": [
+          "libselinux.so.1",
+          "libacl.so.1",
+          "libattr.so.1",
+          "libc.so.6"
+        ],
+        "readelf_dynamic_sha256": "67fa5a96a5fa1a79ff11a6d3769a9574af19b4a24b9ea5967f65b472927d045b",
+        "readelf_symbols_sha256": "6ad889e4a57be291eb3f339ebc3153f9c169d97034bb9100e50814791c5a60f7",
+        "libacl_imports": [
+          "acl_delete_def_file",
+          "acl_entries",
+          "acl_free",
+          "acl_from_mode",
+          "acl_get_entry",
+          "acl_get_tag_type",
+          "acl_set_fd",
+          "acl_set_file"
+        ],
+        "libacl_exports": [],
+        "affected_function_imports": [
+          "acl_delete_def_file",
+          "acl_set_file"
+        ]
+      },
+      {
+        "path": "/usr/bin/install",
+        "sha256": "daa4c9bda9ae0ebc3c778b7778c2634d85674690673facea20f6984b976f4e91",
+        "symbol_strings": [
+          "acl_set_file",
+          "acl_delete_def_file",
+          "libacl.so.1"
+        ],
+        "needed_libraries": [
+          "libselinux.so.1",
+          "libacl.so.1",
+          "libattr.so.1",
+          "libc.so.6"
+        ],
+        "readelf_dynamic_sha256": "36b04af1cd4d95609574ca4cc7dbe75646b548142615a903d780faad65604fa7",
+        "readelf_symbols_sha256": "22ac3d88b743e2738d33da3084ce72c21bf0ff3fd6f30ee37a6cd36fa58e54a3",
+        "libacl_imports": [
+          "acl_delete_def_file",
+          "acl_entries",
+          "acl_free",
+          "acl_from_mode",
+          "acl_get_entry",
+          "acl_get_tag_type",
+          "acl_set_fd",
+          "acl_set_file"
+        ],
+        "libacl_exports": [],
+        "affected_function_imports": [
+          "acl_delete_def_file",
+          "acl_set_file"
+        ]
+      },
+      {
+        "path": "/usr/bin/mv",
+        "sha256": "7db4661c6397fe5fd5ba6837692aa5adb7dce1efc656369d7b08dfd6ece525a0",
+        "symbol_strings": [
+          "acl_set_file",
+          "acl_delete_def_file",
+          "libacl.so.1"
+        ],
+        "needed_libraries": [
+          "libselinux.so.1",
+          "libacl.so.1",
+          "libattr.so.1",
+          "libc.so.6"
+        ],
+        "readelf_dynamic_sha256": "a10bf6802e41d5ad4e5b7e6e1910cd1e88bdc4401fcb94dc143c69beef37cf20",
+        "readelf_symbols_sha256": "902ef25e22ec41e046b23e55a2e9f9c8d164c23a30f29680a14bbbe8a7cb41d9",
+        "libacl_imports": [
+          "acl_delete_def_file",
+          "acl_entries",
+          "acl_free",
+          "acl_from_mode",
+          "acl_get_entry",
+          "acl_get_tag_type",
+          "acl_set_fd",
+          "acl_set_file"
+        ],
+        "libacl_exports": [],
+        "affected_function_imports": [
+          "acl_delete_def_file",
+          "acl_set_file"
+        ]
+      },
+      {
+        "path": "/usr/bin/sed",
+        "sha256": "69ff7292c0d081bdf5866bc84dde96d5a14f4a7deafeb9483739be68c48ac2b3",
+        "symbol_strings": [
+          "acl_get_file",
+          "acl_set_file",
+          "acl_delete_def_file",
+          "libacl.so.1"
+        ],
+        "needed_libraries": [
+          "libacl.so.1",
+          "libselinux.so.1",
+          "libc.so.6"
+        ],
+        "readelf_dynamic_sha256": "1a08a4e551d18cab5fab4b3e2a6cbb9e8b2d3905c5f080eb451a7630de914747",
+        "readelf_symbols_sha256": "5112c20ea4101c23e1e2dba5ebbd1fca3cb7d146b6fc1b46b9b0b51cd94a5073",
+        "libacl_imports": [
+          "acl_delete_def_file",
+          "acl_entries",
+          "acl_free",
+          "acl_from_mode",
+          "acl_get_entry",
+          "acl_get_fd",
+          "acl_get_file",
+          "acl_get_tag_type",
+          "acl_set_fd",
+          "acl_set_file"
+        ],
+        "libacl_exports": [],
+        "affected_function_imports": [
+          "acl_delete_def_file",
+          "acl_get_file",
+          "acl_set_file"
+        ]
+      },
+      {
+        "path": "/usr/bin/tar",
+        "sha256": "38adf50825f773d353d6bda1a7cd70c22f8877823e44821c1d2bd0a52ddc3871",
+        "symbol_strings": [
+          "acl_get_file",
+          "acl_set_file",
+          "acl_delete_def_file",
+          "libacl.so.1"
+        ],
+        "needed_libraries": [
+          "libacl.so.1",
+          "libselinux.so.1",
+          "libc.so.6"
+        ],
+        "readelf_dynamic_sha256": "b4f9206ae2cc1a5722acfbee4d8a88d03213d43bc64d4dfb928cfcdf9e59b20a",
+        "readelf_symbols_sha256": "228a264ae5deb513175bc6a4848fc09c1051f128aaf882d217098d0222500a7a",
+        "libacl_imports": [
+          "acl_delete_def_file",
+          "acl_free",
+          "acl_from_text",
+          "acl_get_file",
+          "acl_set_file",
+          "acl_to_any_text",
+          "acl_to_text"
+        ],
+        "libacl_exports": [],
+        "affected_function_imports": [
+          "acl_delete_def_file",
+          "acl_get_file",
+          "acl_set_file"
+        ]
+      },
+      {
+        "path": "/usr/lib/x86_64-linux-gnu/libacl.so.1.1.2302",
+        "sha256": "3c03774961231d8485a4dba36ec359a95939a84719799c58cd26173e44bbde90",
+        "symbol_strings": [
+          "acl_get_file",
+          "acl_set_file",
+          "acl_extended_file",
+          "acl_delete_def_file",
+          "libacl.so.1"
+        ],
+        "needed_libraries": [
+          "libc.so.6"
+        ],
+        "readelf_dynamic_sha256": "9dcad18d41c4b41600dc78b3000fefbc4d66aece99df72ac032795d318aff77b",
+        "readelf_symbols_sha256": "94ebfb52b836200231d1d594e09ff3ad96448418194a148e4388f24c6a1db1ec",
+        "libacl_imports": [],
+        "libacl_exports": [
+          "acl_add_perm",
+          "acl_calc_mask",
+          "acl_check",
+          "acl_clear_perms",
+          "acl_cmp",
+          "acl_copy_entry",
+          "acl_copy_ext",
+          "acl_copy_int",
+          "acl_create_entry",
+          "acl_delete_def_file",
+          "acl_delete_entry",
+          "acl_delete_perm",
+          "acl_dup",
+          "acl_entries",
+          "acl_equiv_mode",
+          "acl_error",
+          "acl_extended_fd",
+          "acl_extended_file",
+          "acl_extended_file_nofollow",
+          "acl_free",
+          "acl_from_mode",
+          "acl_from_text",
+          "acl_get_entry",
+          "acl_get_fd",
+          "acl_get_file",
+          "acl_get_perm",
+          "acl_get_permset",
+          "acl_get_qualifier",
+          "acl_get_tag_type",
+          "acl_init",
+          "acl_set_fd",
+          "acl_set_file",
+          "acl_set_permset",
+          "acl_set_qualifier",
+          "acl_set_tag_type",
+          "acl_size",
+          "acl_to_any_text",
+          "acl_to_text",
+          "acl_valid",
+          "perm_copy_fd",
+          "perm_copy_file"
+        ],
+        "affected_function_imports": []
+      },
+      {
+        "path": "/usr/sbin/useradd",
+        "sha256": "3fd1735eb46d2cc6067c509b11c7e7bf1e9dca2ea53f0947bf4f3b1fa93b4225",
+        "symbol_strings": [
+          "libacl.so.1"
+        ],
+        "needed_libraries": [
+          "libaudit.so.1",
+          "libselinux.so.1",
+          "libsemanage.so.2",
+          "libacl.so.1",
+          "libattr.so.1",
+          "libbsd.so.0",
+          "libc.so.6"
+        ],
+        "readelf_dynamic_sha256": "8f12a3eb6c9818bf8e99741ec9d3da07938fe361656442051dac77944dd501de",
+        "readelf_symbols_sha256": "9cc625df213198060a22a785cee7eae263d22581ab25708d71a3b34b7cf658ea",
+        "libacl_imports": [
+          "perm_copy_fd"
+        ],
+        "libacl_exports": [],
+        "affected_function_imports": []
+      },
+      {
+        "path": "/usr/sbin/usermod",
+        "sha256": "09991129a30399f7847dfde884002e3454ad5d66c53c446a7789e94a74534058",
+        "symbol_strings": [
+          "libacl.so.1"
+        ],
+        "needed_libraries": [
+          "libaudit.so.1",
+          "libselinux.so.1",
+          "libsemanage.so.2",
+          "libacl.so.1",
+          "libattr.so.1",
+          "libbsd.so.0",
+          "libc.so.6"
+        ],
+        "readelf_dynamic_sha256": "b4df75495951392678e11e4ce26f997493e168b76a2d780679cf0475296931d2",
+        "readelf_symbols_sha256": "46108c345eeb6c556df84000d65711c451cadd291c4c865fb175a68e3f5303fb",
+        "libacl_imports": [
+          "perm_copy_fd"
+        ],
+        "libacl_exports": [],
+        "affected_function_imports": []
+      }
+    ]
+  },
+  "trusted_source_review": [
+    {
+      "finding": "Reviewed process creation and its internal command construction: Docker image/context/container inspection, create, start and removal. Source/build/assessment containers run the shop interpreter; the separate SDK container runs the core interpreter with only the dedicated repository directory mounted. No cp, mv, install, sed, tar, useradd or usermod invocation was identified.",
+      "files": [
+        {
+          "path": "src/chipload/sandbox.py",
+          "sha256": "79f7b63691f5a20ba57403aac40cb88279badfebf6cbad306fc4d3b4c7741068"
+        },
+        {
+          "path": "src/chipload/program_sandbox.py",
+          "sha256": "246e8bce962634515af897869a014cf05ebdff58b8e7befc0db55ffd11135e23"
+        },
+        {
+          "path": "src/chipload/assessment_runner.py",
+          "sha256": "5b00e14436320817b2b2427720294a6629ffa4f6998223f0a0f5d86d89038239"
+        },
+        {
+          "path": "src/chipload/sdk_service.py",
+          "sha256": "016c7a89a5ac89fdd9f6814f91af61c07f5d74a39652a390fde025c9f0a5046c"
+        },
+        {
+          "path": "src/chipload/launches.py",
+          "sha256": "cb67ad484f7d15e67eccd5e988563ae16923a98afe93fd0187022744e25edf71"
+        },
+        {
+          "path": "src/chipload/launch_reservations.py",
+          "sha256": "00a9b7f39491945d69840645762a7216a03cb31aa0f5ea298522418f1d6f273c"
+        },
+        {
+          "path": "src/chipload/containers.py",
+          "sha256": "28271a8e4c183ca68d2a1d819348836e032981c67971cd5d8848c605748eab9c"
+        }
+      ]
+    },
+    {
+      "finding": "Trusted service and HTTPS adapter children run sys.executable in isolated mode. The service-pool production caller uses the default Python bootstrap. Its ctypes.CDLL(None) accesses libc.pidfd_open for parent-death supervision; no ACL loading or invocation was identified.",
+      "files": [
+        {
+          "path": "src/chipload/service_pool.py",
+          "sha256": "91d83e2cae3f5e4bbbf7678eb7e22b7b52e9a93a52125df96627d45ba56a7195"
+        },
+        {
+          "path": "src/chipload/process_operations.py",
+          "sha256": "1d9ecc441be996307af4b24583bb78e84cd7ffb213235ac5dba829802955f747"
+        },
+        {
+          "path": "src/chipload/remote_adapter.py",
+          "sha256": "840d2ebb8655d1c90043ee0af0ba280d60d909e37a09635e10826f50cc2f1584"
+        }
+      ]
+    },
+    {
+      "finding": "Runtime image entrypoints run Python directly. Container policy drops all capabilities, enables no-new-privileges and read-only root filesystems. Source launch commands have no host data mount; the trusted SDK service adds only the dedicated repository mount. The broker retains Docker socket authority. Build-stage shell commands are outside this runtime review.",
+      "files": [
+        {
+          "path": "deploy/runtime/Dockerfile",
+          "sha256": "d830256734c8debc168903ffb2ea86053469acba57983fcf38d9461c09776ac7"
+        },
+        {
+          "path": "deploy/worker/Dockerfile",
+          "sha256": "e4458e6b4976f9a3826f4a2205f5f129236ea138797d2bed9e1f59b1ca2c1246"
+        },
+        {
+          "path": "deploy/runtime/compose.yaml",
+          "sha256": "178c8ae544cba659e50da881c8c2d4c1307f9cbfae2c152fa2eaf948405a9b85"
+        },
+        {
+          "path": "deploy/executor/compose.yaml",
+          "sha256": "adb05363ff81e139250379ee3b86e3a1338ac46bdf4b2b9ea67522eb9a6e8e02"
+        }
+      ]
+    }
+  ],
+  "conclusion": "Five installed utilities (cp, install, mv, sed and tar) import affected pathname functions. useradd and usermod link libacl and import perm_copy_fd, without direct imports of the four affected functions. No inspected trusted module import mapped libacl, and no invocation of these utilities or ACL functions was identified in the reviewed Chipload runtime paths. Untrusted source can call these utilities or load libacl inside its existing worker authority; it has no host or trusted-service storage mount. This does not add authority over trusted repository files under the supplied launch policy.",
+  "limitations": [
+    "The vulnerable library and utility callers remain installed. Keep the raw package finding; no scanner suppression or package-fix claim is made.",
+    "Import snapshots do not execute every service path. ELF string and symbol inspection do not prove the absence of statically embedded implementations, computed library names or future late loading.",
+    "The conclusion depends on the recorded images, SDK, dependencies, entrypoints and container boundaries. Reassess after any relevant change.",
+    "Optional geometry/dependency images, operator host tools, altered entrypoints, privileged debugging and host packages are outside this review.",
+    "The broker Docker socket remains host authority; this finding does not qualify unrelated customers to share its host."
+  ]
+}
