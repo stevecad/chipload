@@ -30,6 +30,8 @@ def capability_budgets(shop: Shop) -> dict[str, tuple[int, int]]:
         work += len(cap.resources) + 64 * len(cap.input_state) + len(cap.output_state)
         weight = 256 + sum(rule_result(r) for r in cap.requirements)
         weight += 256 * (len(cap.resources) + len(cap.input_state))
+        work += sum(1 + len(check.facts) for check in cap.python_checks)
+        weight += sum(512 + len(check.remedy) for check in cap.python_checks)
         for rule in cap.requirements:
             if isinstance(rule, Choice) and len(rule.allowed) == 1:
                 weight += 256 + len(str(rule.allowed[0]))
@@ -89,6 +91,13 @@ def target_budgets(shop: Shop) -> dict[tuple[str, str], tuple[int, int]]:
 
 def complexity_errors(shop: Shop):
     """Call only after identities, references, and graph validity are established."""
+    from .python_checks import CheckLimit, check_plans
+
+    try:
+        check_plans(shop)
+    except CheckLimit as error:
+        collection = {"capability": "capabilities", "workflow": "workflows", "offer": "offers"}[error.kind]
+        yield (collection, error.target), str(error)
     by_id = {cap.id: cap for cap in shop.capabilities}
     for workflow in shop.workflows:
         fields = {f.name for s in workflow.steps for f in by_id[s.capability].output_state}

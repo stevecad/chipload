@@ -105,6 +105,12 @@ and whether simulation is permitted. The body shop ID must match the path.
 Target kinds are `capability`, `workflow`, and `offer`. Offers assess alternative
 routes under shared conditions; see [the model contract](SHOP_MODEL.md#alternative-routes).
 
+Capabilities may publish metadata for [Python constraints](SHOP_MODEL.md#python-constraints).
+Their entrypoints and source remain private. The current worker runs these
+functions for build acceptance cases; queued on-demand evaluation is pending.
+The synchronous data API reports `python-check-required` when answers are absent,
+and does not substitute a passing build test for the current request.
+
 The service supplies the evaluation time and stored observation snapshot.
 Clients cannot inject a clock, observations, or a principal into an evaluation.
 Simulation defaults to disallowed. An author can inspect the full result using

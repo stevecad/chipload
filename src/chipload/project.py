@@ -13,6 +13,7 @@ from .complexity import target_budgets
 from .evaluate import EvaluationRequest, Outcome, evaluate
 from .limits import MAX_CASE_WORK, MAX_DIAGNOSTICS, bounded_json
 from .model import Id, Model, Observation, Timestamp
+from .python_checks import PythonEvaluation, suite_plans
 from .validation import Diagnostic
 
 MAX_PROJECT_BYTES = 2 * 1024 * 1024
@@ -98,6 +99,7 @@ class CaseResult(Model):
     actual: Outcome | None = None
     reason_codes: tuple[Id, ...] = Field(default=(), max_length=100)
     error: Annotated[StrictStr, Field(max_length=1000)] | None = None
+    python_evaluation: PythonEvaluation | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class BuildReport(Model):
@@ -119,17 +121,23 @@ class BuildReport(Model):
         return self
 
 
-def run_cases(artifact: Artifact, cases: tuple[AcceptanceCase, ...]) -> tuple[CaseResult, ...]:
+def run_cases(artifact: Artifact, cases: tuple[AcceptanceCase, ...], *,
+              python_evaluations: tuple[PythonEvaluation, ...] = ()) -> tuple[CaseResult, ...]:
     """Data-only assertions; source cannot replace the evaluator in this process."""
     budgets = target_budgets(artifact.shop)
+    suite_plans(artifact.shop, cases)
+    if python_evaluations and len(python_evaluations) != len(cases):
+        raise ValueError("Python evaluations must match the acceptance cases")
     work = sum(budgets.get((c.request.target_kind, c.request.target), (0, 0))[0] for c in cases)
     if len(cases) > 100 or work > MAX_CASE_WORK:
         # Do not silently skip tests or treat a budget failure as domain rejection.
         raise ValueError(f"Acceptance suite exceeds the {MAX_CASE_WORK} work / 100 case limit")
     results = []
-    for case in cases:
+    for index, case in enumerate(cases):
+        python_evaluation = python_evaluations[index] if python_evaluations else None
         try:
-            result = evaluate(artifact, case.request, at=case.at, observations=case.observations)
+            result = evaluate(artifact, case.request, at=case.at, observations=case.observations,
+                              python_evaluation=python_evaluation)
             codes = tuple(sorted({r.code for r in result.reasons}))
             results.append(
                 CaseResult(
@@ -137,6 +145,7 @@ def run_cases(artifact: Artifact, cases: tuple[AcceptanceCase, ...]) -> tuple[Ca
                     passed=result.outcome == case.expected and set(case.reason_codes) <= set(codes),
                     actual=result.outcome,
                     reason_codes=codes,
+                    python_evaluation=python_evaluation,
                 )
             )
         except (KeyError, ValueError) as error:

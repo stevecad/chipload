@@ -270,6 +270,87 @@ Python factories, business conditions and source-project exports. This adds
 alternative composition to the compiled model; custom Python evaluation of
 queries and more general process transformations remain future work.
 
+## Python constraints
+
+Shop functions can express relationships between inputs and business conditions
+that independent ranges cannot capture. A capability declares each function and
+the request facts it consumes:
+
+```python
+from chipload import PythonCheck
+
+relationship = PythonCheck(
+    id="depth-ratio",
+    name="Depth relative to diameter",
+    visibility="public",
+    entrypoint="shop:depth_ratio",
+    facts=("depth", "diameter"),
+)
+
+def depth_ratio(facts):
+    depth, diameter = facts["depth"], facts["diameter"]
+    if depth is None or diameter is None:
+        return "unknown"
+    if depth.dimension != "length" or diameter.dimension != "length":
+        return "unknown"
+    return "supported" if depth.base_value() <= 3 * diameter.base_value() else "unsupported"
+```
+
+Include the check in `Capability(..., python_checks=(relationship,))`, with
+ordinary `Range` requirements for both named facts. Each input must name a
+requirement on that capability. The entrypoint module must be supplied by the
+source project. Functions receive fresh mappings of those facts, using typed
+`Quantity` objects and `None` for missing values. They return exactly one of
+`supported`, `unsupported`, `conditional` or `unknown`. A conditional answer
+requires a nonempty `remedy` in the check declaration. Arbitrary returned text,
+booleans and malformed results are execution failures.
+
+The evaluator combines these answers with all static requirements, workflow
+state, evidence, revocations and observations. A Python answer cannot override
+those checks or confer a higher assurance level. Functions currently consume
+request facts; they do not transform workflow state. Repeated uses of the same
+capability within one query share its check answers.
+
+Build workers run checks for the project's acceptance cases. The trusted broker
+validates every returned check identity, recomputes the full domain outcome,
+and compares it with the expected outcome. Every declared function needs at
+least one acceptance case. Exceptions, malformed answers, timeouts and output
+overflow fail the build. They do not count as successful tests expecting an
+unknown capability. The existing publication remains intact after failure.
+Function-error diagnostics identify the acceptance case, capability and check
+so the authoring agent can locate the failing condition.
+
+Each private case result records its `python_evaluation`, bound to the exact
+build identity, complete request digest and evaluation time. Missing, extra,
+duplicate or mismatched check answers are rejected. These records support
+inspection and reproduction; they are not caller-supplied authority in REST
+requests. The container has the same limits as source builds: no host files,
+network, credentials or Docker socket, and bounded CPU, memory, processes, output
+and wall time. Arbitrary Python is not guaranteed to be pure or deterministic;
+shop authors should test repeatability for their own functions and dependencies.
+
+There are at most eight checks per capability, 128 unique checks per target and
+512 check calls across an acceptance suite. Work/result budgets also account for
+check input handling and explanations. Python runtime costs are controlled by
+the worker's resource limits, rather than inferred from source text.
+
+Only explicitly public check metadata appears in discovery; source entrypoints
+are private. A hidden check makes its capability and containing workflows/offers
+incomplete for public evaluation. The existing hidden-catalog policy still applies.
+
+**Current delivery:** Python check authoring and isolated build tests are
+implemented. On-demand queued evaluation through REST/MCP remains to be wired
+to the worker. Ordinary published evaluation never imports source and returns
+`python-check-required` with an unknown contribution until the required checks
+run. A known static rejection can still make the overall result unsupported.
+Build-test answers are never substituted for a new live query. Operation checks
+also require support and therefore cannot dispatch while Python results are absent.
+
+`uv run python -m examples.python_shop` runs 30 trusted local examples across
+machining, heat treatment and a document-review service, including technical
+relationships, lot-size policies and conditional documentation requirements.
+`test_python_checks_live.py` builds their exported source in actual containers.
+
 ## Evidence and observations
 
 Evidence records its assurance level, provenance, capability IDs,

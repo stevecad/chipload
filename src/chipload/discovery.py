@@ -30,6 +30,10 @@ def public_catalog(artifact: Artifact) -> dict:
     }
     public_processes = visible(shop.processes)
     public_capabilities = visible(shop.capabilities)
+    complete_capabilities = {
+        c.id for c in shop.capabilities
+        if c.id in public_capabilities and all(check.visibility == "public" for check in c.python_checks)
+    }
 
     def public_rule(rule: Rule) -> dict:
         result = rule.model_dump(mode="json")
@@ -88,6 +92,13 @@ def public_catalog(artifact: Artifact) -> dict:
                 "requirements": [public_rule(r) for r in c.requirements],
                 "input_state": [f.model_dump(mode="json") for f in c.input_state],
                 "output_state": [f.model_dump(mode="json") for f in c.output_state],
+                **({
+                    "python_checks": [
+                        {**summary(check), "facts": list(check.facts), "remedy": check.remedy}
+                        for check in c.python_checks if check.visibility == "public"
+                    ],
+                    "complete": c.id in complete_capabilities,
+                } if c.python_checks else {}),
             }
             for c in shop.capabilities
             if c.id in public_capabilities
@@ -101,7 +112,7 @@ def public_catalog(artifact: Artifact) -> dict:
                 "capabilities": sorted(
                     {s.capability for s in w.steps if s.capability in public_capabilities}
                 ),
-                "complete": all(s.capability in public_capabilities for s in w.steps),
+                "complete": all(s.capability in complete_capabilities for s in w.steps),
             }
             for w in shop.workflows
             if w.visibility == "public"
@@ -139,7 +150,7 @@ def public_catalog(artifact: Artifact) -> dict:
                     or (route.target_kind == "workflow" and route.target in workflows)
                 ],
                 "complete": all(
-                    route.target in public_capabilities if route.target_kind == "capability"
+                    route.target in complete_capabilities if route.target_kind == "capability"
                     else route.target in workflows and workflows[route.target]["complete"]
                     for route in offer.alternatives
                 ),

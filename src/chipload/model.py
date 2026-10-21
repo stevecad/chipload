@@ -29,6 +29,9 @@ Text = Annotated[StrictStr, Field(max_length=4000)]
 Visibility = Literal["private", "public"]
 Assurance = Literal["declared", "demonstrated", "qualified"]
 Source = Literal["controller", "sensor", "person", "calculated", "simulated"]
+Entrypoint = Annotated[
+    StrictStr, Field(pattern=r"^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*:[A-Za-z_]\w*$", max_length=200)
+]
 
 
 class Model(BaseModel):
@@ -289,6 +292,20 @@ class ObservationRequirement(Model):
         return self
 
 
+class PythonCheck(Entity):
+    """A source function constraining named request facts; executed only in a worker."""
+
+    entrypoint: Entrypoint
+    facts: tuple[Id, ...] = Field(min_length=1, max_length=100)
+    remedy: Text = ""
+
+    @model_validator(mode="after")
+    def unique_inputs(self) -> Self:
+        if len(set(self.facts)) != len(self.facts):
+            raise ValueError("Python check inputs must be unique")
+        return self
+
+
 class Capability(Entity):
     process: Id
     resources: tuple[Id, ...] = Field(default=(), max_length=256)
@@ -297,6 +314,9 @@ class Capability(Entity):
     observations: tuple[ObservationRequirement, ...] = Field(default=(), max_length=64)
     input_state: tuple[Fact, ...] = Field(default=(), max_length=100)
     output_state: tuple[Fact, ...] = Field(default=(), max_length=100)
+    python_checks: tuple[PythonCheck, ...] = Field(
+        default=(), max_length=8, exclude_if=lambda value: not value
+    )
 
 
 class Step(Model):

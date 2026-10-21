@@ -73,6 +73,13 @@ expected_model_sha256=shop.evidence()["revision"], reason="...")`. Use
 `shop.evidence_revocation(id)` to inspect the durable private receipt. Revocation
 applies across source rollback; see [evidence revocation](API.md#evidence-revocation).
 
+Shop source can declare `PythonCheck` functions for nonlinear technical and
+business conditions. They run in the isolated build worker for acceptance
+cases, and `shop.build_result(id)` includes their bound answers. On-demand
+query execution is still pending; `shop.evaluate(query)` stays data-only and
+reports unknown when a required function answer is absent. See
+[Python constraints](SHOP_MODEL.md#python-constraints) for the contract and limits.
+
 Public discovery needs neither a login nor code execution:
 
 ```json

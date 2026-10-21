@@ -104,7 +104,12 @@ The default environment contains the standard library and locked SDK
 dependencies. Builds never install project-supplied requirements or download
 dependencies. Operators can add hash-pinned libraries through
 [dependency environments](DEPENDENCIES.md), including the CadQuery example.
-Custom executable evaluation remains to be implemented.
+Capabilities can declare [Python constraints](SHOP_MODEL.md#python-constraints)
+whose functions run during isolated acceptance tests. The broker recomputes
+domain results from bounded function answers and the validated model; private
+case reports retain exact build/query/time bindings. Every function needs a case.
+On-demand queued evaluation remains to be connected to REST/MCP. Published data
+queries do not reuse acceptance-test results or import source into the API.
 
 Source may fabricate output or modify its own Python process. The broker treats
 all worker output as untrusted: it validates the returned model and references,

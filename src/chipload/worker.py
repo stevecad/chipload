@@ -9,8 +9,10 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from .check_worker import CheckExecutionError, run_checks
 from .model import Shop
 from .project import MAX_PROJECT_BYTES, SourceProject, unique_json
+from .validation import validate_shop
 
 
 def main() -> None:
@@ -34,7 +36,13 @@ def main() -> None:
                 if not isinstance(shop, Shop):
                     raise ValueError("entrypoint must return a chipload.Shop")
                 result = {"shop": shop.model_dump(mode="json")}
+                if any(cap.python_checks for cap in shop.capabilities):
+                    validate_shop(shop)
+                    result["python_checks"] = run_checks(shop, project)
         print(json.dumps(result, ensure_ascii=True, allow_nan=False))
+    except CheckExecutionError as error:
+        print(json.dumps({"diagnostics": [{"code": "python-check-error", "path": error.path,
+                                          "message": str(error)}]}))
     except ValidationError as error:
         print(
             json.dumps(

@@ -17,6 +17,7 @@ Steve integration is planned for a later stage.
 - A separate private TLS OpenBao container supports PGP-encrypted threshold initialization, explicit unsealing, audit storage, certificate reload and initialized-store checks. Operator helpers manage scoped AppRole provisioning, verification, rotation and revocation, with subject-bound Keycloak device login and explicit signing-key synchronization. Live drills exercise access denials, interrupted bootstrap/credential/identity changes and encrypted offline recovery after deleting the original store. See `docs/SECRETS.md`; operational custody, emergency access and replacement-host qualification remain open.
 - The experimental Python SDK, validation, artifact codec, evaluator, contextual variable queries, and public catalog projection are implemented. A fictional shop has sixteen executable manufacturing scenarios; a heat-treatment-only example adds nine scenarios; the Swiss shop example covers shop variables and business rules. Tests also cover a document-review service with no physical resources or materials.
 - Shop agents can revoke evidence through Python and REST with a separate grant. Receipts survive source rollback, and live queries and operation preconditions exclude revoked IDs. The schema-10 migration, private receipt projection, retries, concurrency and recovery are covered by tests. Independent certification and external revocation feeds remain work.
+- Shop-defined Python constraints now run during isolated build acceptance tests. Their answers are bound to the build/query/time and combined with static rules and evidence constraints; they cannot override those constraints. Three examples cover nonlinear technical relationships and business conditions. Queued on-demand evaluation through REST/MCP is the next integration step; ordinary discovery never imports source or reuses build-test answers.
 - The process library adds 88 process projects and one mixed shop with 2,147 technical/business cases. Every project has prototype/production acceptance conditions, contextual business variables, and portable Python source. The mixed shop models shared equipment and explicit route compatibility. Exact quantity increments support whole-item business rules without introducing shop types into the engine. See `docs/PROCESS_EXAMPLES.md`.
 - A local application service now stores immutable source revisions, durable build jobs, exact publications, rollback/withdrawal, and audit events. It enforces shop/action grants. A restricted Docker worker and broker build Python projects; the broker validates models and acceptance results. Real-container tests cover hostile source and the publication lifecycle.
 - REST/OpenAPI and Streamable HTTP MCP share discovery, evaluation, authoring, publication, evidence, and observation operations. The server verifies Keycloak access tokens and applies explicit shop grants; a separate broker processes queued jobs. Public results have a distinct privacy projection.
@@ -161,6 +162,14 @@ Preserve the useful v0.1 invariants: permanent IDs, explicit units and timestamp
 Implement source storage and revision guards; SDK reference access; isolated, bounded build jobs; build diagnostics; model inspection; shop tests; immutable artifacts; and atomic publication of an exact revision. Include update, withdrawal, and rollback behavior. Keep publication authorization independent from source editing.
 
 Specify how custom evaluation code is packaged, versioned, restricted, and invoked. Any executable extension must have reproducible inputs, bounded execution, and explicit handling of failure or incomplete results.
+
+Python constraint packaging and isolated acceptance execution now exist. The next
+step is a queued assessment service using the published build's exact source and
+dependency environment. It needs bounded admission, polling/cancellation,
+guarded worker cleanup, REST/MCP parity, and checks on current publication and
+visibility before returning results. Public answers must use safe projections;
+worker logs and raw source stay private. Build-test results cannot authorize a
+new query or an equipment operation.
 
 **Complete when:** an agent can create the example shop, repair a failed build using diagnostics, pass the scenario tests, and publish it with delegated permissions. Concurrent edits cannot silently overwrite each other. A failed build leaves the previous publication intact. Updating and rolling back select the intended revisions; withdrawing a publication removes public access under a documented cache policy.
 

@@ -30,6 +30,7 @@ from .model import (
     Value,
     aware,
 )
+from .python_checks import PythonEvaluation, validated_outcomes
 
 Outcome = Literal["supported", "unsupported", "conditional", "unknown"]
 RANK = {"supported": 0, "conditional": 1, "unknown": 2, "unsupported": 3}
@@ -173,10 +174,12 @@ def evaluate(
     at: datetime,
     observations: tuple[Observation, ...] = (),
     revoked_evidence: frozenset[str] = frozenset(),
+    python_evaluation: PythonEvaluation | None = None,
 ) -> Evaluation:
     """Evaluate a validated artifact with no caller-supplied knowledge exemptions."""
     return _evaluate(
-        artifact, request, at=at, observations=observations, revoked_evidence=revoked_evidence
+        artifact, request, at=at, observations=observations, revoked_evidence=revoked_evidence,
+        python_results=validated_outcomes(artifact, request, at, python_evaluation),
     )
 
 
@@ -188,6 +191,7 @@ def _evaluate(
     observations: tuple[Observation, ...] = (),
     declared_facts: frozenset[str] = frozenset(),
     revoked_evidence: frozenset[str] = frozenset(),
+    python_results: dict | None = None,
 ) -> Evaluation:
     """Evaluate an already validated artifact at an explicit observation time.
 
@@ -199,7 +203,8 @@ def _evaluate(
         from .offers import evaluate_offer
 
         return evaluate_offer(
-            artifact, request, at=at, observations=observations, revoked_evidence=revoked_evidence
+            artifact, request, at=at, observations=observations, revoked_evidence=revoked_evidence,
+            python_results=python_results,
         )
     facts = {fact.name: fact.value for fact in request.facts}
     initial_state = {fact.name: fact.value for fact in request.initial_state}
@@ -215,6 +220,19 @@ def _evaluate(
         reasons: list[Reason] = []
         assumptions: list[Fact] = []
         effective_facts = facts.copy()
+        for check in capability.python_checks:
+            result = (python_results or {}).get((capability.id, check.id))
+            reasons.append(Reason(
+                code="python-check-" + (result or "required"),
+                outcome=result or "unknown",
+                path=path + ("python_checks", check.id),
+                message=check.remedy if result == "conditional" else {
+                    None: "This request requires an isolated Python check.",
+                    "supported": "The Python check accepts these inputs.",
+                    "unsupported": "The Python check rejects these inputs.",
+                    "unknown": "The Python check cannot establish support for these inputs.",
+                }.get(result, ""),
+            ))
         for rule in capability.requirements:
             result = check_rule(rule, facts, path + ("requirements",))
             if result is not None:

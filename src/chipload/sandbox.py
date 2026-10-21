@@ -22,6 +22,7 @@ from .project import (
     run_cases,
     unique_json,
 )
+from .python_checks import bind_case_results, require_check_coverage, validate_check_sources
 from .validation import Diagnostic, ShopValidationError
 
 
@@ -225,7 +226,7 @@ class DockerBuilder:
                 ):
                     raise SandboxError("worker returned invalid diagnostics")
                 diagnostics = [Diagnostic.model_validate(d) for d in payload["diagnostics"]]
-            elif set(payload) == {"shop"}:
+            elif set(payload) in ({"shop"}, {"shop", "python_checks"}):
                 # Never trust a digest, validation result, or test result from source.
                 shop = Shop.model_validate(payload["shop"])
                 if shop.id != project.shop_id:
@@ -240,7 +241,15 @@ class DockerBuilder:
                         runtime=f"CPython-{env.python_version};docker-{env.image}",
                     ),
                 )
-                tests = run_cases(artifact, project.tests)
+                validate_check_sources(shop, project)
+                if any(cap.python_checks for cap in shop.capabilities):
+                    require_check_coverage(shop, project.tests)
+                    contexts = bind_case_results(artifact, project.tests, payload.get("python_checks"))
+                    tests = run_cases(artifact, project.tests, python_evaluations=contexts)
+                else:
+                    if "python_checks" in payload:
+                        raise SandboxError("worker returned undeclared Python checks")
+                    tests = run_cases(artifact, project.tests)
             else:
                 raise SandboxError("worker returned an invalid result")
         except ShopValidationError as error:

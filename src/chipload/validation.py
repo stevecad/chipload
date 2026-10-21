@@ -147,6 +147,13 @@ def validate_shop(shop: Shop) -> None:
             for value in values:
                 ref(value, collection, path + (collection, value))
         rules(capability.requirements, path + ("requirements",))
+        unique([check.id for check in capability.python_checks], path + ("python_checks",))
+        inputs = {rule.fact for rule in capability.requirements}
+        for check in capability.python_checks:
+            for name in check.facts:
+                if name not in inputs:
+                    error("missing-reference", path + ("python_checks", check.id, "facts", name),
+                          "Python check inputs must name this capability's declared requirements.")
         facts(capability.input_state, path + ("input_state",))
         facts(capability.output_state, path + ("output_state",))
         unique([o.observation for o in capability.observations], path + ("observations",))
