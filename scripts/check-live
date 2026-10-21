@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+"""Run self-contained live test profiles; missing or skipped checks fail the run."""
+
+import argparse
+import os
+import sys
+import unittest
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+PROFILES = {
+    "python": (
+        ("WORKER", "RUNTIME"),
+        ("worker", "program", "sdk_service", "agent_lifecycle", "runtime", "project_assets",
+         "python_checks", "assessments", "erp_interop", "evidence_worker", "offer_worker"),
+    ),
+    "tls": (
+        ("TLS", "OPERATION", "RECOVERY", "CREDENTIAL"),
+        ("tls", "edge", "execution", "recovery", "credentials", "signing"),
+    ),
+    "secrets": (
+        ("SECRETS", "ADAPTER"),
+        ("secrets_stack", "secrets_recovery", "secrets_workload", "secrets_identity",
+         "remote_adapter", "executor"),
+    ),
+}
+
+
+def run_suites(patterns, directory, *, stream=sys.stderr):
+    loader = unittest.TestLoader()
+    suite = unittest.TestSuite()
+    for pattern in patterns:
+        part = loader.discover(str(directory), pattern=pattern)
+        if not part.countTestCases():
+            raise ValueError(f"No tests discovered for {pattern}")
+        suite.addTests(part)
+    if not suite.countTestCases():
+        raise ValueError("No live test suites selected")
+    result = unittest.TextTestRunner(verbosity=2, stream=stream).run(suite)
+    if result.skipped or result.expectedFailures:
+        print("Live checks require every selected test to pass; skips and expected failures fail this run.", file=stream)
+        return False
+    return result.wasSuccessful()
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("profile", choices=PROFILES)
+    args = parser.parse_args()
+    flags, names = PROFILES[args.profile]
+    for flag in flags:
+        os.environ[f"CHIPLOAD_{flag}_TESTS"] = "1"
+    os.chdir(ROOT)
+    try:
+        passed = run_suites((f"test_{name}_live.py" for name in names), ROOT / "tests")
+    except ValueError as error:
+        parser.exit(2, f"check-live: {error}\n")
+    raise SystemExit(0 if passed else 1)
+
+
+if __name__ == "__main__":
+    main()

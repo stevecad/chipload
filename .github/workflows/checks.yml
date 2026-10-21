@@ -1,0 +1,86 @@
+name: Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: Python ${{ matrix.python }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12.15", "3.14.6"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "0.11.23"
+          checksum: e12c4cda2fe8c305510a78380a88f2c32a27e90cdcd123cefd2873388f0ebb5f
+          python-version: ${{ matrix.python }}
+          enable-cache: false
+          download-from-astral-mirror: false
+      - run: uv sync --locked --extra server
+      - name: Lint and source hygiene
+        run: |
+          uv run --extra server ruff check src examples tests scripts/check-live
+          git diff --check
+          ./scripts/agent-work --help
+      - name: Ordinary tests
+        run: uv run --extra server python -m unittest discover -s tests -v
+      - name: Technical and business examples
+        run: |
+          for example in reference_shop heat_treatment process_shops alternative_routes python_shop erp_shop; do
+            uv run python -m "examples.${example}"
+          done
+
+  live:
+    name: Live ${{ matrix.profile }}
+    needs: unit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [python, tls, secrets]
+    env:
+      CI_PROFILE: ${{ matrix.profile }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "0.11.23"
+          checksum: e12c4cda2fe8c305510a78380a88f2c32a27e90cdcd123cefd2873388f0ebb5f
+          python-version: "3.12.15"
+          enable-cache: false
+          download-from-astral-mirror: false
+      - run: uv sync --locked --extra server
+      - name: Check host tools
+        run: |
+          docker version
+          docker compose version
+          gpg --version
+      - name: Build worker and application images
+        run: |
+          ./scripts/build-worker
+          ./scripts/build-runtime
+      - name: Build TLS images
+        if: matrix.profile != 'python'
+        run: ./scripts/build-tls
+      - name: Run live profile without skipped checks
+        run: uv run --extra server python scripts/check-live "$CI_PROFILE"

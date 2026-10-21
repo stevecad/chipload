@@ -152,9 +152,13 @@ The script works with any agent that can run terminal commands. It prepares work
 
 ## Check the tooling
 
+GitHub [Checks](https://github.com/stevecad/chipload/actions/workflows/checks.yml)
+runs ordinary tests on two Python versions and builds disposable container stacks
+for selected integration tests. See [CI coverage and local commands](docs/CI.md).
+
 ```sh
 uv run --extra server python -m unittest discover -s tests -v
-uv run --extra server ruff check src examples tests
+uv run --extra server ruff check src examples tests scripts/check-live
 git diff --check
 ```
 

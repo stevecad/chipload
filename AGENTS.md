@@ -7,6 +7,7 @@ Chipload is becoming a platform for software-defined shops. Read [ROADMAP.md](RO
 - `ROADMAP.md`: product direction, implementation order, and completion criteria. Update milestone status with evidence as work lands.
 - `SPEC.md`: the normative specification for the original data format, including examples and ground rules. The spec release is `0.1.0`; the shop document's `chipload` field is the string `"0.1"`. Its file-format scope does not limit the product roadmap.
 - `README.md`: project introduction and contributor setup.
+- `.github/workflows/checks.yml`, `scripts/check-live`, `docs/CI.md`: automatic ordinary and selected container checks. Live profiles fail on missing or skipped suites; feature-specific checks outside CI remain required for relevant changes.
 - `docs/SHOP_MODEL.md`: experimental domain semantics, versioning decision, and current limits.
 - `docs/AUTHORING.md`: local source/build/publication workflow, permissions, worker limits, and recovery.
 - `docs/PYTHON_API.md`, `src/chipload/client.py`, `program*.py`: Python client, contained code execution, scoped SDK calls, durable run records and recovery. `tests/test_program*.py` cover admission, revocation, interruption, and actual container restrictions.
@@ -159,12 +160,14 @@ uv run --extra server python -m unittest discover -s tests -v
 uv run python -m examples.reference_shop
 uv run python -m examples.heat_treatment
 uv run python -m examples.process_shops
-uv run --extra server ruff check src examples tests
+uv run --extra server ruff check src examples tests scripts/check-live
 ./scripts/agent-work --help
 git diff --check
 ```
 
 For documentation changes, review links, commands, and examples against the applicable spec and roadmap and run `git diff --check`. Add focused tests when introducing executable behavior; avoid tests that merely assert documentation wording. REST/MCP changes need checks that equivalent requests share domain results and permission decisions. Live GitHub reads (`list`, `brief`) are useful smoke checks when authenticated. Test branch creation in a disposable checkout, since `start` switches branches.
+
+For CI changes, validate workflow syntax with `actionlint`, test `scripts/check-live` with `test_check_live.py`, and inspect the actual GitHub run after an authorized push. Keep actions pinned, permissions read-only, credentials unpersisted, and fixtures on disposable hosted runners. Never use a secret-bearing workflow or `pull_request_target` to execute an untrusted contribution. See `docs/CI.md` for coverage and local profiles.
 
 For infrastructure changes, also run `./scripts/dev-stack up` and the opt-in live checks documented in README.md. Check that recovery files remain ignored, development/admin ports stay on loopback, and any non-loopback client binding matches explicit deployment configuration. The development OpenBao container's healthcheck is a liveness check that permits sealed/uninitialized states; bootstrap additionally verifies it is unsealed. Test actual access denials when changing policies. Do not give the runtime root/admin credentials or return equipment secrets through MCP.
 

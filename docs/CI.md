@@ -1,0 +1,56 @@
+# Continuous integration
+
+[Checks](../.github/workflows/checks.yml) runs on pushes to `main`, pull requests,
+and manual dispatch. Each job uses a fresh GitHub-hosted Ubuntu 24.04 runner.
+Ordinary tests, lint and executable technical/business examples run on Python
+3.12.15 and 3.14.6 with the locked server dependencies.
+
+After both Python jobs pass, three jobs build the container images from the
+checkout and run disposable integration fixtures:
+
+| Profile | Coverage |
+| --- | --- |
+| `python` | Source builds, hosted Python and SDK isolation, MCP authoring, REST discovery, runtime persistence, binary assets, Python constraints and assessments, ERP observations, evidence revocation, and alternative offers. |
+| `tls` | Verified HTTPS and Keycloak, external client boundaries, callable operations, encrypted recovery, agent/database credential rotation, and signing-key rotation and revocation. |
+| `secrets` | TLS OpenBao bootstrap, recovery, workload credentials, Keycloak operator identity, HTTPS adapters, and the contained executor. |
+
+[`scripts/check-live`](../scripts/check-live) defines the exact suites and enables
+their prerequisite flags before importing tests. Missing suites, skipped checks,
+expected failures and test failures all fail the selected profile. The ordinary
+test command intentionally skips opt-in integration tests; its success alone
+does not establish container coverage.
+
+To run the same profiles locally, install Docker with Compose, GnuPG 2.4+,
+Python 3.12+ and `uv`, then run:
+
+```sh
+uv sync --locked --extra server
+./scripts/build-worker
+./scripts/build-runtime
+./scripts/build-tls
+uv run --extra server python scripts/check-live python
+uv run --extra server python scripts/check-live tls
+uv run --extra server python scripts/check-live secrets
+```
+
+Keep the checkout and image fingerprints fixed during each run. These profiles
+create and clean up their own temporary services, storage and credentials. They
+do not use the persistent development stack or contact equipment. Docker access
+is required; use a disposable development or CI host for untrusted contributions.
+
+The workflow grants only repository-content read access, disables persisted Git
+credentials and dependency caching, and uses full commit pins for third-party
+actions plus a version and checksum for `uv`. It does not consume repository
+secrets, publish images, deploy services or upload fixture state. This follows
+[GitHub's action security guidance](https://docs.github.com/en/actions/reference/security/secure-use)
+and the [uv integration guide](https://docs.astral.sh/uv/guides/integration/github/).
+Updating a pin requires reviewing its upstream release and rerunning the checks.
+
+CI covers a selected integration set. The complete process source-build matrix,
+CadQuery dependency environment, ACME issuance and user-systemd scheduling,
+additional recovery/fairness drills, and load benchmarks have separate commands
+in `AGENTS.md` and their feature documentation. Run the relevant checks when
+changing those areas. A passing workflow does not establish site-specific
+internet deployment, equipment qualification or third-party connector support.
+Required branch checks and repository protection are separate GitHub settings;
+this workflow does not configure them.
