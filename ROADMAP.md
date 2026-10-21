@@ -17,6 +17,7 @@ Steve integration is planned for a later stage.
 - A separate private TLS OpenBao container supports PGP-encrypted threshold initialization, explicit unsealing, audit storage, certificate reload and initialized-store checks. Operator helpers manage scoped AppRole provisioning, verification, rotation and revocation, with subject-bound Keycloak device login and explicit signing-key synchronization. Live drills exercise access denials, interrupted bootstrap/credential/identity changes and encrypted offline recovery after deleting the original store. See `docs/SECRETS.md`; operational custody and replacement-host qualification remain open.
 - New secrets-operator grants require an enrolled authenticator and a dedicated password/OTP login flow. Signed AMR checks and an OpenBao OTP claim binding protect token exchange. The explicit `enable-mfa` upgrade preserves existing subjects, client IDs and permissions through interrupted configuration; operational enrollment and emergency custody remain separate requirements.
 - An independent emergency login has a supplied minimal policy and native OpenBao CLI procedure. The live drill verifies encrypted quorum root generation without Keycloak, narrow denials, root retirement, password rotation and access after deleting/restoring service storage. Human custody and off-host execution remain deployment requirements; see `docs/SECRETS_EMERGENCY.md`.
+- The original private OpenBao 2.7.1 image now has an explicit upgrade to the patched build through encrypted backup and fresh-directory restore. The transition requires exact source/target contracts and preserves quorum, cluster, credentials, policies and revocations in a real older-image drill. See `docs/SECRETS_UPGRADES.md`; other image transitions require separate review and qualification.
 - The experimental Python SDK, validation, artifact codec, evaluator, contextual variable queries, and public catalog projection are implemented. A fictional shop has sixteen executable manufacturing scenarios; a heat-treatment-only example adds nine scenarios; the Swiss shop example covers shop variables and business rules. Tests also cover a document-review service with no physical resources or materials.
 - Shop agents can revoke evidence through Python and REST with a separate grant. Receipts survive source rollback, and live queries and operation preconditions exclude revoked IDs. The schema-10 migration, private receipt projection, retries, concurrency and recovery are covered by tests. Independent certification and external revocation feeds remain work.
 - Shop-defined Python constraints now run during isolated build acceptance tests. Their answers are bound to the build/query/time and combined with static rules and evidence constraints; they cannot override those constraints. Three examples cover nonlinear technical relationships and business conditions. Queued assessments now execute these functions for REST/MCP queries with scoped grants and exact publication bindings; ordinary discovery never imports source or reuses build-test answers.
@@ -297,8 +298,13 @@ high/critical or named-symbol matches; the retained OpenPGP wildcard finding
 concerns packages excluded from compilation. Both development and private TLS
 startup verify the build and use immutable image IDs. Existing private secrets
 state and archives still require their matching checkout and deployment contract.
-Local validation passed all six secrets live checks, including real identity,
-credential rotation, storage-loss recovery and contained adapters. Development
+The original 2.7.1 packaging has a named, reviewed transition to the patched
+build through encrypted backup and fresh-directory restore. The live drill
+starts the actual older image, preserves the original quorum and revoked root,
+checks workload permissions, and backs up/restores the upgraded deployment.
+Local validation passed all eight secrets live checks, including real identity,
+emergency access, the reviewed image upgrade, credential rotation, storage-loss
+recovery and contained adapters. Development
 identity, scoped secret access and compiled UI asset checks also passed.
 Secrets operator login now requires password and OTP for new configurations,
 checks signed authentication evidence and disables refresh-token issuance.

@@ -198,6 +198,12 @@ establish reachability from a shop caller.
   tested after deleting the original store, including quorum, cluster identity,
   revoked root-token and workload-policy preservation. This covers fresh storage
   on the same host; replacement-host and custody arrangements need qualification.
+  An [explicit image transition](SECRETS_UPGRADES.md) upgrades the original pinned
+  2.7.1 service through encrypted backup and fresh-directory restore. Both source
+  and target image/Compose contracts must match the reviewed pair; current
+  startup still refuses legacy state. The real older-image drill preserves the
+  original quorum, cluster, secret access restrictions and root revocation.
+  Rollback needs the corresponding old data and reconciliation of later changes.
   The HTTP development stack retains local recovery material.
 
 - Qualify actual vendor receivers and external systems, including ambiguous

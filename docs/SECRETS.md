@@ -74,8 +74,9 @@ starts reuse the existing image and do not recreate OpenBao merely to rebuild it
 
 Keep the image and matching checkout with recovery records. Existing private
 deployment state and archives retain their original image reference and Compose
-contract. Automatic migration from the earlier upstream-image packaging is not
-implemented; manage those deployments with their matching checkout. Do not edit
+contract. The [explicit image-upgrade procedure](SECRETS_UPGRADES.md) migrates the
+reviewed original 2.7.1 packaging through encrypted backup and fresh-directory
+restore. Other image changes still require their matching checkout. Do not edit
 the image field or replace initialized storage to upgrade.
 
 Initialization sends public PGP keys to OpenBao's
@@ -490,7 +491,8 @@ before bringing up a replacement; local checks cannot detect another Docker
 host. On a replacement host, recreate the same internal network and use the
 backed-up image build and Compose contract. Build it with `scripts/build-secrets`
 from the matching checkout or load the retained image. Archives from the earlier
-upstream-image packaging require that earlier checkout and pinned image.
+upstream-image packaging require that earlier checkout and pinned image for
+ordinary restore, or the named [reviewed image upgrade](SECRETS_UPGRADES.md).
 The helper refuses an existing
 destination, conflicting project, shared storage mounts, changed deployment
 contract, unauthenticated archive, links, unexpected paths, or altered contents.

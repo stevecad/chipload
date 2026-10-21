@@ -17,6 +17,32 @@ from unittest.mock import patch
 from secrets_support import archive, fixture_args, script
 
 recovery = script.load("secrets_recovery_test", "scripts/secrets-recovery")
+upgrades = recovery.secrets_upgrades
+
+
+class ImageUpgradeContractTests(unittest.TestCase):
+    def test_exact_opt_in_transition_and_ordinary_restore(self):
+        self.assertIsNone(upgrades.transition(upgrades.TARGET, upgrades.TARGET))
+        self.assertEqual(
+            upgrades.transition(upgrades.SOURCE, upgrades.TARGET, upgrades.NAME),
+            {"name": upgrades.NAME, "source": upgrades.SOURCE, "target": upgrades.TARGET},
+        )
+        with self.assertRaises(ValueError):
+            upgrades.transition(upgrades.SOURCE, upgrades.TARGET)
+
+    def test_unknown_changed_reverse_and_unneeded_transitions_refuse(self):
+        for source, target, name in (
+            (upgrades.SOURCE, upgrades.TARGET, "unreviewed"),
+            (upgrades.TARGET, upgrades.TARGET, upgrades.NAME),
+            (upgrades.TARGET, upgrades.SOURCE, upgrades.NAME),
+            ({**upgrades.SOURCE, "compose": "changed"}, upgrades.TARGET, upgrades.NAME),
+            ({**upgrades.SOURCE, "image": "changed"}, upgrades.TARGET, upgrades.NAME),
+            (upgrades.SOURCE, {**upgrades.TARGET, "image": "changed"}, upgrades.NAME),
+            (upgrades.SOURCE, {**upgrades.TARGET, "compose": "changed"}, upgrades.NAME),
+            (None, upgrades.TARGET, upgrades.NAME),
+        ):
+            with self.subTest(source=source, target=target, name=name), self.assertRaises(ValueError):
+                upgrades.transition(source, target, name)
 
 
 @unittest.skipUnless(shutil.which("gpg"), "requires GnuPG")
@@ -95,6 +121,99 @@ class SecretsRecoveryTests(unittest.TestCase):
         self.assertEqual(
             script.read_json(self.args.state / "initialized.json")["cluster_id"], "original-cluster"
         )
+
+    def legacy_backup(self):
+        self.value = {**self.value, "image": upgrades.SOURCE["image"]}
+        archive.replace_json(self.state / "deployment.json", self.value)
+        record = script.read_json(self.state / "initialized.json")
+        archive.replace_json(self.state / "initialized.json", {
+            **record, "owner": script.ownership_key(self.state, self.value),
+        })
+        # The archive format/writer is unchanged from the old checkout; only its
+        # exact image/Compose contract differs. No arbitrary image is allowed in production.
+        with patch.object(recovery.stack, "IMAGE", upgrades.SOURCE["image"]), patch.object(
+            recovery, "contract", return_value=upgrades.SOURCE,
+        ):
+            recovery.backup(self.args)
+        self.args.state = self.root / "upgraded"
+        self.args.upgrade_image = upgrades.NAME
+
+    def test_explicit_upgrade_preserves_payload_and_original_state(self):
+        self.legacy_backup()
+        before = {str(p.relative_to(self.state)): p.read_bytes() for p in self.state.rglob("*")
+                  if p.is_file()}
+        self.args.upgrade_image = None
+        with self.assertRaisesRegex(ValueError, "backed-up OpenBao"):
+            recovery.restore(self.args)
+        self.assertFalse(self.args.state.exists())
+        self.args.upgrade_image = upgrades.NAME
+        with patch.object(recovery.stack.image_environment, "resolve_image") as resolve:
+            result = recovery.restore(self.args)
+            resolve.assert_called_once_with(script.IMAGE, script.IMAGE_SHA256)
+        self.assertEqual(result["image_upgrade"], upgrades.NAME)
+        self.assertTrue(result["unseal_required"])
+        changed = script.read_json(self.args.state / "deployment.json")
+        self.assertEqual(changed, {**self.value, "image": script.IMAGE})
+        record = script.read_json(self.args.state / "initialized.json")
+        self.assertEqual(record["owner"], script.ownership_key(self.args.state, changed))
+        self.assertEqual(record["cluster_id"], "original-cluster")
+        receipt = script.read_json(self.args.state / "recovery.json")
+        self.assertEqual(receipt["image_upgrade"], upgrades.transition(
+            upgrades.SOURCE, upgrades.TARGET, upgrades.NAME,
+        ))
+        for name, payload in before.items():
+            self.assertEqual((self.state / name).read_bytes(), payload)
+            if name not in {"deployment.json", "initialized.json", ".operation.lock"}:
+                self.assertEqual((self.args.state / name).read_bytes(), payload)
+        # A new backup uses the current contract and needs no upgrade flag to restore.
+        self.args.upgrade_image = None
+        self.args.archive = self.root / "upgraded.gpg"
+        recovery.backup(self.args)
+        self.args.state = self.root / "second"
+        recovery.restore(self.args)
+        self.assertEqual(script.read_json(self.args.state / "deployment.json"), changed)
+
+    def test_upgrade_build_failure_and_interruption_never_install_partial_state(self):
+        self.legacy_backup()
+        with patch.object(recovery.stack.image_environment, "resolve_image", side_effect=ValueError("target build")):
+            with self.assertRaisesRegex(ValueError, "target build"):
+                recovery.restore(self.args)
+        self.assertFalse(self.args.state.exists())
+        with patch.object(recovery.stack.image_environment, "resolve_image"), patch.object(
+            recovery.os, "rename", side_effect=OSError("interrupted installation"),
+        ):
+            with self.assertRaisesRegex(OSError, "interrupted installation"):
+                recovery.restore(self.args)
+        self.assertFalse(self.args.state.exists())
+        rename = recovery.os.rename
+
+        def lost_completion(source, destination):
+            rename(source, destination)
+            raise OSError("lost completion after installation")
+
+        with patch.object(recovery.stack.image_environment, "resolve_image"), patch.object(
+            recovery.os, "rename", side_effect=lost_completion,
+        ):
+            with self.assertRaisesRegex(OSError, "lost completion after installation"):
+                recovery.restore(self.args)
+        self.assertEqual(script.read_json(self.args.state / "deployment.json")["image"], script.IMAGE)
+        recovery.validate_state(self.args.state)
+        with self.assertRaisesRegex(ValueError, "fresh state"):
+            recovery.restore(self.args)
+
+    def test_upgrade_archive_cannot_hide_a_different_deployment_image(self):
+        self.legacy_backup()
+        source = self.root / "wrong-state.tar"
+        value = {**self.value, "image": "unreviewed-image"}
+        archive.replace_json(self.state / "deployment.json", value)
+        record = script.read_json(self.state / "initialized.json")
+        archive.replace_json(self.state / "initialized.json", {
+            **record, "owner": script.ownership_key(self.state, value),
+        })
+        with patch.object(recovery, "contract", return_value=upgrades.SOURCE):
+            recovery.pack(self.state, source, {"owner": record["owner"], "id": "fixture"})
+        with self.assertRaisesRegex(ValueError, "image differs"):
+            recovery.unpack(source, self.root / "checked", upgrade_image=upgrades.NAME)
 
     def test_interrupted_backup_blocks_startup_and_resumes_exact_intent(self):
         with patch.object(recovery, "pack", side_effect=OSError("disk failed")):
