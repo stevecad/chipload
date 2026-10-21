@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""Pull the pinned ACME issuer, optionally including the local test CA."""
+"""Build the locked ACME issuer, optionally pulling the pinned local test CA."""
 
 import argparse
-import json
+import re
 import subprocess
+import tempfile
 from pathlib import Path
+
+from acme_environment import INPUTS, build_specification, snapshot
 
 
 def main():
@@ -12,9 +15,37 @@ def main():
     parser.add_argument("--tests", action="store_true")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
-    images = json.loads((root / "deploy/acme/images.json").read_bytes())
-    for role in ("issuer", "test_ca") if args.tests else ("issuer",):
-        subprocess.run(["docker", "pull", images[role]], check=True)
+    pins, contents = snapshot(root)
+    images, fingerprint = build_specification(pins, contents)
+    with tempfile.TemporaryDirectory(prefix="chipload-issuer-image-") as directory:
+        context = Path(directory)
+        for source, target in zip(
+            INPUTS, ("Dockerfile", "issuer.go.mod", "issuer.go.sum", "LICENSE"), strict=True
+        ):
+            (context / target).write_bytes(contents[source])
+        subprocess.run(
+            [
+                "docker",
+                "build",
+                "--build-arg",
+                "ISSUER_BASE=" + pins["issuer"],
+                "--build-arg",
+                "ACME_SHA256=" + fingerprint,
+                "--tag",
+                images["issuer"],
+                "--iidfile",
+                str(context / "image-id"),
+                str(context),
+            ],
+            check=True,
+        )
+        image = (context / "image-id").read_text().strip()
+        if re.fullmatch(r"sha256:[a-f0-9]{64}", image) is None:
+            raise ValueError("Docker did not return an immutable issuer image ID")
+        print("Issuer image:", image)
+        print("Build reference:", images["issuer"])
+    if args.tests:
+        subprocess.run(["docker", "pull", images["test_ca"]], check=True)
 
 
 if __name__ == "__main__":

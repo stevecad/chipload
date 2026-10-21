@@ -1,0 +1,1565 @@
+{
+  "date": "2026-10-21",
+  "scope": "Binary analysis of copied image executables; no scanned executable was run. Named-symbol findings, explicit wildcard records and other advisory records are separated. A wildcard record is not evidence that its package was compiled; compare the actual build graph. Named-symbol presence does not establish reachability under deployment configuration. A JSON-mode scan exit status reports tool execution, not absence of findings. This is not release clearance.",
+  "method_source": "https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck",
+  "scanner_image": "sha256:411bbd11a4ebfd6b6433f6bd5f47753655094188b0a09589623d0a8949bb2408",
+  "scanner_build_recipe": "FROM golang:1.26.10-alpine@sha256:9ce231b28998b32e116927c61aa5c406183061d4f3f2d61b292c88e7f6bdf7ca\nENV GOTOOLCHAIN=local GOTELEMETRY=off\nRUN go install golang.org/x/vuln/cmd/govulncheck@v1.9.0\nENTRYPOINT [\"/go/bin/govulncheck\"]\n",
+  "scanner_build_info": "/go/bin/govulncheck: go1.26.10\n\tpath\tgolang.org/x/vuln/cmd/govulncheck\n\tmod\tgolang.org/x/vuln\tv1.9.0\th1:12VaqnI9kJfqwRoPptxoqsUhQtdfrSbdksT7X/KY/sc=\n\tdep\tgolang.org/x/mod\tv0.42.0\th1:ICeL3t2L30ljSPHHxDnR4fqVcBt/zR2zJAb9juavmQg=\n\tdep\tgolang.org/x/sync\tv0.24.0\th1:iqiDrGoDgyuvAKrhLQthUEzU/R378N78gXbBjxed7oA=\n\tdep\tgolang.org/x/telemetry\tv0.0.0-20261010193011-f71dc92da45e\th1:P6NGsugec4oASJ+yKMNgTndeo0h2CbixZLvQIe9h5R4=\n\tdep\tgolang.org/x/tools\tv0.52.0\th1:ryxg4U63oaUYk7uOLTF37n43f4qgtGvqV4Ioit1BaEs=\n\tbuild\t-buildmode=exe\n\tbuild\t-compiler=gc\n\tbuild\tCGO_ENABLED=0\n\tbuild\tGOARCH=amd64\n\tbuild\tGOOS=linux\n\tbuild\tGOAMD64=v1\n",
+  "command": [
+    "govulncheck",
+    "-mode=binary",
+    "-json",
+    "/input/ROLE"
+  ],
+  "images": [
+    {
+      "role": "issuer",
+      "image": "goacme/lego:v5.5.2@sha256:1944e8c36055beec47c7de6f15202b41128be75eea0ffa257f0c14d93c5155fd",
+      "path": "/lego",
+      "sha256": "c7ccc528bb254bec3e8ca998a8994dab9653c3e1aa083fd3bfaaa0b75b527b62",
+      "scanner_config": {
+        "protocol_version": "v1.0.0",
+        "scanner_name": "govulncheck",
+        "scanner_version": "v1.9.0",
+        "db": "https://vuln.go.dev",
+        "db_last_modified": "2026-10-21T00:27:29Z",
+        "scan_level": "symbol",
+        "scan_mode": "binary"
+      },
+      "raw_report_sha256": "0943f4cd0b08668377909351be7dc2a5d44d6cc27d2fd974f5b2995f4bf9487c",
+      "raw_report_bytes": 2060957,
+      "symbol_findings": [
+        {
+          "osv": "GO-2026-6599",
+          "aliases": [
+            "CVE-2026-94448"
+          ],
+          "summary": "Reset context tracking on consecutive template expressions in html/template",
+          "source": "https://pkg.go.dev/vuln/GO-2026-6599",
+          "fixes": [
+            {
+              "module": "stdlib",
+              "version": "v1.27.2"
+            }
+          ],
+          "record_count": 2,
+          "packages": [
+            "html/template"
+          ],
+          "examples": [
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "html/template",
+              "receiver": "Template",
+              "function": "Execute"
+            },
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "html/template",
+              "receiver": "Template",
+              "function": "ExecuteTemplate"
+            }
+          ]
+        },
+        {
+          "osv": "GO-2026-6600",
+          "aliases": [
+            "CVE-2026-97030"
+          ],
+          "summary": "Recognize yield as regexp preceder keyword in html/template",
+          "source": "https://pkg.go.dev/vuln/GO-2026-6600",
+          "fixes": [
+            {
+              "module": "stdlib",
+              "version": "v1.27.2"
+            }
+          ],
+          "record_count": 2,
+          "packages": [
+            "html/template"
+          ],
+          "examples": [
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "html/template",
+              "receiver": "Template",
+              "function": "Execute"
+            },
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "html/template",
+              "receiver": "Template",
+              "function": "ExecuteTemplate"
+            }
+          ]
+        },
+        {
+          "osv": "GO-2026-6603",
+          "aliases": [
+            "CVE-2026-78659"
+          ],
+          "summary": "HTTP/2 server memory exhaustion due to Trailer headers in net/http",
+          "source": "https://pkg.go.dev/vuln/GO-2026-6603",
+          "fixes": [
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.60.0"
+            },
+            {
+              "module": "stdlib",
+              "version": "v1.27.2"
+            }
+          ],
+          "record_count": 133,
+          "packages": [
+            "golang.org/x/net/http2",
+            "net/http/internal/http2"
+          ],
+          "examples": [
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.59.0",
+              "package": "golang.org/x/net/http2",
+              "receiver": "",
+              "function": "ConfigureServer"
+            },
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.59.0",
+              "package": "golang.org/x/net/http2",
+              "receiver": "",
+              "function": "ConfigureTransport"
+            },
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.59.0",
+              "package": "golang.org/x/net/http2",
+              "receiver": "",
+              "function": "ConfigureTransports"
+            }
+          ]
+        },
+        {
+          "osv": "GO-2026-6605",
+          "aliases": [
+            "CVE-2026-56866"
+          ],
+          "summary": "HTTP/1 client connection desynchronization after CONNECT rejection in net/http",
+          "source": "https://pkg.go.dev/vuln/GO-2026-6605",
+          "fixes": [
+            {
+              "module": "stdlib",
+              "version": "v1.27.2"
+            }
+          ],
+          "record_count": 19,
+          "packages": [
+            "net/http",
+            "net/http/httputil"
+          ],
+          "examples": [
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "net/http",
+              "receiver": "",
+              "function": "Get"
+            },
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "net/http",
+              "receiver": "",
+              "function": "Head"
+            },
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "net/http",
+              "receiver": "",
+              "function": "Post"
+            }
+          ]
+        },
+        {
+          "osv": "GO-2026-6607",
+          "aliases": [
+            "CVE-2026-97031"
+          ],
+          "summary": "Reject malformed ECH outer extension references in crypto/tls",
+          "source": "https://pkg.go.dev/vuln/GO-2026-6607",
+          "fixes": [
+            {
+              "module": "stdlib",
+              "version": "v1.27.2"
+            }
+          ],
+          "record_count": 9,
+          "packages": [
+            "crypto/tls"
+          ],
+          "examples": [
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "crypto/tls",
+              "receiver": "",
+              "function": "Dial"
+            },
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "crypto/tls",
+              "receiver": "",
+              "function": "DialWithDialer"
+            },
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "crypto/tls",
+              "receiver": "Conn",
+              "function": "Handshake"
+            }
+          ]
+        },
+        {
+          "osv": "GO-2026-6608",
+          "aliases": [
+            "CVE-2026-94440"
+          ],
+          "summary": "Memory limit bypass when parsing MIME headers in net/textproto, mime/multipart",
+          "source": "https://pkg.go.dev/vuln/GO-2026-6608",
+          "fixes": [
+            {
+              "module": "stdlib",
+              "version": "v1.27.2"
+            }
+          ],
+          "record_count": 6,
+          "packages": [
+            "mime/multipart",
+            "net/textproto"
+          ],
+          "examples": [
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "mime/multipart",
+              "receiver": "Reader",
+              "function": "NextPart"
+            },
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "mime/multipart",
+              "receiver": "Reader",
+              "function": "NextRawPart"
+            },
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "mime/multipart",
+              "receiver": "Reader",
+              "function": "ReadForm"
+            }
+          ]
+        },
+        {
+          "osv": "GO-2026-6609",
+          "aliases": [
+            "CVE-2026-78667"
+          ],
+          "summary": "Lack of limit on size of parsed Range headers in net/http",
+          "source": "https://pkg.go.dev/vuln/GO-2026-6609",
+          "fixes": [
+            {
+              "module": "stdlib",
+              "version": "v1.27.2"
+            }
+          ],
+          "record_count": 5,
+          "packages": [
+            "net/http"
+          ],
+          "examples": [
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "net/http",
+              "receiver": "",
+              "function": "ServeContent"
+            },
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "net/http",
+              "receiver": "",
+              "function": "ServeFile"
+            },
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "net/http",
+              "receiver": "",
+              "function": "ServeFileFS"
+            }
+          ]
+        },
+        {
+          "osv": "GO-2026-6610",
+          "aliases": [
+            "CVE-2026-78660"
+          ],
+          "summary": "HTTP/2 transport accepts malformed framing-related headers in net/http",
+          "source": "https://pkg.go.dev/vuln/GO-2026-6610",
+          "fixes": [
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.60.0"
+            },
+            {
+              "module": "stdlib",
+              "version": "v1.27.2"
+            }
+          ],
+          "record_count": 14,
+          "packages": [
+            "golang.org/x/net/http2",
+            "net/http/internal/http2"
+          ],
+          "examples": [
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.59.0",
+              "package": "golang.org/x/net/http2",
+              "receiver": "Transport",
+              "function": "NewClientConn"
+            },
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.59.0",
+              "package": "golang.org/x/net/http2",
+              "receiver": "Transport",
+              "function": "RoundTrip"
+            },
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.59.0",
+              "package": "golang.org/x/net/http2",
+              "receiver": "Transport",
+              "function": "RoundTripOpt"
+            }
+          ]
+        },
+        {
+          "osv": "GO-2026-6611",
+          "aliases": [
+            "CVE-2026-78669"
+          ],
+          "summary": "Excessive CPU consumption from repeated initial window changes in net/http",
+          "source": "https://pkg.go.dev/vuln/GO-2026-6611",
+          "fixes": [
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.60.0"
+            },
+            {
+              "module": "stdlib",
+              "version": "v1.27.2"
+            }
+          ],
+          "record_count": 141,
+          "packages": [
+            "golang.org/x/net/http2",
+            "net/http/internal/http2"
+          ],
+          "examples": [
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.59.0",
+              "package": "golang.org/x/net/http2",
+              "receiver": "",
+              "function": "ConfigureServer"
+            },
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.59.0",
+              "package": "golang.org/x/net/http2",
+              "receiver": "",
+              "function": "ConfigureTransport"
+            },
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.59.0",
+              "package": "golang.org/x/net/http2",
+              "receiver": "",
+              "function": "ConfigureTransports"
+            }
+          ]
+        },
+        {
+          "osv": "GO-2026-6612",
+          "aliases": [
+            "CVE-2026-78663"
+          ],
+          "summary": "Double flow control refund on HTTP/2 server streams in net/http",
+          "source": "https://pkg.go.dev/vuln/GO-2026-6612",
+          "fixes": [
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.60.0"
+            },
+            {
+              "module": "stdlib",
+              "version": "v1.27.2"
+            }
+          ],
+          "record_count": 83,
+          "packages": [
+            "golang.org/x/net/http2",
+            "net/http/internal/http2"
+          ],
+          "examples": [
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.59.0",
+              "package": "golang.org/x/net/http2",
+              "receiver": "",
+              "function": "ConfigureServer"
+            },
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.59.0",
+              "package": "golang.org/x/net/http2",
+              "receiver": "",
+              "function": "ConfigureTransport"
+            },
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.59.0",
+              "package": "golang.org/x/net/http2",
+              "receiver": "",
+              "function": "ConfigureTransports"
+            }
+          ]
+        },
+        {
+          "osv": "GO-2026-6613",
+          "aliases": [
+            "CVE-2026-94439"
+          ],
+          "summary": "HTTP/1 server connection desynchronization after 2xx CONNECT response in net/http",
+          "source": "https://pkg.go.dev/vuln/GO-2026-6613",
+          "fixes": [
+            {
+              "module": "stdlib",
+              "version": "v1.27.2"
+            }
+          ],
+          "record_count": 149,
+          "packages": [
+            "net/http"
+          ],
+          "examples": [
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "net/http",
+              "receiver": "",
+              "function": "CanonicalHeaderKey"
+            },
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "net/http",
+              "receiver": "",
+              "function": "Error"
+            },
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "net/http",
+              "receiver": "",
+              "function": "Get"
+            }
+          ]
+        },
+        {
+          "osv": "GO-2026-6617",
+          "aliases": [
+            "CVE-2026-97032"
+          ],
+          "summary": "HTTP/2 server crash due to HPACK encoder race in net/http",
+          "source": "https://pkg.go.dev/vuln/GO-2026-6617",
+          "fixes": [
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.60.0"
+            },
+            {
+              "module": "stdlib",
+              "version": "v1.27.2"
+            }
+          ],
+          "record_count": 133,
+          "packages": [
+            "golang.org/x/net/http2",
+            "net/http/internal/http2"
+          ],
+          "examples": [
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.59.0",
+              "package": "golang.org/x/net/http2",
+              "receiver": "",
+              "function": "ConfigureServer"
+            },
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.59.0",
+              "package": "golang.org/x/net/http2",
+              "receiver": "",
+              "function": "ConfigureTransport"
+            },
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.59.0",
+              "package": "golang.org/x/net/http2",
+              "receiver": "",
+              "function": "ConfigureTransports"
+            }
+          ]
+        },
+        {
+          "osv": "GO-2026-6809",
+          "aliases": [
+            "CVE-2026-111943"
+          ],
+          "summary": "Distrust compromised intermediate certificates in crypto/x509",
+          "source": "https://pkg.go.dev/vuln/GO-2026-6809",
+          "fixes": [
+            {
+              "module": "stdlib",
+              "version": "v1.27.3"
+            }
+          ],
+          "record_count": 1,
+          "packages": [
+            "crypto/x509"
+          ],
+          "examples": [
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "crypto/x509",
+              "receiver": "Certificate",
+              "function": "Verify"
+            }
+          ]
+        }
+      ],
+      "assessment": "Baseline image with thirteen named-symbol advisory matches, superseded by issuer-patched below. The OpenPGP wildcard record does not establish package presence. Keep the baseline for comparison with the patched binary and its compiled-package exclusion check.",
+      "wildcard_findings": [
+        {
+          "osv": "GO-2026-5932",
+          "aliases": [],
+          "summary": "The golang.org/x/crypto/openpgp package is unmaintained, unsafe by design, and has known security issues",
+          "source": "https://pkg.go.dev/vuln/GO-2026-5932",
+          "fixes": [],
+          "record_count": 7,
+          "packages": [
+            "golang.org/x/crypto/openpgp",
+            "golang.org/x/crypto/openpgp/armor",
+            "golang.org/x/crypto/openpgp/clearsign",
+            "golang.org/x/crypto/openpgp/elgamal",
+            "golang.org/x/crypto/openpgp/errors",
+            "golang.org/x/crypto/openpgp/packet",
+            "golang.org/x/crypto/openpgp/s2k"
+          ],
+          "examples": [
+            {
+              "module": "golang.org/x/crypto",
+              "version": "v0.57.0",
+              "package": "golang.org/x/crypto/openpgp",
+              "receiver": "golang",
+              "function": "org/x/crypto/openpgp/*"
+            },
+            {
+              "module": "golang.org/x/crypto",
+              "version": "v0.57.0",
+              "package": "golang.org/x/crypto/openpgp/armor",
+              "receiver": "golang",
+              "function": "org/x/crypto/openpgp/armor/*"
+            },
+            {
+              "module": "golang.org/x/crypto",
+              "version": "v0.57.0",
+              "package": "golang.org/x/crypto/openpgp/clearsign",
+              "receiver": "golang",
+              "function": "org/x/crypto/openpgp/clearsign/*"
+            }
+          ]
+        }
+      ],
+      "advisories_without_symbol_or_wildcard_records": []
+    },
+    {
+      "role": "openbao",
+      "image": "ghcr.io/openbao/openbao:2.7.1@sha256:6d2b93856e3fcf7b18ad855a0b51eaba474dc8b79cf554379ea32034797d2acf",
+      "path": "/usr/bin/bao",
+      "sha256": "535cf827b13753046757f5ec8b97ae0ef21f10a40ffe673f0d5e75616170f5ea",
+      "scanner_config": {
+        "protocol_version": "v1.0.0",
+        "scanner_name": "govulncheck",
+        "scanner_version": "v1.9.0",
+        "db": "https://vuln.go.dev",
+        "db_last_modified": "2026-10-21T00:27:29Z",
+        "scan_level": "symbol",
+        "scan_mode": "binary"
+      },
+      "raw_report_sha256": "decd30bde4fe113551fd954740f33f4ef06da53c0df93f0d53d75b1e5e1bc11e",
+      "raw_report_bytes": 1222547,
+      "symbol_findings": [
+        {
+          "osv": "GO-2026-6599",
+          "aliases": [
+            "CVE-2026-94448"
+          ],
+          "summary": "Reset context tracking on consecutive template expressions in html/template",
+          "source": "https://pkg.go.dev/vuln/GO-2026-6599",
+          "fixes": [
+            {
+              "module": "stdlib",
+              "version": "v1.27.2"
+            }
+          ],
+          "record_count": 2,
+          "packages": [
+            "html/template"
+          ],
+          "examples": [
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "html/template",
+              "receiver": "Template",
+              "function": "Execute"
+            },
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "html/template",
+              "receiver": "Template",
+              "function": "ExecuteTemplate"
+            }
+          ]
+        },
+        {
+          "osv": "GO-2026-6600",
+          "aliases": [
+            "CVE-2026-97030"
+          ],
+          "summary": "Recognize yield as regexp preceder keyword in html/template",
+          "source": "https://pkg.go.dev/vuln/GO-2026-6600",
+          "fixes": [
+            {
+              "module": "stdlib",
+              "version": "v1.27.2"
+            }
+          ],
+          "record_count": 2,
+          "packages": [
+            "html/template"
+          ],
+          "examples": [
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "html/template",
+              "receiver": "Template",
+              "function": "Execute"
+            },
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "html/template",
+              "receiver": "Template",
+              "function": "ExecuteTemplate"
+            }
+          ]
+        },
+        {
+          "osv": "GO-2026-6603",
+          "aliases": [
+            "CVE-2026-78659"
+          ],
+          "summary": "HTTP/2 server memory exhaustion due to Trailer headers in net/http",
+          "source": "https://pkg.go.dev/vuln/GO-2026-6603",
+          "fixes": [
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.60.0"
+            },
+            {
+              "module": "stdlib",
+              "version": "v1.27.2"
+            }
+          ],
+          "record_count": 95,
+          "packages": [
+            "golang.org/x/net/http2",
+            "net/http/internal/http2"
+          ],
+          "examples": [
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.58.0",
+              "package": "golang.org/x/net/http2",
+              "receiver": "",
+              "function": "ConfigureTransport"
+            },
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.58.0",
+              "package": "golang.org/x/net/http2",
+              "receiver": "",
+              "function": "ConfigureTransports"
+            },
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.58.0",
+              "package": "golang.org/x/net/http2",
+              "receiver": "ClientConn",
+              "function": "Close"
+            }
+          ]
+        },
+        {
+          "osv": "GO-2026-6605",
+          "aliases": [
+            "CVE-2026-56866"
+          ],
+          "summary": "HTTP/1 client connection desynchronization after CONNECT rejection in net/http",
+          "source": "https://pkg.go.dev/vuln/GO-2026-6605",
+          "fixes": [
+            {
+              "module": "stdlib",
+              "version": "v1.27.2"
+            }
+          ],
+          "record_count": 16,
+          "packages": [
+            "net/http",
+            "net/http/httputil"
+          ],
+          "examples": [
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "net/http",
+              "receiver": "",
+              "function": "Get"
+            },
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "net/http",
+              "receiver": "",
+              "function": "PostForm"
+            },
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "net/http",
+              "receiver": "Client",
+              "function": "CloseIdleConnections"
+            }
+          ]
+        },
+        {
+          "osv": "GO-2026-6607",
+          "aliases": [
+            "CVE-2026-97031"
+          ],
+          "summary": "Reject malformed ECH outer extension references in crypto/tls",
+          "source": "https://pkg.go.dev/vuln/GO-2026-6607",
+          "fixes": [
+            {
+              "module": "stdlib",
+              "version": "v1.27.2"
+            }
+          ],
+          "record_count": 8,
+          "packages": [
+            "crypto/tls"
+          ],
+          "examples": [
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "crypto/tls",
+              "receiver": "",
+              "function": "Dial"
+            },
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "crypto/tls",
+              "receiver": "",
+              "function": "DialWithDialer"
+            },
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "crypto/tls",
+              "receiver": "Conn",
+              "function": "Handshake"
+            }
+          ]
+        },
+        {
+          "osv": "GO-2026-6608",
+          "aliases": [
+            "CVE-2026-94440"
+          ],
+          "summary": "Memory limit bypass when parsing MIME headers in net/textproto, mime/multipart",
+          "source": "https://pkg.go.dev/vuln/GO-2026-6608",
+          "fixes": [
+            {
+              "module": "stdlib",
+              "version": "v1.27.2"
+            }
+          ],
+          "record_count": 6,
+          "packages": [
+            "mime/multipart",
+            "net/textproto"
+          ],
+          "examples": [
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "mime/multipart",
+              "receiver": "Reader",
+              "function": "NextPart"
+            },
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "mime/multipart",
+              "receiver": "Reader",
+              "function": "NextRawPart"
+            },
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "mime/multipart",
+              "receiver": "Reader",
+              "function": "ReadForm"
+            }
+          ]
+        },
+        {
+          "osv": "GO-2026-6609",
+          "aliases": [
+            "CVE-2026-78667"
+          ],
+          "summary": "Lack of limit on size of parsed Range headers in net/http",
+          "source": "https://pkg.go.dev/vuln/GO-2026-6609",
+          "fixes": [
+            {
+              "module": "stdlib",
+              "version": "v1.27.2"
+            }
+          ],
+          "record_count": 1,
+          "packages": [
+            "net/http"
+          ],
+          "examples": [
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "net/http",
+              "receiver": "fileHandler",
+              "function": "ServeHTTP"
+            }
+          ]
+        },
+        {
+          "osv": "GO-2026-6610",
+          "aliases": [
+            "CVE-2026-78660"
+          ],
+          "summary": "HTTP/2 transport accepts malformed framing-related headers in net/http",
+          "source": "https://pkg.go.dev/vuln/GO-2026-6610",
+          "fixes": [
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.60.0"
+            },
+            {
+              "module": "stdlib",
+              "version": "v1.27.2"
+            }
+          ],
+          "record_count": 9,
+          "packages": [
+            "golang.org/x/net/http2",
+            "net/http/internal/http2"
+          ],
+          "examples": [
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.58.0",
+              "package": "golang.org/x/net/http2",
+              "receiver": "Transport",
+              "function": "NewClientConn"
+            },
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.58.0",
+              "package": "golang.org/x/net/http2",
+              "receiver": "Transport",
+              "function": "RoundTrip"
+            },
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.58.0",
+              "package": "golang.org/x/net/http2",
+              "receiver": "Transport",
+              "function": "RoundTripOpt"
+            }
+          ]
+        },
+        {
+          "osv": "GO-2026-6611",
+          "aliases": [
+            "CVE-2026-78669"
+          ],
+          "summary": "Excessive CPU consumption from repeated initial window changes in net/http",
+          "source": "https://pkg.go.dev/vuln/GO-2026-6611",
+          "fixes": [
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.60.0"
+            },
+            {
+              "module": "stdlib",
+              "version": "v1.27.2"
+            }
+          ],
+          "record_count": 99,
+          "packages": [
+            "golang.org/x/net/http2",
+            "net/http/internal/http2"
+          ],
+          "examples": [
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.58.0",
+              "package": "golang.org/x/net/http2",
+              "receiver": "",
+              "function": "ConfigureTransport"
+            },
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.58.0",
+              "package": "golang.org/x/net/http2",
+              "receiver": "",
+              "function": "ConfigureTransports"
+            },
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.58.0",
+              "package": "golang.org/x/net/http2",
+              "receiver": "ClientConn",
+              "function": "Close"
+            }
+          ]
+        },
+        {
+          "osv": "GO-2026-6612",
+          "aliases": [
+            "CVE-2026-78663"
+          ],
+          "summary": "Double flow control refund on HTTP/2 server streams in net/http",
+          "source": "https://pkg.go.dev/vuln/GO-2026-6612",
+          "fixes": [
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.60.0"
+            },
+            {
+              "module": "stdlib",
+              "version": "v1.27.2"
+            }
+          ],
+          "record_count": 46,
+          "packages": [
+            "golang.org/x/net/http2",
+            "net/http/internal/http2"
+          ],
+          "examples": [
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.58.0",
+              "package": "golang.org/x/net/http2",
+              "receiver": "",
+              "function": "ConfigureTransport"
+            },
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.58.0",
+              "package": "golang.org/x/net/http2",
+              "receiver": "",
+              "function": "ConfigureTransports"
+            },
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.58.0",
+              "package": "golang.org/x/net/http2",
+              "receiver": "ClientConn",
+              "function": "Close"
+            }
+          ]
+        },
+        {
+          "osv": "GO-2026-6613",
+          "aliases": [
+            "CVE-2026-94439"
+          ],
+          "summary": "HTTP/1 server connection desynchronization after 2xx CONNECT response in net/http",
+          "source": "https://pkg.go.dev/vuln/GO-2026-6613",
+          "fixes": [
+            {
+              "module": "stdlib",
+              "version": "v1.27.2"
+            }
+          ],
+          "record_count": 121,
+          "packages": [
+            "net/http"
+          ],
+          "examples": [
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "net/http",
+              "receiver": "",
+              "function": "CanonicalHeaderKey"
+            },
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "net/http",
+              "receiver": "",
+              "function": "Error"
+            },
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "net/http",
+              "receiver": "",
+              "function": "Get"
+            }
+          ]
+        },
+        {
+          "osv": "GO-2026-6617",
+          "aliases": [
+            "CVE-2026-97032"
+          ],
+          "summary": "HTTP/2 server crash due to HPACK encoder race in net/http",
+          "source": "https://pkg.go.dev/vuln/GO-2026-6617",
+          "fixes": [
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.60.0"
+            },
+            {
+              "module": "stdlib",
+              "version": "v1.27.2"
+            }
+          ],
+          "record_count": 95,
+          "packages": [
+            "golang.org/x/net/http2",
+            "net/http/internal/http2"
+          ],
+          "examples": [
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.58.0",
+              "package": "golang.org/x/net/http2",
+              "receiver": "",
+              "function": "ConfigureTransport"
+            },
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.58.0",
+              "package": "golang.org/x/net/http2",
+              "receiver": "",
+              "function": "ConfigureTransports"
+            },
+            {
+              "module": "golang.org/x/net",
+              "version": "v0.58.0",
+              "package": "golang.org/x/net/http2",
+              "receiver": "ClientConn",
+              "function": "Close"
+            }
+          ]
+        },
+        {
+          "osv": "GO-2026-6809",
+          "aliases": [
+            "CVE-2026-111943"
+          ],
+          "summary": "Distrust compromised intermediate certificates in crypto/x509",
+          "source": "https://pkg.go.dev/vuln/GO-2026-6809",
+          "fixes": [
+            {
+              "module": "stdlib",
+              "version": "v1.27.3"
+            }
+          ],
+          "record_count": 1,
+          "packages": [
+            "crypto/x509"
+          ],
+          "examples": [
+            {
+              "module": "stdlib",
+              "version": "v1.27.1",
+              "package": "crypto/x509",
+              "receiver": "Certificate",
+              "function": "Verify"
+            }
+          ]
+        }
+      ],
+      "assessment": "Vulnerable symbols are present. Protocol, configuration and caller reachability have not been established for every match; retain these findings pending dependency updates and deployment-specific review.",
+      "wildcard_findings": [],
+      "advisories_without_symbol_or_wildcard_records": [
+        "GO-2026-5932"
+      ]
+    },
+    {
+      "role": "postgres-helper",
+      "image": "postgres:17.11-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24",
+      "path": "/usr/local/bin/gosu",
+      "sha256": "52c8749d0142edd234e9d6bd5237dff2d81e71f43537e2f4f66f75dd4b243dd0",
+      "scanner_config": {
+        "protocol_version": "v1.0.0",
+        "scanner_name": "govulncheck",
+        "scanner_version": "v1.9.0",
+        "db": "https://vuln.go.dev",
+        "db_last_modified": "2026-10-21T00:27:29Z",
+        "scan_level": "symbol",
+        "scan_mode": "binary"
+      },
+      "raw_report_sha256": "58ae09f5a1af99e0bc20e026a54fea5af0f3fc88f42f9a281ae6a92fd30c36cf",
+      "raw_report_bytes": 592967,
+      "symbol_findings": [
+        {
+          "osv": "GO-2026-6686",
+          "aliases": [
+            "CVE-2026-61801",
+            "GHSA-mjcv-p78q-w5fw"
+          ],
+          "summary": "Possible DoS via unbounded parsing of user and group database files in github.com/moby/sys/user",
+          "source": "https://pkg.go.dev/vuln/GO-2026-6686",
+          "fixes": [
+            {
+              "module": "github.com/moby/sys/user",
+              "version": "v0.4.1"
+            }
+          ],
+          "record_count": 3,
+          "packages": [
+            "github.com/moby/sys/user"
+          ],
+          "examples": [
+            {
+              "module": "github.com/moby/sys/user",
+              "version": "v0.1.0",
+              "package": "github.com/moby/sys/user",
+              "receiver": "",
+              "function": "GetExecUser"
+            },
+            {
+              "module": "github.com/moby/sys/user",
+              "version": "v0.1.0",
+              "package": "github.com/moby/sys/user",
+              "receiver": "",
+              "function": "GetExecUserPath"
+            },
+            {
+              "module": "github.com/moby/sys/user",
+              "version": "v0.1.0",
+              "package": "github.com/moby/sys/user",
+              "receiver": "",
+              "function": "ParseGroupFilter"
+            }
+          ]
+        }
+      ],
+      "image_scan_comparison": [
+        {
+          "cve": "CVE-2025-61726",
+          "govulncheck_advisories": [
+            "GO-2026-4341"
+          ],
+          "symbol_matched": false
+        },
+        {
+          "cve": "CVE-2025-61729",
+          "govulncheck_advisories": [
+            "GO-2025-4155"
+          ],
+          "symbol_matched": false
+        },
+        {
+          "cve": "CVE-2025-68121",
+          "govulncheck_advisories": [
+            "GO-2026-4337"
+          ],
+          "symbol_matched": false
+        },
+        {
+          "cve": "CVE-2026-111943",
+          "govulncheck_advisories": [
+            "GO-2026-6809"
+          ],
+          "symbol_matched": false
+        },
+        {
+          "cve": "CVE-2026-25679",
+          "govulncheck_advisories": [
+            "GO-2026-4601"
+          ],
+          "symbol_matched": false
+        },
+        {
+          "cve": "CVE-2026-27145",
+          "govulncheck_advisories": [
+            "GO-2026-5037"
+          ],
+          "symbol_matched": false
+        },
+        {
+          "cve": "CVE-2026-32280",
+          "govulncheck_advisories": [
+            "GO-2026-4947"
+          ],
+          "symbol_matched": false
+        },
+        {
+          "cve": "CVE-2026-32281",
+          "govulncheck_advisories": [
+            "GO-2026-4946"
+          ],
+          "symbol_matched": false
+        },
+        {
+          "cve": "CVE-2026-32283",
+          "govulncheck_advisories": [
+            "GO-2026-4870"
+          ],
+          "symbol_matched": false
+        },
+        {
+          "cve": "CVE-2026-33811",
+          "govulncheck_advisories": [
+            "GO-2026-4981"
+          ],
+          "symbol_matched": false
+        },
+        {
+          "cve": "CVE-2026-33814",
+          "govulncheck_advisories": [
+            "GO-2026-4918"
+          ],
+          "symbol_matched": false
+        },
+        {
+          "cve": "CVE-2026-33818",
+          "govulncheck_advisories": [
+            "GO-2026-5972"
+          ],
+          "symbol_matched": false
+        },
+        {
+          "cve": "CVE-2026-39820",
+          "govulncheck_advisories": [
+            "GO-2026-4986"
+          ],
+          "symbol_matched": false
+        },
+        {
+          "cve": "CVE-2026-39821",
+          "govulncheck_advisories": [
+            "GO-2026-5026"
+          ],
+          "symbol_matched": false
+        },
+        {
+          "cve": "CVE-2026-39822",
+          "govulncheck_advisories": [
+            "GO-2026-4970"
+          ],
+          "symbol_matched": false
+        },
+        {
+          "cve": "CVE-2026-39836",
+          "govulncheck_advisories": [
+            "GO-2026-4971"
+          ],
+          "symbol_matched": false
+        },
+        {
+          "cve": "CVE-2026-42499",
+          "govulncheck_advisories": [
+            "GO-2026-4977"
+          ],
+          "symbol_matched": false
+        },
+        {
+          "cve": "CVE-2026-42504",
+          "govulncheck_advisories": [
+            "GO-2026-5038"
+          ],
+          "symbol_matched": false
+        },
+        {
+          "cve": "CVE-2026-56853",
+          "govulncheck_advisories": [
+            "GO-2026-6089"
+          ],
+          "symbol_matched": false
+        },
+        {
+          "cve": "CVE-2026-56858",
+          "govulncheck_advisories": [
+            "GO-2026-6091"
+          ],
+          "symbol_matched": false
+        },
+        {
+          "cve": "CVE-2026-56859",
+          "govulncheck_advisories": [
+            "GO-2026-6088"
+          ],
+          "symbol_matched": false
+        },
+        {
+          "cve": "CVE-2026-56860",
+          "govulncheck_advisories": [
+            "GO-2026-6218"
+          ],
+          "symbol_matched": false
+        },
+        {
+          "cve": "CVE-2026-56862",
+          "govulncheck_advisories": [
+            "GO-2026-6090"
+          ],
+          "symbol_matched": false
+        },
+        {
+          "cve": "CVE-2026-78667",
+          "govulncheck_advisories": [
+            "GO-2026-6609"
+          ],
+          "symbol_matched": false
+        },
+        {
+          "cve": "CVE-2026-78669",
+          "govulncheck_advisories": [
+            "GO-2026-6611"
+          ],
+          "symbol_matched": false
+        },
+        {
+          "cve": "CVE-2026-97031",
+          "govulncheck_advisories": [
+            "GO-2026-6607"
+          ],
+          "symbol_matched": false
+        }
+      ],
+      "deployment_review": {
+        "scope": "Supplied production TLS deployment; not a claim about arbitrary uses of this PostgreSQL image or gosu.",
+        "entrypoint_path": "/usr/local/bin/docker-entrypoint.sh",
+        "entrypoint_sha256": "9c440299ae04a0a79d55b8bf03307036d890a40979d2fb698073c9050d4b20a5",
+        "entrypoint_condition": "The entrypoint invokes gosu only inside if [ \"$(id -u)\" = '0' ]; then exec gosu postgres \"$BASH_SOURCE\" \"$@\"; fi.",
+        "deployment_source": "deploy/tls/compose.yaml",
+        "deployment_source_sha256": "b55edb9b94ca361733f8ca2e274a5485aded7aa6bcd537f205170a696f9dca31",
+        "assessment": "The TLS deployment specifies user: postgres and does not enter the gosu root-user branch. The separate symbol match in github.com/moby/sys/user requires attacker-controlled user/group file contents; this helper reads its image files, not shop source. Keep the version finding visible and reassess if startup identity, image contents, mounts or manual helper use change.",
+        "source": "https://github.com/moby/sys/security/advisories/GHSA-mjcv-p78q-w5fw"
+      },
+      "wildcard_findings": [],
+      "advisories_without_symbol_or_wildcard_records": [
+        "GO-2025-4006",
+        "GO-2025-4007",
+        "GO-2025-4008",
+        "GO-2025-4009",
+        "GO-2025-4010",
+        "GO-2025-4011",
+        "GO-2025-4012",
+        "GO-2025-4013",
+        "GO-2025-4014",
+        "GO-2025-4015",
+        "GO-2025-4155",
+        "GO-2025-4175",
+        "GO-2026-4337",
+        "GO-2026-4340",
+        "GO-2026-4341",
+        "GO-2026-4342",
+        "GO-2026-4601",
+        "GO-2026-4602",
+        "GO-2026-4603",
+        "GO-2026-4864",
+        "GO-2026-4865",
+        "GO-2026-4869",
+        "GO-2026-4870",
+        "GO-2026-4918",
+        "GO-2026-4946",
+        "GO-2026-4947",
+        "GO-2026-4970",
+        "GO-2026-4971",
+        "GO-2026-4976",
+        "GO-2026-4977",
+        "GO-2026-4980",
+        "GO-2026-4981",
+        "GO-2026-4982",
+        "GO-2026-4986",
+        "GO-2026-5026",
+        "GO-2026-5037",
+        "GO-2026-5038",
+        "GO-2026-5039",
+        "GO-2026-5856",
+        "GO-2026-5972",
+        "GO-2026-6088",
+        "GO-2026-6089",
+        "GO-2026-6090",
+        "GO-2026-6091",
+        "GO-2026-6218",
+        "GO-2026-6599",
+        "GO-2026-6600",
+        "GO-2026-6603",
+        "GO-2026-6605",
+        "GO-2026-6607",
+        "GO-2026-6608",
+        "GO-2026-6609",
+        "GO-2026-6610",
+        "GO-2026-6611",
+        "GO-2026-6612",
+        "GO-2026-6613",
+        "GO-2026-6617",
+        "GO-2026-6809"
+      ]
+    },
+    {
+      "role": "issuer-patched",
+      "image": "sha256:2ce850d7cd176db31b260916a2918dc971351e5cb9cace1a00f165e07179134f",
+      "path": "/lego",
+      "sha256": "6ab3be8dc12abe8376330ad124f48fb56c7cbddbea7fd4cf123d3dd46022ef4b",
+      "inputs_sha256": {
+        "deploy/acme/issuer.Dockerfile": "626c7cd00217906715b5ddfa14c16f6fa17627cd44bbd37c1ba2a466f381b0c9",
+        "deploy/acme/issuer.go.mod": "63708d54e7904d0c75ea7c9505f78864e735d3e28f9b3ec7650d1dc27aa38040",
+        "deploy/acme/issuer.go.sum": "d4b8b007b569d5c77e64fc1c48b03d473ab971fdbbed55adf8a38d65670957f0",
+        "deploy/acme/images.json": "d5c5a7a45e476dc4f8c60ad45546eb1d61b2d9d34eaf132eea316e2da408af11",
+        "scripts/acme-images": "26bb94c54d174bad8fed4f7aaa59e4100bb0df65603137ec3f6ec639cc142bb5",
+        "scripts/acme_environment.py": "cef0825fc2ec88116fffee8fdc9f4e0ae902481df83a10e53b100fd178e1cf2e",
+        "scripts/tls-acme": "b2665d85d3a93987dee549b56615396be042697c84f6a0a4322263676ffc4413"
+      },
+      "scanner_config": {
+        "protocol_version": "v1.0.0",
+        "scanner_name": "govulncheck",
+        "scanner_version": "v1.9.0",
+        "db": "https://vuln.go.dev",
+        "db_last_modified": "2026-10-21T00:27:29Z",
+        "scan_level": "symbol",
+        "scan_mode": "binary"
+      },
+      "raw_report_sha256": "3c101303c945ad378edfdd02a754b8fab9a3b6b8c848899a263a2a29a6d0971b",
+      "raw_report_bytes": 957341,
+      "symbol_findings": [],
+      "wildcard_findings": [
+        {
+          "osv": "GO-2026-5932",
+          "summary": "The golang.org/x/crypto/openpgp package is unmaintained, unsafe by design, and has known security issues",
+          "source": "https://pkg.go.dev/vuln/GO-2026-5932",
+          "records": [
+            {
+              "module": "golang.org/x/crypto",
+              "version": "v0.57.0",
+              "package": "golang.org/x/crypto/openpgp/packet",
+              "function": "org/x/crypto/openpgp/packet/*",
+              "receiver": "golang"
+            },
+            {
+              "module": "golang.org/x/crypto",
+              "version": "v0.57.0",
+              "package": "golang.org/x/crypto/openpgp/armor",
+              "function": "org/x/crypto/openpgp/armor/*",
+              "receiver": "golang"
+            },
+            {
+              "module": "golang.org/x/crypto",
+              "version": "v0.57.0",
+              "package": "golang.org/x/crypto/openpgp/clearsign",
+              "function": "org/x/crypto/openpgp/clearsign/*",
+              "receiver": "golang"
+            },
+            {
+              "module": "golang.org/x/crypto",
+              "version": "v0.57.0",
+              "package": "golang.org/x/crypto/openpgp/errors",
+              "function": "org/x/crypto/openpgp/errors/*",
+              "receiver": "golang"
+            },
+            {
+              "module": "golang.org/x/crypto",
+              "version": "v0.57.0",
+              "package": "golang.org/x/crypto/openpgp/elgamal",
+              "function": "org/x/crypto/openpgp/elgamal/*",
+              "receiver": "golang"
+            },
+            {
+              "module": "golang.org/x/crypto",
+              "version": "v0.57.0",
+              "package": "golang.org/x/crypto/openpgp/s2k",
+              "function": "org/x/crypto/openpgp/s2k/*",
+              "receiver": "golang"
+            },
+            {
+              "module": "golang.org/x/crypto",
+              "version": "v0.57.0",
+              "package": "golang.org/x/crypto/openpgp",
+              "function": "org/x/crypto/openpgp/*",
+              "receiver": "golang"
+            }
+          ]
+        }
+      ],
+      "package_check": {
+        "image": "sha256:2ce850d7cd176db31b260916a2918dc971351e5cb9cace1a00f165e07179134f",
+        "reference": "chipload-acme:9aa1c68b65a34761b14c65abbe7443937137797f1dab9d50e8791c2f1d5ae30a",
+        "input_fingerprint": "9aa1c68b65a34761b14c65abbe7443937137797f1dab9d50e8791c2f1d5ae30a",
+        "binary_sha256": "6ab3be8dc12abe8376330ad124f48fb56c7cbddbea7fd4cf123d3dd46022ef4b",
+        "package_graph_sha256": "d70cf0b4db6657e9c96ff69959a445b19bf997b81c9f7e58339a0dbbcf1cbe9e",
+        "compiled_package_count": 1565,
+        "openpgp_packages": []
+      },
+      "assessment": "The only remaining tool finding uses wildcard records for deprecated OpenPGP packages. The verified compilation graph contains none of those packages, and the build now rejects them. The binary SHA-256 equals the scanned binary from the earlier image before the final native-library patches; the final image is scanned separately for native packages. No named vulnerable symbols were reported by this dated Go database. This does not clear other deployment components."
+    }
+  ],
+  "baseline_revision": "06a22f1fd83ecfd41501d7bdfd09d3d17cbf6e4d"
+}

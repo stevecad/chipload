@@ -22,6 +22,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import recovery_archive as archive
+from acme_environment import resolve_image, specification
 
 ROOT = Path(__file__).resolve().parents[1]
 loader = importlib.machinery.SourceFileLoader(
@@ -30,7 +31,7 @@ loader = importlib.machinery.SourceFileLoader(
 certificates = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
 loader.exec_module(certificates)
 stack, material = certificates.stack, certificates.material
-IMAGES = json.loads((ROOT / "deploy/acme/images.json").read_bytes())
+IMAGES, ISSUER_SHA256 = specification(ROOT)
 LABEL = "org.chipload.acme-state"
 MARKER = ".run-incomplete.json"
 spec = importlib.util.spec_from_file_location("acme_delivery", ROOT / "scripts/acme_delivery.py")
@@ -276,11 +277,7 @@ def container(state, values, lock_fd):
     )
     if driver != "bridge":
         raise ValueError("the ACME network must use the local bridge driver")
-    image_id = (
-        run_command(["docker", "image", "inspect", values["image"], "--format", "{{.Id}}"], lock_fd)
-        .decode()
-        .strip()
-    )
+    image_id = resolve_image(values["image"], ISSUER_SHA256, run_command, lock_fd)
     config_digest = hashlib.sha256(
         b"".join(
             (state / item).read_bytes()
@@ -362,7 +359,7 @@ def container(state, values, lock_fd):
             buffer = io.StringIO()
             csv.writer(buffer, lineterminator="").writerow(fields)
             arguments.extend(("--mount", buffer.getvalue()))
-        arguments.extend((values["image"], "--config", "/config/client.json"))
+        arguments.extend((image_id, "--config", "/config/client.json"))
         # Keep this named container between runs. Retrying a lost creation reply
         # cannot create another writer, and no delayed create can reclaim its name.
         run_command(arguments, lock_fd, timeout=60)

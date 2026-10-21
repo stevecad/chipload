@@ -15,7 +15,12 @@ Use the non-root issuer owner, the locked Python server environment, GnuPG 2.4+
 and a local Docker daemon. Restore needs a Linux libc and filesystem supporting
 [`renameat2` with `RENAME_NOREPLACE`](https://man7.org/linux/man-pages/man2/rename.2.html).
 It will not fall back to overwriting an existing directory. Use the backed-up
-issuer image pin; image upgrades are a separate operation.
+issuer image build reference and matching checkout; run `scripts/acme-images`
+from that checkout to build it on the recovery host. The helper checks the image's
+build labels against that checkout before starting the account writer. Archives from the earlier
+upstream-image packaging require that earlier checkout and pinned image.
+Image upgrades are a separate operation; restore does not rewrite the account's
+image reference.
 
 ## Create and verify a backup
 

@@ -138,6 +138,13 @@ retain exact image observations and unresolved findings in `docs/security/`.
 Keep the dependency digest tied to the graphics recipe and recheck deterministic
 builds, business cases and separation from the trusted SDK interpreter.
 
+`scripts/acme-images` builds the issuer from released lego source, the committed
+module locks and pinned native packages. Keep download verification, offline
+compilation, dependency notices and the image-input fingerprint intact. Resolve
+and verify the build reference before creating a container, then create by its
+immutable ID. Issuer state and backups retain their build reference; do not
+silently rewrite it or replace an existing account writer during an image update.
+
 Recovery is an operator command, never an HTTP/MCP shop action. Back up the paired SQLite stores and identity/configuration state together while writers are stopped. Authenticate encrypted archives before using plaintext. Restore only into fresh state and a new PostgreSQL volume; retain the incomplete marker across failure and reject application startup until restore finishes. Preserve policy generations, spent request credit, subjects, signing keys, publication generations, and observation timestamps. Use the shared deployment operation lock, retain private modes, and never clean up resources belonging to another project.
 
 Validate candidate TLS material before modifying active files, and persist private staged bytes and update intent before installation. Resume that same bundle; use an explicit validated replacement if it expires. Block startup, backups and conflicting identity/credential operations while installation is incomplete. Recreate individual-file mounts and verify served certificates before recording live activation. Offline restore can retain expired TLS material; startup must reject it until the owner installs a valid replacement. Preserve certificate receipts in recovery archives and test actual process interruption and CA replacement with the TLS live checks.

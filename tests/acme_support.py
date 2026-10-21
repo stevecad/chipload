@@ -10,11 +10,19 @@ import os
 import socket
 import ssl
 import subprocess
+import sys
 import time
 import uuid
 from types import SimpleNamespace
 
 from recovery_support import ROOT, archive
+
+environment_spec = importlib.util.spec_from_file_location(
+    "acme_environment", ROOT / "scripts/acme_environment.py"
+)
+environment = importlib.util.module_from_spec(environment_spec)
+sys.modules[environment_spec.name] = environment
+environment_spec.loader.exec_module(environment)
 
 loader = importlib.machinery.SourceFileLoader("tls_acme_script", str(ROOT / "scripts/tls-acme"))
 acme = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))

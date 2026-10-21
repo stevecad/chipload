@@ -279,6 +279,12 @@ also patched. The optional geometry image now includes a pinned Debian security
 snapshot and Expat fix. An image-specific base-package review distinguishes absent
 components and excluded privileged prerequisites from findings still under review.
 Remaining image findings need exposure review and applicable fixes.
+The ACME issuer now builds released lego with patched Go/HTTP and native
+dependencies, verified module locks and a compiled-package exclusion check.
+Its deployment helper checks the build reference and creates the account writer
+by immutable image ID. The binary audit retains the original findings, the
+patched issuer evidence and the unresolved OpenBao findings. Existing issuer
+state remains tied to its original build; automatic image migration is not supplied.
 Structural admission and deterministic work budgets are implemented;
 see `docs/SHOP_MODEL.md`. `docs/AUTHORING.md` records reproducible data-operation
 measurements. Immutable build/projection caching now reduces repeated-read cost

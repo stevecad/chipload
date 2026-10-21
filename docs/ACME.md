@@ -16,12 +16,32 @@ created by `tls-stack init --local` is a separate workflow.
 
 Use the non-root deployment owner, Python 3.12+, the locked server environment,
 local Docker access, and the built images described in [TLS setup](TLS.md).
-Public challenge binding requires Docker Engine 28 or newer. Pull the issuer:
+Public challenge binding requires Docker Engine 28 or newer. Build the issuer:
 
 ```sh
 uv sync --locked --extra server
 ./scripts/acme-images
 ```
+
+The helper builds released lego 5.5.2 with Go 1.26.10 and `x/net` 0.60.0,
+reporting `v5.5.2+chipload.1`. The module versions and checksums are committed in
+`deploy/acme/issuer.go.mod` and `issuer.go.sum`. Downloaded modules must verify;
+compilation runs without network access or lock changes. The build rejects any
+deprecated `x/crypto/openpgp` package in the compiled package graph, retained at
+`/usr/local/share/chipload/issuer-packages.txt`. The image includes dependency
+notices and pinned native-library fixes. This is a maintained local build
+of the upstream client, separate from the Python shop engine.
+
+The local build reference includes a hash of the image inputs. Before creating
+an issuer container, the helper verifies its build labels and resolves that
+reference to an immutable image ID; container creation uses that ID. It also
+checks an existing account writer's exact image and runtime restrictions.
+
+State and archives retain their image build reference. Keep the corresponding
+checkout and image with backups. This build replaces the previous upstream image
+pin; automatic migration of an existing issuer is not implemented. Existing state
+must be managed with its matching checkout until a separate migration is qualified.
+Editing the image field or deleting account state is not an upgrade procedure.
 
 Select your CA's HTTPS directory, review its terms, and obtain its issued-server
 root CA bundle through a trusted channel. `--ca-bundle` is the explicit trust

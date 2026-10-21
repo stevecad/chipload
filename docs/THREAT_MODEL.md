@@ -125,6 +125,22 @@ identity/secrets infrastructure, the certificate client, other optional geometry
 libraries and the test CA. No scanner findings are suppressed. Remaining fixes
 and exposure review are still required before release clearance.
 
+The [Go binary audit](security/go-binary-audit-2026-10-21.json) uses govulncheck
+1.9.0 on binaries copied from the pinned images without executing them. It records
+tool provenance, database time, binary hashes, matched symbols and comparison
+with the image scan. PostgreSQL's reported high/critical Go standard-library
+matches are in its `gosu` helper, with no matching vulnerable symbols found.
+A separate user/group parser finding is present in that helper; the supplied TLS
+deployment runs PostgreSQL as `postgres`, bypassing the entrypoint's root-only
+`gosu` branch. This conclusion does not cover altered startup or manual helper use.
+The original issuer and OpenBao have named-symbol matches; the audit retains that
+baseline. The rebuilt [issuer](ACME.md) uses the patched Go/HTTP dependencies and
+native packages. Its only remaining scanner finding is the OpenPGP wildcard
+advisory; the build verifies that none of those packages are compiled. The audit
+separates wildcard records from named symbols and records the final binary hash
+and package graph check. OpenBao still needs dependency updates and exposure
+review. Named-symbol presence alone does not establish reachability from a shop caller.
+
 ## Remaining deployment work
 
 - Qualify a public edge: exposure, TLS renewal, traffic policy, sustained/adversarial
