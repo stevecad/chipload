@@ -12,7 +12,9 @@ API domain calls use [supervised service workers](docs/SERVICE_WORKERS.md) with 
 
 The TLS deployment has [encrypted backup and restore tooling](docs/RECOVERY.md) for shop data, identity data, grants, and TLS state. Recovery preserves request allowances and keeps a restored service offline until startup.
 
-The [credential rotation helper](docs/CREDENTIALS.md) changes the provisioned agent secret and Keycloak database password with interrupted-cutover recovery and verification that the previous credentials no longer authenticate.
+The [credential rotation helper](docs/CREDENTIALS.md) changes the provisioned agent secret and Keycloak database password with interrupted-cutover recovery and verification that the previous credentials no longer authenticate. It also rotates realm signing keys with a verification overlap and explicit retirement.
+
+The separate [private OpenBao service](docs/SECRETS.md) runs on the adapter network with TLS, encrypted threshold bootstrap, explicit unsealing, audit storage and certificate reload. Its disaster-recovery and credential-lifecycle requirements remain deployment work.
 
 Chipload is not an ERP. Order management, purchasing, inventory management, production planning, accounting, and invoicing are out of scope. Chipload will work with ERP systems through adapters and APIs. Shop capabilities, business rules, and callable operations belong in Chipload; ERP systems remain the source of truth for their business records.
 

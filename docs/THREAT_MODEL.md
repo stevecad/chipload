@@ -70,9 +70,12 @@ so their trusted implementation must enforce the caller's shop/action grants.
 - Reduce worker-host authority and strengthen isolation for hostile tenants.
   The broker's Docker socket remains a host-level trust dependency. Shop-specific
   dependency installation and custom evaluation environments need their own design.
-- Provision production OpenBao identity, unseal/recovery, TLS lifecycle, audit
-  storage, rotation and replacement-host recovery. The development stack uses
-  local recovery material; the TLS stack does not manage production OpenBao.
+- Complete production OpenBao operator/workload identity lifecycle, Raft recovery,
+  audit retention and replacement-host recovery. The separate [private secrets
+  service](SECRETS.md) now supplies TLS, PGP-encrypted threshold initialization,
+  explicit unsealing, audit storage and certificate reload. Its tests verify
+  actual AppRole denials and sealed restart; they do not qualify disaster recovery
+  or custody arrangements. The HTTP development stack retains local recovery material.
 - Qualify actual vendor receivers and external systems, including ambiguous
   effects, receiver persistence and recovery. The test receiver and simulator are
   evidence of protocol behavior, not qualification of a shop or machine.

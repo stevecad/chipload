@@ -83,8 +83,10 @@ Save operator configuration in a private 0600 file, for example
 Origins must be HTTPS origins without paths, queries, fragments, or user
 credentials. CA names refer to files inside this adapter's credential directory;
 omitting a CA name uses the image's system trust store. Do not mount CA private
-keys. Configure a production HTTPS OpenBao service separately; the HTTP
-development Compose profile cannot serve this adapter.
+keys. Use the [private TLS OpenBao service](SECRETS.md), or an independently
+managed HTTPS OpenBao deployment, on the adapter network. The HTTP development
+Compose profile cannot serve this adapter. The private service's recovery and
+credential lifecycle requirements still apply.
 
 Provision a distinct [AppRole](https://openbao.org/docs/auth/approle/) with one
 policy, no default or identity policies, and a token TTL/max TTL of at most 300
@@ -138,8 +140,8 @@ Use its explicit subject/shop grants and its container settings path:
 ./scripts/build-worker
 ./scripts/build-runtime
 ./scripts/build-tls
-# Start the application as described in TLS.md, then provision the receiver and
-# OpenBao on this dedicated network before starting its executor.
+# Start the application as described in TLS.md. Provision the receiver and
+# OpenBao (SECRETS.md) on this network before starting its executor.
 docker network create --internal chipload-evidence
 uv run python scripts/executor up \
   --settings .local/tls/runtime.json --data .local/tls/data \
@@ -231,6 +233,7 @@ cancellation, private mounts, and network separation. Unit tests cover invalid
 TLS, broad token policies, malformed/oversized replies, redirects, ignored proxy
 environment, configuration changes, and recovery startup locks.
 
-Production OpenBao provisioning, unseal/recovery, high availability, audit
-retention, certificate renewal, deployment load qualification, vendor bridges,
-and coordinated external-system recovery remain integration and deployment work.
+The [private OpenBao service](SECRETS.md) provides TLS and encrypted threshold
+bootstrap. Production credential lifecycle, Raft recovery, high availability,
+audit retention, certificate renewal, deployment load qualification, vendor
+bridges and coordinated external-system recovery remain work.
