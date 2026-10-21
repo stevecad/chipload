@@ -150,11 +150,12 @@ class TransportTests(unittest.TestCase):
 
     def test_machining_scenarios_use_the_same_rest_and_mcp_evaluator(self):
         # One admitted program per scenario here isolates parity failures; the
-        # composed workflow is covered by live tests. Give this matrix capacity.
+        # composed workflow is covered by live tests. Admit the whole matrix
+        # without depending on elapsed time to refill the request buckets.
         repository = self.operations.service.repository
         quota = repository.read_quotas()
-        quota['policy']['requests']['mutation_identity']['burst'] = 100
-        quota['policy']['requests']['mutation_shop']['burst'] = 100
+        for scope in ("peer", "identity", "mutation_identity", "mutation_shop"):
+            quota['policy']['requests'][scope]['burst'] = 100
         repository.set_quotas(QuotaPolicy.model_validate(quota['policy']), expected_generation=quota['generation'])
         from chipload.artifact import BuildIdentity, compile_shop
         from chipload.project import (
