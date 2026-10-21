@@ -5,6 +5,7 @@ from unittest.mock import patch
 from server_support import IdentityFixture
 
 from chipload.artifact import BuildIdentity, compile_shop
+from chipload.evidence import RevocationSnapshot
 from chipload.published import ObservationSnapshot
 from examples.export_project import project
 from examples.heat_treatment import AT, define_shop, observations, request
@@ -39,7 +40,7 @@ class PublishedTests(unittest.TestCase):
             ),
         )
         snapshot = ObservationSnapshot(revision=None, updated_at=AT, observations=observations())
-        with patch.object(self.published, "_snapshot", return_value=(artifact, snapshot)):
+        with patch.object(self.published, "_snapshot", return_value=(artifact, snapshot, RevocationSnapshot())):
             accepted_guess = self.published.evaluation(shop.id, request())
             rejected_guess = self.published.evaluation(
                 shop.id, request(changes={"alloy": "another-alloy"})

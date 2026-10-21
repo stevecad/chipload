@@ -137,7 +137,7 @@ class ReservationTests(unittest.TestCase):
             self.assertNotIn("removal_protocol", [row[1] for row in db.execute("PRAGMA table_info(worker_launches)")])
         Repository(self.repository.path)
         with self.repository.connection() as db:
-            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 9)
+            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 10)
             self.assertEqual(db.execute("SELECT settled,removal_protocol FROM worker_launches").fetchone()[:], (0, 1))
 
 

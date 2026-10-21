@@ -163,6 +163,18 @@ class RecoveryLiveTests(unittest.IsolatedAsyncioTestCase):
                         },
                     )
                     self.assertEqual(seen.status_code, 200)
+                    evidence = (await client.get(shop + "/evidence", headers=headers)).json()
+                    revoked = await client.put(
+                        shop + "/evidence/thermal-declaration/revocation",
+                        headers=headers,
+                        json={
+                            "shop_id": "thermal-example",
+                            "evidence_id": "thermal-declaration",
+                            "expected_model_sha256": evidence["revision"],
+                            "reason": "Qualification withdrawn before recovery",
+                        },
+                    )
+                    self.assertEqual(revoked.status_code, 200, revoked.text)
                     catalog = (await client.get(shop + "/catalog")).json()
                     audit = (await client.get(shop + "/audit", headers=headers)).json()
                     repository = Repository(original / "data/chipload.db")
@@ -340,6 +352,26 @@ script.backup(Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4]), archive.M
                     self.assertEqual(
                         (await client.get(shop + "/observations", headers=headers)).json(),
                         seen.json(),
+                    )
+                    self.assertEqual(
+                        (
+                            await client.get(
+                                shop + "/evidence/thermal-declaration/revocation", headers=headers
+                            )
+                        ).json(),
+                        revoked.json(),
+                    )
+                    restored_evidence = (
+                        await client.get(shop + "/evidence", headers=headers)
+                    ).json()
+                    self.assertEqual(
+                        restored_evidence["revocations"],
+                        [
+                            {
+                                "evidence_id": "thermal-declaration",
+                                "revoked_at": revoked.json()["revoked_at"],
+                            }
+                        ],
                     )
                     self.assertEqual(
                         (await client.get(shop + "/audit", headers=headers)).json(), audit

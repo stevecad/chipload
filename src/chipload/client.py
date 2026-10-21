@@ -93,6 +93,9 @@ def route(operation, request):
         method, suffix = plain[operation]
     elif operation == "build_inspect":
         method, suffix = "GET", "/builds/" + hex_component(request["build_id"], 32)
+    elif operation in {"evidence_revoke", "evidence_revocation_read"}:
+        method = "PUT" if operation == "evidence_revoke" else "GET"
+        suffix = "/evidence/" + component(request["evidence_id"]) + "/revocation"
     elif operation in {"code_read", "code_cancel"}:
         method, suffix = "GET", "/runs/" + hex_component(request["run_id"], 32)
         if operation == "code_cancel":
@@ -335,6 +338,15 @@ class ShopClient:
 
     def evidence(self):
         return self._call("evidence_read")
+
+    def evidence_revocation(self, evidence_id):
+        return self._call("evidence_revocation_read", evidence_id=evidence_id)
+
+    def revoke_evidence(self, evidence_id, *, expected_model_sha256, reason):
+        return self._call(
+            "evidence_revoke", evidence_id=evidence_id,
+            expected_model_sha256=expected_model_sha256, reason=reason,
+        )
 
     def observations(self):
         return self._call("observations_read")

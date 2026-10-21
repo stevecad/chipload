@@ -5,6 +5,7 @@ from datetime import timedelta
 from .access import Principal, require_operation
 from .artifact import canonical_json, digest
 from .evaluate import EvaluationRequest, evaluate
+from .evidence import snapshot as evidence_snapshot
 from .execution_model import (
     MAX_EXECUTION_BYTES,
     RESULT_RESERVATION_BYTES,
@@ -75,6 +76,7 @@ def checks_pass(db, artifact, operation, request, at):
         ).fetchone()
     )
     inputs = {fact.name: fact for fact in request.inputs}
+    revoked = evidence_snapshot(db, artifact).ids
     for check in operation.checks:
         result = evaluate(
             artifact,
@@ -89,6 +91,7 @@ def checks_pass(db, artifact, operation, request, at):
             ),
             at=at,
             observations=observed.observations,
+            revoked_evidence=revoked,
         )
         if result.outcome != "supported":
             return False

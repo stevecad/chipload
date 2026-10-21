@@ -8,6 +8,7 @@ from pydantic import Field, JsonValue, StrictInt, StrictStr, model_validator
 from .access import Action, AuthenticationError, Principal, require, require_operation
 from .artifact import Digest
 from .evaluate import EvaluationRequest
+from .evidence import EvidenceReference, EvidenceRevocation, EvidenceService, RevokeEvidence
 from .execution import ExecutionService
 from .execution_model import ExecutionRecord, ExecutionRequest, OperationInspection
 from .lifecycle import BuildRecord, Publication, ShopService, SourceRevision
@@ -119,6 +120,7 @@ class Operations:
         self.service = service
         self.limiter = RequestLimiter(service.repository)
         self.published = published or PublishedService(service)
+        self.evidence = EvidenceService(service.repository, clock=self.published.clock)
         self.executions = ExecutionService(service.repository)
         self.programs = ProgramService(service.repository)
         p = self.published
@@ -267,6 +269,16 @@ class Operations:
                 lambda who, r: p.read_evidence(who, r.shop_id),
                 True,
             ),
+            "evidence_revocation_read": Operation(
+                EvidenceReference,
+                "Read an authorized evidence revocation receipt, including after withdrawal.",
+                self.evidence.read, True,
+            ),
+            "evidence_revoke": Operation(
+                RevokeEvidence,
+                "Permanently revoke an evidence ID across this shop's revisions. Retry the exact request to recover its receipt.",
+                self.evidence.revoke, True, False, mutation_action="evidence:revoke",
+            ),
             "observations_read": Operation(
                 ShopInput,
                 "Read the authorized current observation snapshot.",
@@ -306,6 +318,8 @@ class Operations:
             "publication_read": Publication,
             "publication_change": Publication,
             "observations_read": ObservationSnapshot,
+            "evidence_revocation_read": EvidenceRevocation,
+            "evidence_revoke": EvidenceRevocation,
             "observations_write": ObservationSnapshot,
         }
         self.specs = {

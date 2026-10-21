@@ -174,12 +174,19 @@ the claim and deadline. Reconciliation uses that receipt or a revoked claim
 under the same writer lock to establish the outcome. This gives the simulator
 a provable boundary; it does not provide universal exactly-once physical effects.
 
-Repository schema 9 preserves bindings, jobs, simulation receipts, and resource
+Repository schema 10 preserves bindings, jobs, simulation receipts, and resource
 locks. Backups reject queued, running, or indeterminate operations. Before backup,
 stop new submissions, settle/cancel queued work, reconcile uncertain results,
 and stop separate executors. Restoring a database cannot roll back equipment or
 an ERP. Recovery of external receiver ledgers remains part of each real adapter's
 integration design; never replay old effects merely because of a restore.
+
+Evidence revocations are checked both at operation admission and immediately
+before recording dispatch. A queued call whose required evidence was revoked
+is rejected with `operation-precondition-changed`. Revocation does not cancel a
+call that already passed that check; normal cancellation and reconciliation
+rules still apply. [Revocation receipts](API.md#evidence-revocation) survive source
+rollback and are retained in repository backups.
 
 ## Run the simulator
 

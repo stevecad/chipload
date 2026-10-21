@@ -444,6 +444,10 @@ Schema 8 migrates atomically to schema 9, adding durable name reservations and
 the cleanup protocol marker. Existing launch records retain the legacy marker;
 new attempts use removal by immutable ID. Settle older running jobs before this
 upgrade when possible; unresolved legacy requests cannot safely use name reservation.
+Schema 9 migrates atomically to schema 10, adding evidence revocations. Existing
+publication, observation and admission records remain intact. Explicit bindings
+need `evidence:revoke` to delegate this action; publication permission alone does
+not grant it. Revocations survive source rollback and belong in recovery snapshots.
 Before upgrading, stop old API/broker/executor processes and make a consistent backup.
 Do not run old code alongside the new schema. SQLite remains single-node
 storage; this does not establish safe use over a network filesystem or across

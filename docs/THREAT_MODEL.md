@@ -72,6 +72,14 @@ the broker retains grant checks, admission, call journals and Docker supervision
 Those service containers still have authority over the entire mounted repository,
 so their trusted implementation must enforce the caller's shop/action grants.
 
+Shop-owned evidence revocations have a separate action grant and durable receipt.
+They are read with the current publication and observations, excluded from every
+capability route, and rechecked for operation admission and dispatch. Source
+rollback cannot restore a revoked evidence ID. Private notes stay behind evidence
+permissions. This does not independently verify a shop's declarations or stop
+already-dispatched work. Restoring an older backup requires reconciliation of
+revocations recorded after that snapshot.
+
 ## Remaining deployment work
 
 - Qualify a public edge: exposure, TLS renewal, traffic policy, sustained/adversarial

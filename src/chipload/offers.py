@@ -12,7 +12,7 @@ from .evaluate import (
 )
 
 
-def evaluate_offer(artifact, request, *, at, observations):
+def evaluate_offer(artifact, request, *, at, observations, revoked_evidence):
     offer = next((item for item in artifact.shop.offers if item.id == request.target), None)
     if offer is None:
         raise KeyError("unknown offer")
@@ -28,7 +28,8 @@ def evaluate_offer(artifact, request, *, at, observations):
             }
         )
         result = _evaluate(
-            artifact, query, at=at, observations=observations, declared_facts=shared_facts
+            artifact, query, at=at, observations=observations, declared_facts=shared_facts,
+            revoked_evidence=revoked_evidence,
         )
         reasons = tuple(r for r in result.reasons if r.code != "unmodeled-requirement")
         unmodeled = len(result.reasons) - len(reasons)

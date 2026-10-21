@@ -172,9 +172,12 @@ def evaluate(
     *,
     at: datetime,
     observations: tuple[Observation, ...] = (),
+    revoked_evidence: frozenset[str] = frozenset(),
 ) -> Evaluation:
     """Evaluate a validated artifact with no caller-supplied knowledge exemptions."""
-    return _evaluate(artifact, request, at=at, observations=observations)
+    return _evaluate(
+        artifact, request, at=at, observations=observations, revoked_evidence=revoked_evidence
+    )
 
 
 def _evaluate(
@@ -184,6 +187,7 @@ def _evaluate(
     at: datetime,
     observations: tuple[Observation, ...] = (),
     declared_facts: frozenset[str] = frozenset(),
+    revoked_evidence: frozenset[str] = frozenset(),
 ) -> Evaluation:
     """Evaluate an already validated artifact at an explicit observation time.
 
@@ -194,7 +198,9 @@ def _evaluate(
     if request.target_kind == "offer":
         from .offers import evaluate_offer
 
-        return evaluate_offer(artifact, request, at=at, observations=observations)
+        return evaluate_offer(
+            artifact, request, at=at, observations=observations, revoked_evidence=revoked_evidence
+        )
     facts = {fact.name: fact.value for fact in request.facts}
     initial_state = {fact.name: fact.value for fact in request.initial_state}
     observation_index = {item.id: item for item in observations}
@@ -263,6 +269,8 @@ def _evaluate(
         uses: list[EvidenceUse] = []
         required_facts = {rule.fact for rule in capability.requirements}
         for evidence_id in capability.evidence:
+            if evidence_id in revoked_evidence:
+                continue
             proof = evidence_index[evidence_id]
             proof_rules = {rule.fact: rule for rule in proof.requirements}
             catalog_mismatch = any(

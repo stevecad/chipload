@@ -24,6 +24,7 @@ from .access import Forbidden
 from .artifact import canonical_json, digest
 from .auth import AuthenticationError, IdentityUnavailable, ServerSettings, TokenVerifier
 from .cache import DataBusy
+from .evidence import EvidenceReference, EvidenceRevocation, RevokeEvidence
 from .execution_model import ExecutionRecord, ExecutionRequest, OperationInspection
 from .lifecycle import (
     BuildRecord,
@@ -582,6 +583,17 @@ def create_app(
     @app.get("/v1/shops/{shop_id}/observations", response_model=ObservationSnapshot)
     async def observation_read(shop_id: str, request: Request):
         return await call("observations_read", request, ShopInput(shop_id=shop_id))
+
+    @app.get("/v1/shops/{shop_id}/evidence/{evidence_id}/revocation", response_model=EvidenceRevocation)
+    async def evidence_revocation(shop_id: str, evidence_id: str, request: Request):
+        return await call("evidence_revocation_read", request,
+                          EvidenceReference(shop_id=shop_id, evidence_id=evidence_id))
+
+    @app.put("/v1/shops/{shop_id}/evidence/{evidence_id}/revocation", response_model=EvidenceRevocation)
+    async def evidence_revoke(shop_id: str, evidence_id: str, body: RevokeEvidence, request: Request):
+        if (body.shop_id, body.evidence_id) != (shop_id, evidence_id):
+            raise ValueError("body and path evidence identities must match")
+        return await call("evidence_revoke", request, body)
 
     @app.put("/v1/shops/{shop_id}/observations", response_model=ObservationSnapshot)
     async def observation_write(shop_id: str, body: ObservationsWrite, request: Request):

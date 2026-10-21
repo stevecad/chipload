@@ -275,4 +275,4 @@ class ProgramTests(unittest.TestCase):
         fresh = Repository(self.repository.path)
         self.assertEqual(fresh.admission.identity, self.repository.admission.identity)
         with fresh.connection() as db:
-            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 9)
+            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 10)

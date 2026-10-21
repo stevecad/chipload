@@ -68,6 +68,11 @@ The same evaluation method accepts `target_kind="offer"` for
 inspect `shop.page("offers")` and call `shop.evaluate(query)` using the published
 offer ID and its inputs. No additional MCP tool is needed.
 
+An agent with `evidence:revoke` can call `shop.revoke_evidence(id,
+expected_model_sha256=shop.evidence()["revision"], reason="...")`. Use
+`shop.evidence_revocation(id)` to inspect the durable private receipt. Revocation
+applies across source rollback; see [evidence revocation](API.md#evidence-revocation).
+
 Public discovery needs neither a login nor code execution:
 
 ```json
@@ -225,13 +230,15 @@ Existing bindings need explicit `code:run`, `code:read` and, if delegated,
 subject to those bindings; `shop:operate` still cannot author or publish source.
 A role alone gives no shop access. Rebuild worker and runtime images together.
 
-Stop old writers and back up before upgrade. Repository schema 9 adds durable
+Stop old writers and back up before upgrade. Repository schema 9 added durable
 name reservations and cleanup protocol markers after the schema-8 launch migration, preserving the
 paired admission store. Settle running jobs first: migration preserves their
 unknown creation outcomes as unresolved intent. New backups include code history and require no queued
 or running code jobs. Stop/cancel or let runs settle before taking a backup.
 The backup format accepts the current database schema; keep the matching older
 runtime for restoring pre-upgrade archives before migrating them.
+Schema 10 adds durable evidence revocations atomically. Preserve them with the
+paired databases and explicitly delegate `evidence:revoke` to the intended agent.
 
 These controls are a development baseline. Public edge exposure, stronger
 isolation and deployment load/security qualification remain unfinished.

@@ -11,6 +11,8 @@ from pydantic import Field
 from .access import Principal, require
 from .artifact import Artifact, Digest, canonical_json, digest
 from .evaluate import EvaluationRequest, evaluate
+from .evidence import RevocationSnapshot
+from .evidence import snapshot as evidence_snapshot
 from .lifecycle import Conflict, NotFound, ShopService, now
 from .model import Model, Observation, Timestamp
 from .project import unique_json
@@ -63,9 +65,9 @@ class PublishedService:
             observations=unique_json(data)["observations"],
         )
 
-    def _snapshot(self, shop: str) -> tuple[Artifact, ObservationSnapshot]:
+    def _snapshot(self, shop: str) -> tuple[Artifact, ObservationSnapshot, RevocationSnapshot]:
         with self.repository.connection() as db:
-            # Keep the publication and its changing observations in one read snapshot.
+            # Publication, observations and evidence revocations share one read snapshot.
             db.execute("BEGIN")
             row = db.execute(
                 "SELECT builds.* FROM shops JOIN builds ON shops.published_build=builds.id "
@@ -80,7 +82,8 @@ class PublishedService:
             observations = self._observations(
                 db.execute("SELECT * FROM observation_heads WHERE shop_id=?", (shop,)).fetchone()
             )
-            return build.report.artifact, observations
+            artifact = build.report.artifact
+            return artifact, observations, evidence_snapshot(db, artifact)
 
     def catalog(self, shop: str) -> dict:
         return self.service.catalog(shop)
@@ -146,7 +149,7 @@ class PublishedService:
     def variables(self, shop: str, query: VariableQuery, *, principal=None, private=False) -> dict:
         if private:
             require(principal, shop, "evaluation:read")
-        artifact, _ = self._snapshot(shop)
+        artifact, _, _ = self._snapshot(shop)
         try:
             return query_variables(
                 artifact,
@@ -163,14 +166,16 @@ class PublishedService:
     ) -> dict:
         if private:
             require(principal, shop, "evaluation:read")
-        artifact, observations = self._snapshot(shop)
+        artifact, observations, revocations = self._snapshot(shop)
         at = self.clock()
         if private:
             try:
-                result = evaluate(artifact, query, at=at, observations=observations.observations)
+                result = evaluate(artifact, query, at=at, observations=observations.observations,
+                                  revoked_evidence=revocations.ids)
             except KeyError:
                 raise NotFound("evaluation target not found") from None
-            return {"observation_revision": observations.revision, **result.model_dump(mode="json")}
+            return {"observation_revision": observations.revision,
+                    "revocation_revision": revocations.revision, **result.model_dump(mode="json")}
         try:
             catalog = self.repository.public_catalog(artifact)
         except KeyError:
@@ -217,7 +222,8 @@ class PublishedService:
                     }
                 ],
             }
-        result = evaluate(artifact, query, at=at, observations=observations.observations)
+        result = evaluate(artifact, query, at=at, observations=observations.observations,
+                          revoked_evidence=revocations.ids)
         codes = sorted({reason.code for reason in result.reasons})
         response = {
             **common,
@@ -251,15 +257,18 @@ class PublishedService:
 
     def read_evidence(self, principal: Principal, shop: str) -> dict:
         require(principal, shop, "evidence:read")
-        artifact, _ = self._snapshot(shop)
+        artifact, _, revocations = self._snapshot(shop)
         return {
             "revision": artifact.model_sha256,
             "evidence": [record.model_dump(mode="json") for record in artifact.shop.evidence],
+            "revocation_revision": revocations.revision,
+            "revocations": [record.model_dump(mode="json", include={"evidence_id", "revoked_at"})
+                            for record in revocations.records],
         }
 
     def read_observations(self, principal: Principal, shop: str) -> ObservationSnapshot:
         require(principal, shop, "observations:read")
-        _, observations = self._snapshot(shop)
+        _, observations, _ = self._snapshot(shop)
         return observations
 
     def write_observations(

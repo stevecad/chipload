@@ -141,6 +141,8 @@ MCP programs compose these calls through the [Python client](PYTHON_API.md).
 | `PUT /v1/shops/{shop}/publication` | `shop.publish / rollback / withdraw` |
 | `GET /v1/shops/{shop}/audit?after=0&limit=100` | `shop.audit` |
 | `GET /v1/shops/{shop}/evidence` | `shop.evidence` |
+| `GET /v1/shops/{shop}/evidence/{evidence}/revocation` | `shop.evidence_revocation` |
+| `PUT /v1/shops/{shop}/evidence/{evidence}/revocation` | `shop.revoke_evidence` |
 | `GET /v1/shops/{shop}/observations` | `shop.observations` |
 | `PUT /v1/shops/{shop}/observations` | `shop.set_observations` |
 | `POST /v1/shops/{shop}/private/evaluate` | `shop.evaluate(private=True)` |
@@ -174,7 +176,49 @@ observation's source, timestamp, and freshness are preserved; future, stale, or
 simulated observations do not silently establish current physical support.
 Required permissions are `observations:write`, `observations:read`,
 `evidence:read`, and `evaluation:read` for the corresponding private operations.
+Evidence revocation requires the separate `evidence:revoke` action and the
+`shop:admin` role ceiling. Existing explicit bindings gain no new action.
 Authoring permissions are listed in [AUTHORING.md](AUTHORING.md).
+
+## Evidence revocation
+
+The shop's agent can withdraw an evidence claim without rebuilding the shop:
+
+```python
+proofs = shop.evidence()
+receipt = shop.revoke_evidence(
+    "thermal-declaration",
+    expected_model_sha256=proofs["revision"],
+    reason="Qualification withdrawn after review",
+)
+```
+
+The REST `PUT` body includes `shop_id`, `evidence_id`,
+`expected_model_sha256` and `reason`. Path and body identities must match.
+The service checks the currently published model, records the actor and time,
+and writes an `evidence.revoked` audit event in the same transaction. A stale
+model returns 409; an absent published evidence ID returns 404. The reason is
+1–1,000 characters. Each shop can retain up to 10,000 revocations; exhaustion
+returns `quota_exceeded` and never discards old revocations.
+
+The evidence ID stays revoked within this repository, across source revisions,
+edited declarations, publication withdrawal, and rollback. There is no
+unrevocation operation. New qualification uses a new evidence ID. Retrying
+the same actor, model and reason returns the original receipt, even after
+withdrawal; a changed request for that ID returns 409. The authenticated `GET`
+returns that receipt without requiring a current publication.
+
+`shop.evidence()` includes `revocations` summaries for IDs in the published
+model and a private `revocation_revision`. Use `shop.evidence_revocation(id)`
+for the full private receipt. Private evaluation also identifies its revocation
+snapshot. Public queries disclose only the usual safe evaluation results;
+they expose neither revocation IDs, notes, actors nor snapshot hashes. Catalog
+cache identities remain unchanged because evaluation is always current.
+
+Operation admission and the dispatch check exclude revoked evidence. Work that
+has already passed the dispatch check is not automatically cancelled or undone.
+Revocations present in a recovery snapshot are preserved; restoring an older
+snapshot requires reconciling later revocations before reopening service.
 
 ## Keycloak identity and grants
 

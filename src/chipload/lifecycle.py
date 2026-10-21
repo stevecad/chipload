@@ -20,6 +20,7 @@ from .admission import AdmissionStore, PolicyConflict
 from .artifact import Artifact, Digest, canonical_json, digest, read_artifact
 from .cache import DEFAULT_CACHE_BYTES, DataCache
 from .discovery import public_catalog
+from .evidence import EVIDENCE_SCHEMA
 from .execution_model import EXECUTION_SCHEMA
 from .launch_reservations import RESERVATION_SCHEMA
 from .launches import LAUNCH_SCHEMA, LaunchGuard, LaunchUncertain
@@ -124,9 +125,9 @@ class Repository:
         private_database(self.path, create=True)
         with self.connection() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}:
+            if version not in {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}:
                 raise ValueError("unsupported repository schema")
-            if version in {5, 6, 7, 8, 9}:
+            if version in {5, 6, 7, 8, 9, 10}:
                 reference = db.execute("SELECT * FROM admission_store WHERE id=1").fetchone()
                 if reference is None:
                     raise IntegrityError("missing admission store reference")
@@ -144,14 +145,16 @@ class Repository:
                         self._initialize_launches()
                     if version < 9:
                         self._initialize_reservations()
+                    if version < 10:
+                        self._initialize_evidence()
                     return
             db.execute("PRAGMA journal_mode=WAL")
             db.execute("BEGIN IMMEDIATE")
             try:
                 version = db.execute("PRAGMA user_version").fetchone()[0]
-                if version not in {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}:
+                if version not in {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}:
                     raise ValueError("unsupported repository schema")
-                if version in {5, 6, 7, 8, 9}:
+                if version in {5, 6, 7, 8, 9, 10}:
                     db.execute("COMMIT")
                     self._initialize_admission()
                     return
@@ -232,6 +235,15 @@ class Repository:
         self._initialize_programs()
         self._initialize_launches()
         self._initialize_reservations()
+        self._initialize_evidence()
+
+    def _initialize_evidence(self):
+        with self.transaction() as db:
+            if db.execute("PRAGMA user_version").fetchone()[0] == 9:
+                for statement in EVIDENCE_SCHEMA.split(";"):
+                    if statement.strip():
+                        db.execute(statement)
+                db.execute("PRAGMA user_version=10")
 
     def _initialize_reservations(self):
         with self.transaction() as db:

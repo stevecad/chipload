@@ -68,7 +68,7 @@ class AdmissionStoreTests(unittest.TestCase):
         with self.assertRaises(RateLimited):
             limiter.identity("owner")
         with repository.connection() as db:
-            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 9)
+            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 10)
             self.assertEqual(db.execute("SELECT state FROM admission_store").fetchone()[0], "ready")
             tables = {r[0] for r in db.execute("SELECT name FROM sqlite_schema WHERE type='table'")}
             self.assertTrue(tables.isdisjoint({"request_buckets", "quota_policy", "quota_changes"}))

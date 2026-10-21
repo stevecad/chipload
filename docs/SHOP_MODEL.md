@@ -280,8 +280,26 @@ an existing evidence record. The evaluator requires evidence that covers the
 request and all modeled requirement fields and resources.
 
 These are assertions recorded by the shop; the SDK cannot physically verify a
-declaration, inspection method, or certificate. Evidence lifecycle, signatures,
-revocation, independent verification, and finer scopes remain design work.
+declaration, inspection method, or certificate. Signatures, independent
+verification, external revocation feeds, and finer scopes remain design work.
+
+An authorized shop agent can immediately revoke an evidence ID through
+`shop.revoke_evidence(...)`; see [the API contract](API.md#evidence-revocation).
+Revocations are durable shop records. The evaluator excludes those IDs from
+every capability, workflow and offer, including after source rollback or
+republication. Other independently applicable evidence can still establish
+support. Without it, evidence contributes an unknown outcome; an independently
+rejecting constraint can still make the overall result unsupported. Revoking
+evidence does not establish that the underlying process is physically impossible.
+
+An evidence ID stays revoked across all revisions, even if its declaration is
+edited. A newly established qualification needs a new evidence ID and published
+source. The shop still owns its declarations; revocation is not independent
+certification. Local artifact evaluation and build acceptance cases have no
+live database context; direct evaluator users supply `revoked_evidence` when
+reproducing a recorded snapshot. Hosted queries and operation checks always use
+the repository's current revocations. Publication, observations and revocations
+are selected in one database read snapshot.
 
 Simulated evidence is usable only when a request explicitly permits simulation,
 and the result identifies it as simulated.
