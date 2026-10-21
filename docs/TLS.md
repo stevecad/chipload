@@ -2,13 +2,15 @@
 
 The TLS stack runs a Caddy gateway, production-mode Keycloak, PostgreSQL,
 Chipload API, and build broker on one Linux Docker host. REST and MCP share the
-same HTTPS endpoint and authorization policy. Only the gateway publishes ports;
-both its client and administration listeners bind to host loopback.
+same HTTPS endpoint and authorization policy. Only the gateway publishes ports.
+Client traffic defaults to host loopback and can use an explicitly configured
+IPv4 address with supplied deployment certificates. Administration always binds
+to `127.0.0.1`.
 
-This is a tested deployment building block. Public routing, production OpenBao
-delivery, operator-account lifecycle, off-host disaster recovery, deployment load testing,
-and stronger worker-host isolation remain deployment gates. Starting this stack
-does not expose a public service.
+This is a tested deployment building block. Site DNS/firewall routing, automatic
+certificate renewal, production OpenBao delivery, operator-account lifecycle,
+off-host disaster recovery, deployment load testing and stronger worker-host
+isolation remain deployment gates. The default configuration stays local.
 
 ## Start locally
 
@@ -30,7 +32,7 @@ The helper generates private state under `.local/tls/`, a local certificate
 authority, certificates for `chipload.localhost` and `identity.localhost`, a
 Keycloak service account, and an explicit Chipload grant for the selected shop.
 It verifies TLS chains, hostnames, and the advertised issuer after startup.
-Readiness connects through host loopback with the configured SNI/Host, so it
+Readiness connects to the configured local listener with the configured SNI/Host, so it
 does not depend on changing DNS. Client commands still need those hostnames to
 resolve to loopback; many local resolvers already handle `.localhost`.
 
@@ -125,7 +127,7 @@ uv run --extra server python scripts/tls-stack --state .local/site up
 The helper copies these inputs into private state and checks key/certificate
 compatibility. Startup verifies the actual chain and hostname at each HTTPS
 listener. The supplied-certificate profile rejects `.localhost` names; the
-local profile requires them. Both profiles retain loopback host bindings.
+local profile requires them. Both profiles default to loopback host bindings.
 
 Keycloak's issuer and the token audience use the configured external HTTPS URLs.
 The API fetches keys from `https://IDENTITY_HOST:8443/.../certs` through the
@@ -133,11 +135,58 @@ internal gateway network, where port 8443 is fixed. Docker DNS maps that hostnam
 to the gateway. The different port does not change the issuer or disable TLS
 hostname checks. No JWT-supplied URL or environment proxy can redirect this fetch.
 
+## Configure a public client listener
+
+On a deployment with supplied certificates, add `--listen-address ADDRESS` to
+`init`. A specific IPv4 address binds only that host address; `0.0.0.0` binds all
+host IPv4 addresses. The local-certificate profile rejects non-loopback binding.
+Existing deployment state without this setting continues to use `127.0.0.1`.
+Helper commands read this setting from deployment JSON, overriding any inherited
+environment value.
+
+```sh
+uv run --extra server python scripts/tls-stack --state .local/public-site init \
+  --name chipload-public-site --shop example \
+  --api-host shop.example.com --identity-host identity.example.com \
+  --listen-address 0.0.0.0 --port 443 --admin-port 8444 \
+  --certificates /secure/chipload-certificates \
+  --ca-bundle /secure/chipload-ca-bundle.pem
+uv run --extra server python scripts/tls-stack --state .local/public-site up
+```
+
+This configuration exposes the client port when started. Point both DNS names
+at the deployment and permit the client TCP port through the site's network
+controls. Keep the administration port private; it is still published only on
+loopback. API, broker, database and Keycloak service ports are not published.
+The helpers reach a specific bind address directly, or loopback for a wildcard
+bind, while verifying the configured TLS name. Administrative requests always
+connect through loopback.
+
+Starting a non-loopback listener requires Docker Engine 28 or later. Verify the
+actual host/network firewall path.
+Docker installs port-publishing rules, and older releases have different
+loopback-isolation behavior; see [Docker port publishing](https://docs.docker.com/engine/network/port-publishing/).
+The tested path uses direct IPv4 clients. IPv6 listener bindings, upstream HTTP
+proxies/CDNs and Docker direct-routing configurations need a separate verified
+trust design. Do not enable forwarded-header trust for an unverified upstream.
+
+The external-client drill runs on a separate Docker network without source NAT
+and binds the gateway to a test bridge's host address. It verifies REST/MCP
+discovery, verified TLS, private-source refusal, inaccessible administration and
+direct API ports, and distinct client request budgets despite forged forwarding
+headers. Clients behind a shared NAT retain a shared peer budget. This establishes
+routing and authorization behavior on the test host; it does not establish WAN
+reachability, certificate renewal or sustained-load capacity for another deployment.
+
+```sh
+CHIPLOAD_TLS_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_edge_live.py' -v
+```
+
 ## Trust and network boundaries
 
 ```mermaid
 flowchart LR
-    client[REST or MCP client] -->|HTTPS via host loopback| gateway[Caddy gateway]
+    client[REST or MCP client] -->|HTTPS via configured host listener| gateway[Caddy gateway]
     gateway -->|HTTP on private network| api[Chipload API]
     gateway -->|Verified HTTPS| identity[Keycloak]
     api -->|Verified HTTPS for JWKS| gateway

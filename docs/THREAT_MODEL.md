@@ -1,7 +1,8 @@
 # Threat model
 
 This describes the implemented single-host deployment and its remaining security
-work. The supplied listeners bind to host loopback; public internet qualification
+work. Listeners default to host loopback; explicit client IPv4 binding is available
+with supplied deployment certificates, while administration stays local. Public internet qualification
 is an open milestone in [the roadmap](../ROADMAP.md). The model assumes the
 operator controls the host, Docker daemon, configuration and image build process.
 A compromised operator or host can read and change shop data and credentials.
@@ -25,7 +26,7 @@ may still supply malicious or accidentally expensive source and data.
 
 | Component | Authority and boundary |
 | --- | --- |
-| TLS gateway | Terminates verified HTTPS; replaces the client-address header; forwards to the private API listener. Host ports remain loopback. |
+| TLS gateway | Terminates verified HTTPS; replaces the client-address header; forwards to the private API listener. Client binding is explicitly configured and defaults to loopback. Administration remains on loopback. |
 | API supervisor | Verifies identity, applies ingress budgets and parses bounded requests. It can access its databases and read-only settings, and contact JWKS. It has no Docker socket or equipment credential. |
 | Service workers | Trusted Chipload code with the API container's database, filesystem and network authority. CPU, address-space, wall-time and IPC limits contain resource failures. They do not execute shop Python. |
 | Build/Python broker | Trusted infrastructure with database access, read-only grant settings and the Docker socket. It has no IP network. Docker daemon access grants host authority; container restrictions do not remove that authority. |
@@ -51,7 +52,7 @@ a filesystem or network namespace inside the API container.
 | Request floods or expensive data operations | Shared peer/identity/shop quotas, bounded admission state, deterministic work budgets, two supervised API service workers and container limits | `test_request_limits*.py`, `test_quotas.py`, `test_service_pool.py`, `benchmark-service` |
 | Replayed mutations, lost responses or ambiguous external effects | Expected revisions/generations, durable request keys and call journals, claim fencing, no automatic code/service replay, retained uncertain operation locks, receiver reconciliation | `test_lifecycle.py`, `test_programs.py`, `test_service_pool.py`, `test_execution*.py`, adapter fault tests |
 | Outbound-request abuse or credential leakage | Untrusted containers have no network; operator-owned adapter bindings; pinned HTTPS trust/receiver path; bounded network work; no redirects, proxy inheritance or automatic dispatch retries; scoped AppRole/KV access | `test_remote_adapter.py`, real OpenBao and TLS receiver denials in `test_remote_adapter_live.py`, contained executor tests |
-| Spoofed client addresses or failed identity trust | Exact trusted gateway address, gateway-replaced single client header, disabled Uvicorn proxy rewriting, CA/hostname verification and bounded JWKS caching | `test_proxy.py`, `test_auth.py`, `test_tls_live.py` |
+| Spoofed client addresses or failed identity trust | Exact trusted gateway address, gateway-replaced single client header, disabled Uvicorn proxy rewriting, CA/hostname verification and bounded JWKS caching | `test_proxy.py`, `test_auth.py`, `test_tls_live.py`, distinct real network clients and private-port denials in `test_edge_live.py` |
 | Recovery resetting authority, history or spent allowances | Paired database backups, encrypted authenticated archives, preserved identity state, fresh restore destinations, durable incomplete/rotation markers and operator locks; separate offline OpenBao recovery preserves quorum, cluster identity and policies | `test_recovery*.py`, `test_credentials*.py`, `test_secrets_recovery*.py` |
 
 These tests establish behavior for their stated fixtures and failure cases. They

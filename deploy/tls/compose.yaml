@@ -43,7 +43,7 @@ services:
     cpus: 1
     pids_limit: 64
     ports:
-      - 127.0.0.1:${CHIPLOAD_TLS_PORT:?}:8443
+      - ${CHIPLOAD_TLS_LISTEN_ADDRESS:?}:${CHIPLOAD_TLS_PORT:?}:8443
       - 127.0.0.1:${CHIPLOAD_ADMIN_PORT:?}:8444
     environment:
       CHIPLOAD_API_HOST: ${CHIPLOAD_API_HOST:?}

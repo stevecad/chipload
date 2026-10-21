@@ -29,7 +29,7 @@ class CredentialHTTPTests(unittest.TestCase):
                 def log_message(self, *args):
                     pass
 
-            server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+            server = ThreadingHTTPServer(("127.0.0.2", 0), Handler)
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
             context.load_cert_chain(
                 state / "certificates/identity.crt", state / "certificates/identity.key"
@@ -37,7 +37,12 @@ class CredentialHTTPTests(unittest.TestCase):
             server.socket = context.wrap_socket(server.socket, server_side=True)
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
-            values = {"identity_host": "identity.localhost", "port": server.server_port}
+            values = {
+                "profile": "local",
+                "listen_address": "127.0.0.2",
+                "identity_host": "identity.localhost",
+                "port": server.server_port,
+            }
             try:
                 with patch.dict(
                     "os.environ",

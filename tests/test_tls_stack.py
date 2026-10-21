@@ -71,6 +71,38 @@ class TLSStackTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 stack.choose_subnet("10.240.1.0/28")
 
+    def test_client_listener_is_explicit_and_cannot_expose_the_local_certificate_profile(self):
+        self.assertEqual(stack.connect_address(self.values), "127.0.0.1")
+        for address in ("0.0.0.0", "192.0.2.10", "::", "localhost", "127.0.0.1:443", None):
+            with self.subTest(address=address), self.assertRaises(ValueError):
+                stack.configuration({**self.values, "listen_address": address})
+        supplied = {
+            **self.values,
+            "profile": "certificates",
+            "api_host": "shop.example.test",
+            "identity_host": "identity.example.test",
+        }
+        for address, connection in (("0.0.0.0", "127.0.0.1"), ("192.0.2.10", "192.0.2.10")):
+            configured = stack.configuration({**supplied, "listen_address": address})
+            self.assertEqual(stack.listen_address(configured), address)
+            self.assertEqual(stack.connect_address(configured), connection)
+            self.assertEqual(stack.connect_address(configured, admin=True), "127.0.0.1")
+        for address in ("239.0.0.1", "169.254.1.2", "255.255.255.255", "::1"):
+            with self.subTest(address=address), self.assertRaises(ValueError):
+                stack.configuration({**supplied, "listen_address": address})
+
+    def test_public_listener_requires_engine_with_current_loopback_port_isolation(self):
+        with patch.object(stack.subprocess, "check_output") as query:
+            stack.check_public_engine(self.values)
+            query.assert_not_called()
+        public = {**self.values, "profile": "certificates", "listen_address": "0.0.0.0"}
+        for version in ("27.5.1", "unknown", "true"):
+            with patch.object(stack.subprocess, "check_output", return_value=version):
+                with self.assertRaisesRegex(ValueError, "28 or later"):
+                    stack.check_public_engine(public)
+        with patch.object(stack.subprocess, "check_output", return_value="29.8.1\n"):
+            stack.check_public_engine(public)
+
     def test_initialization_keeps_credentials_private_and_never_replaces_existing_state(self):
         args = SimpleNamespace(
             **{

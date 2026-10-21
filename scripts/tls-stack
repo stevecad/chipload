@@ -74,14 +74,42 @@ def origin(host, port):
     return f"https://{host}" + ("" if port == 443 else f":{port}")
 
 
-def probe(host, port, path, ca_file):
+def listen_address(values):
+    value = values.get("listen_address", "127.0.0.1")
+    if not isinstance(value, str):
+        raise ValueError("client listener requires a literal IPv4 address")
+    address = ipaddress.IPv4Address(value)
+    if address.is_multicast or address.is_link_local or address.is_reserved:
+        raise ValueError("client listener requires a unicast or wildcard IPv4 address")
+    if values["profile"] == "local" and not address.is_loopback:
+        raise ValueError("a non-loopback listener requires supplied deployment certificates")
+    return str(address)
+
+
+def connect_address(values, *, admin=False):
+    address = listen_address(values)
+    return "127.0.0.1" if admin or address == "0.0.0.0" else address
+
+
+def check_public_engine(values):
+    if ipaddress.IPv4Address(listen_address(values)).is_loopback:
+        return
+    version = subprocess.check_output(
+        ["docker", "version", "--format", "{{.Server.Version}}"], text=True, timeout=15
+    ).strip()
+    match = re.fullmatch(r"(\d+)\.\d+\.\d+(?:[-+][A-Za-z0-9.+-]+)?", version)
+    if match is None or int(match[1]) < 28:
+        raise ValueError("a non-loopback listener requires Docker Engine 28 or later")
+
+
+def probe(host, port, path, ca_file, *, address="127.0.0.1"):
     """Verify the local listener using the configured TLS name and Host header.
 
     This does not require changing host DNS before a deployment's public routing
     is configured, and does not disable certificate or hostname verification.
     """
     context = ssl.create_default_context(cafile=ca_file)
-    with socket.create_connection(("127.0.0.1", port), timeout=10) as connection:
+    with socket.create_connection((address, port), timeout=10) as connection:
         with context.wrap_socket(connection, server_hostname=host) as secured:
             authority = origin(host, port).removeprefix("https://")
             secured.sendall(
@@ -107,6 +135,7 @@ def write(path, content, mode=0o600):
 def configuration(values):
     if values.get("version") != 1 or values.get("profile") not in {"local", "certificates"}:
         raise ValueError("unsupported TLS deployment configuration")
+    listen_address(values)
     if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,62}", values["name"]):
         raise ValueError("invalid Compose project name")
     for name in ("api_host", "identity_host"):
@@ -267,6 +296,7 @@ def initialize(args):
             "identity_host": args.identity_host,
             "port": args.port,
             "admin_port": args.admin_port,
+            "listen_address": getattr(args, "listen_address", "127.0.0.1"),
             "subnet": choose_subnet(args.subnet),
             "shop_id": args.shop,
         }
@@ -434,6 +464,7 @@ def deployment(state, *, check=False):
     images = {role: runtime.image(role) for role in ("api", "broker", "worker")}
     tls_images = {role: runtime.image(role) for role in ("gateway", "keycloak")}
     if check:
+        check_public_engine(values)
         runtime.check_images(images)
         check_tls_images(tls_images)
         runtime.check_data(state / "data")
@@ -467,6 +498,7 @@ def deployment(state, *, check=False):
         "CHIPLOAD_TLS_STATE": str(state),
         "CHIPLOAD_TLS_PORT": str(values["port"]),
         "CHIPLOAD_ADMIN_PORT": str(values["admin_port"]),
+        "CHIPLOAD_TLS_LISTEN_ADDRESS": listen_address(values),
         "CHIPLOAD_API_HOST": values["api_host"],
         "CHIPLOAD_IDENTITY_HOST": values["identity_host"],
         "CHIPLOAD_IDENTITY_URL": origin(values["identity_host"], values["port"]),
@@ -502,6 +534,11 @@ def main():
     initialize_parser.add_argument("--identity-host", default="identity.localhost")
     initialize_parser.add_argument("--port", type=int, default=8443)
     initialize_parser.add_argument("--admin-port", type=int, default=8444)
+    initialize_parser.add_argument(
+        "--listen-address",
+        default="127.0.0.1",
+        help="client IPv4 bind address; non-loopback requires supplied certificates; administration stays on 127.0.0.1",
+    )
     initialize_parser.add_argument("--name", default="chipload-tls")
     initialize_parser.add_argument("--shop", default="example")
     initialize_parser.add_argument("--subnet")
@@ -545,12 +582,14 @@ def main():
                 base = origin(values["api_host"], values["port"])
                 identity = origin(values["identity_host"], values["port"])
                 ca_file = args.state / "identity-ca.pem"
-                probe(values["api_host"], values["port"], "/healthz", ca_file)
+                address = connect_address(values)
+                probe(values["api_host"], values["port"], "/healthz", ca_file, address=address)
                 discovered = probe(
                     values["identity_host"],
                     values["port"],
                     "/realms/chipload/.well-known/openid-configuration",
                     ca_file,
+                    address=address,
                 )
                 if discovered["issuer"] != identity + "/realms/chipload":
                     raise ValueError("Keycloak returned an unexpected issuer")

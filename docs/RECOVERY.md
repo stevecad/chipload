@@ -6,6 +6,12 @@ TLS certificates and keys, and deployment secrets. It can restore that set into
 a fresh state directory and PostgreSQL volume. Application services stay stopped
 until the operator starts the restored deployment.
 
+The recovery set preserves the configured client listener address. Starting a
+restored deployment with a non-loopback address exposes its client port again;
+confirm the destination host's address, DNS and firewall before startup.
+Administration remains bound to loopback. Older state without a listener setting
+defaults to loopback.
+
 The latest credential-rotation and signing-key receipts are included when present.
 The identity database preserves active and retained verification keys; a retired
 provider stays deleted after restoration from a later backup. Backups reject

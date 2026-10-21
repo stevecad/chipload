@@ -272,33 +272,63 @@ else:
                                         "request_key": key,
                                     },
                                 )
-                                restarted = False
+                                if restart_broker:
+                                    worker = "chipload-build-" + job["id"]
+                                    for _ in range(100):
+                                        ready = await asyncio.to_thread(
+                                            subprocess.run,
+                                            [
+                                                "docker",
+                                                "exec",
+                                                worker,
+                                                "python",
+                                                "-c",
+                                                "from pathlib import Path; assert Path('/tmp/runtime-test-ready').exists()",
+                                            ],
+                                            capture_output=True,
+                                            timeout=5,
+                                        )
+                                        if ready.returncode == 0:
+                                            break
+                                        await asyncio.sleep(0.1)
+                                    else:
+                                        self.fail("worker did not reach the restart gate")
+                                    # Deliver shutdown while the source worker is
+                                    # blocked, then allow it to finish gracefully.
+                                    await run("docker", "kill", "--signal=TERM", broker)
+                                    await run(
+                                        "docker",
+                                        "exec",
+                                        worker,
+                                        "python",
+                                        "-c",
+                                        "from pathlib import Path; Path('/tmp/runtime-test-release').touch()",
+                                    )
+                                    await run("docker", "restart", "--time", "30", broker)
                                 for _ in range(150):
                                     state = await call(
                                         "build_inspect",
                                         {"shop_id": "thermal-example", "build_id": job["id"]},
                                     )
                                     if state["state"] in {"failed", "succeeded"}:
-                                        if restart_broker:
-                                            self.assertTrue(
-                                                restarted,
-                                                "build finished before restart was exercised",
-                                            )
                                         return state
-                                    if (
-                                        restart_broker
-                                        and not restarted
-                                        and state["state"] == "running"
-                                    ):
-                                        await run("docker", "restart", broker)
-                                        restarted = True
                                     await asyncio.sleep(0.2)
                                 self.fail("broker did not complete the bounded build")
 
                             valid = project().model_dump(mode="json")
-                            # Keep the repaired build active long enough to exercise
-                            # graceful broker shutdown while its worker is running.
-                            valid["files"][0]["content"] += "\nimport time\ntime.sleep(3)\n"
+                            # Synchronize shutdown with actual source execution;
+                            # MCP program/container overhead must not race a sleep.
+                            gate = """
+from pathlib import Path
+import time
+Path('/tmp/runtime-test-ready').touch()
+deadline = time.monotonic() + 20
+while not Path('/tmp/runtime-test-release').exists():
+    if time.monotonic() >= deadline:
+        raise TimeoutError('restart test gate was not released')
+    time.sleep(0.05)
+"""
+                            valid["files"][0]["content"] += gate
                             broken = {
                                 **valid,
                                 "files": [{"path": "thermal.py", "content": "def broken(:\n"}],
@@ -339,8 +369,10 @@ else:
                             )
                             self.assertEqual(denied.status_code, 403)
 
-                            valid["files"][0]["content"] = valid["files"][0]["content"].replace(
-                                "Thermal Processing Example", "Updated in containers"
+                            valid["files"][0]["content"] = (
+                                valid["files"][0]["content"]
+                                .removesuffix(gate)
+                                .replace("Thermal Processing Example", "Updated in containers")
                             )
                             edited = await call(
                                 "source_save",
