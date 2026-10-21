@@ -51,12 +51,14 @@ from .operations import (
     OperationInput,
     Operations,
     PageInput,
+    PeerQueryInput,
     PublicationChange,
     ShopInput,
     SourceRead,
     SourceWrite,
     VariablesInput,
 )
+from .peer_model import MAX_PEER_REQUEST_BYTES, PeerDescriptor, PeerRequest, PeerResponse
 from .process_operations import ProcessOperations
 from .program_model import ReadRun, RunPython, RunRecord
 from .project import unique_json
@@ -483,6 +485,30 @@ def create_app(
     @app.get("/healthz")
     def health():
         return {"status": "ok"}
+
+    @app.get("/.well-known/chipload", response_model=PeerDescriptor)
+    def peer_descriptor():
+        if settings.instance_id is None:
+            raise NotFound("instance federation is not enabled")
+        return JSONResponse(PeerDescriptor(instance_id=settings.instance_id).model_dump(mode="json"),
+                            headers={"Cache-Control": "no-store"})
+
+    @app.post("/v1/peer/query", response_model=PeerResponse)
+    async def peer_query(body: PeerRequest, request: Request):
+        from datetime import datetime, timezone
+
+        if settings.instance_id is None or body.instance_id != settings.instance_id:
+            raise NotFound("instance not found")
+        if len(canonical_json(body)) > MAX_PEER_REQUEST_BYTES:
+            raise ValueError("peer request exceeds its byte limit")
+        remaining = (body.deadline - datetime.now(timezone.utc)).total_seconds()
+        if not 0 < remaining <= 30:
+            raise ValueError("peer request requires a future deadline within 30 seconds")
+        result = await call("peer_query", request, PeerQueryInput(query=body.query), as_response=False)
+        if datetime.now(timezone.utc) >= body.deadline:
+            return JSONResponse({"error": {"code": "peer_deadline", "message": "Peer query deadline expired."}}, 408)
+        envelope = PeerResponse(instance_id=settings.instance_id, request_id=body.request_id, result=result)
+        return JSONResponse(envelope.model_dump(mode="json"), headers={"Cache-Control": "no-store"})
 
     @app.get("/.well-known/oauth-protected-resource")
     @app.get("/.well-known/oauth-protected-resource/mcp")

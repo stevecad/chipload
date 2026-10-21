@@ -4,6 +4,12 @@ Chipload serves REST and Streamable HTTP MCP from one application. Both call the
 same operation contracts, application services, permission checks, and published
 revisions. Public discovery works without authentication or an agent.
 
+An operator-configured `instance_id` also enables the
+[direct instance protocol](FEDERATION.md#implemented-direct-instance-protocol)
+at `/.well-known/chipload` and `/v1/peer/query`, with the same public query results
+and explicit instance/request/publication guards. Existing configurations keep
+those routes disabled.
+
 The server defaults to a loopback listener and does not import shop source or
 invoke Docker. A separate broker processes isolated build and Python jobs. Both can run in
 [separate application containers](RUNTIME.md) with process and filesystem limits.

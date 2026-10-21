@@ -16,6 +16,7 @@ from .execution_model import ExecutionRecord, ExecutionRequest, OperationInspect
 from .lifecycle import BuildRecord, Publication, ShopService, SourceRevision
 from .listings import ListingQuery
 from .model import Id, Model, Observation
+from .peer_model import PeerQuery, PeerResult
 from .program_model import ReadRun, RunPython, RunRecord
 from .programs import ProgramService
 from .project import SourceProject
@@ -28,6 +29,10 @@ from .responses import CatalogView, ItemView, ListingEvaluation, PageView, Publi
 
 class Empty(Model):
     pass
+
+
+class PeerQueryInput(Model):
+    query: PeerQuery
 
 
 class ShopInput(Model):
@@ -201,6 +206,10 @@ class Operations:
                 "Read a shop's explicitly published catalog.",
                 lambda who, r: p.catalog(r.shop_id),
             ),
+            "peer_query": Operation(
+                PeerQueryInput, "Query one current public publication for an instance peer.",
+                lambda who, r: p.peer_query(r.query),
+            ),
             "shop_list": Operation(
                 PageInput,
                 "Page through published shop entities, with optional text filtering.",
@@ -336,6 +345,7 @@ class Operations:
             "operation_execution_cancel": ExecutionRecord,
             "identity_read": Principal,
             "shop_catalog": CatalogView,
+            "peer_query": PeerResult,
             "shop_list": PageView,
             "shop_inspect": ItemView,
             "shop_evaluate": PublicEvaluation,

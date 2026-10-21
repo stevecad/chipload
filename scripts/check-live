@@ -16,7 +16,7 @@ PROFILES = {
     ),
     "tls": (
         ("TLS", "OPERATION"),
-        ("tls", "edge", "execution"),
+        ("tls", "edge", "execution", "peer_tls"),
     ),
     "recovery": (
         ("RECOVERY", "CREDENTIAL"),

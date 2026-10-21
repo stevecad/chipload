@@ -16,6 +16,7 @@ from .limits import (
 )
 from .listings import ListingQuery
 from .model import UNITS, Shop
+from .peer_model import PeerRequest, PeerResponse
 from .project import MAX_ASSET_BYTES, MAX_PROJECT_BYTES, SourceProject
 from .query import VariableQuery
 
@@ -34,6 +35,8 @@ def sdk_reference() -> dict:
             "source_project": SourceProject.model_json_schema(),
             "evaluation_request": EvaluationRequest.model_json_schema(),
             "listing_query": ListingQuery.model_json_schema(),
+            "peer_request": PeerRequest.model_json_schema(),
+            "peer_response": PeerResponse.model_json_schema(),
             "assessment_request": AssessShop.model_json_schema(),
             "variable_query": VariableQuery.model_json_schema(),
             "execution_request": ExecutionRequest.model_json_schema(),

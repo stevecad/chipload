@@ -40,9 +40,18 @@ public mappings to hidden catalog items and private target/site references.
 Listing queries require a public revision and use the same publication,
 observations, evidence and private-condition policy as ordinary evaluation.
 Unknown bindings are not ignored. `test_listings.py`, `test_listing_transports.py`
-and `test_listing_worker_live.py` exercise these boundaries. The network directory
-and relay in [the federation design](FEDERATION.md) remain unimplemented at this
-checkpoint; listing support grants no new outbound network authority.
+and `test_listing_worker_live.py` exercise these boundaries.
+
+An operator-configured instance ID enables typed public peer queries over the
+existing API boundary. Replies identify the instance/request and publication
+generation/revision. Trusted direct clients use HTTPS processes with CPU,
+memory, byte and wall limits covering DNS/TLS/reads. All resolved addresses are
+validated and pinned while the original TLS hostname is verified. Private-origin
+exceptions belong to operator policy. `test_peers.py` and
+`test_federation_wire.py` exercise actual TLS, deadlines, generation fences and
+hostile replies. Serving this route adds no outbound peer authority to the API.
+The directory, connector and relay in [the federation design](FEDERATION.md)
+remain to be implemented.
 
 ## Boundaries
 

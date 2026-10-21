@@ -36,14 +36,20 @@ The next phase is [communication between instances](docs/FEDERATION.md): direct
 shop-to-shop queries, an optional cloud discovery directory and outbound relay,
 and supplier search by offering, material, location and business conditions.
 That design has its own implementation sequence and acceptance criteria;
-federation services are not yet implemented.
+federation implementation is in progress.
 
 The first implementation slice adds public supplier listings with explicit
 indexing opt-in, versioned semantic input mappings and disclosed site coordinates.
 REST, Python and the existing MCP discovery tool evaluate those listings through
 the same technical/business engine with publication guards. Five example projects
-cover material supply, milling, heat treatment and document review. Cross-instance
-identity, geographic search and relay transport remain the next steps.
+cover material supply, milling, heat treatment and document review.
+
+Direct public instance queries now have stable operator-owned IDs, typed HTTPS
+envelopes and publication generation/revision guards. Trusted clients validate
+and pin resolved addresses and verify TLS names inside bounded network processes.
+Actual HTTPS and supervised-service tests cover parity, withdrawal, duplicate
+local shop IDs and hostile responses. Cloud discovery, outbound connector/relay
+and hosted network composition remain open.
 
 - The repository has issue-driven contributor tooling and a legacy v0.1.0 data specification.
 - Local Compose infrastructure provides Keycloak, PostgreSQL, and OpenBao, with bootstrap and access-denial tests.

@@ -16,6 +16,7 @@ from .evidence import snapshot as evidence_snapshot
 from .lifecycle import Conflict, NotFound, ShopService, now
 from .listings import ListingQuery, translate
 from .model import Model, Observation, Timestamp
+from .peer_model import PeerResult
 from .project import unique_json
 from .query import VariableQuery, query_variables
 
@@ -183,6 +184,10 @@ class PublishedService:
     def listing_evaluation(self, shop: str, listing_id: str, query: ListingQuery) -> dict:
         query = ListingQuery.model_validate(query)
         artifact, observations, revocations = self._snapshot(shop)
+        return self.listing_snapshot(artifact, observations, revocations, listing_id, query, at=self.clock())
+
+    def listing_snapshot(self, artifact, observations, revocations, listing_id, query, *, at):
+        """Translate and evaluate against an already selected publication snapshot."""
         try:
             catalog = self.repository.public_catalog(artifact)
         except KeyError:
@@ -193,7 +198,6 @@ class PublishedService:
             raise NotFound("published listing not found")
         if catalog["public_sha256"] != query.expected_revision:
             raise Conflict("published revision changed; refresh the listing")
-        at = self.clock()
         translated = translate(listing, query)
         if translated is None:
             return {
@@ -206,6 +210,36 @@ class PublishedService:
         return {"listing_id": listing.id, **self.evaluate_snapshot(
             artifact, observations, revocations, translated, at=at,
         )}
+
+    def peer_query(self, request) -> PeerResult:
+        with self.repository.connection() as db:
+            db.execute("BEGIN")
+            artifact, observations, revocations, generation, _ = self.snapshot_in(db, request.shop_id)
+        try:
+            catalog = self.repository.public_catalog(artifact)
+        except KeyError:
+            raise NotFound("published shop not found") from None
+        revision = catalog["public_sha256"]
+        if request.expected_generation is not None and request.expected_generation != generation:
+            raise Conflict("published generation changed; refresh the shop")
+        expected = getattr(request, "expected_revision", None)
+        if expected is not None and expected != revision:
+            raise Conflict("published revision changed; refresh the shop")
+        at = self.clock()
+        if request.action == "catalog":
+            value = catalog
+        elif request.action == "listing_evaluate":
+            value = self.listing_snapshot(artifact, observations, revocations,
+                                          request.listing_id, request.query, at=at)
+        elif request.action == "evaluate":
+            value = self.evaluate_snapshot(artifact, observations, revocations, request.query, at=at)
+        else:
+            try:
+                value = query_variables(artifact, request.query, at=at, public_only=True,
+                                        _public_catalog=self.repository.public_catalog).model_dump(mode="json")
+            except KeyError:
+                raise NotFound("variable not found") from None
+        return PeerResult(action=request.action, generation=generation, revision=revision, value=value)
 
     def evaluate_snapshot(self, artifact, observations, revocations, query, *, at,
                           private=False, python_evaluation=None):

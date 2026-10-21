@@ -17,6 +17,7 @@ from pydantic import Field, StrictInt, StrictStr, field_validator, model_validat
 from .access import ACTIONS, AuthenticationError, Grant, IdentityUnavailable, Principal
 from .cache import DEFAULT_CACHE_BYTES
 from .model import Model
+from .peer_model import InstanceId
 from .project import unique_json
 
 
@@ -32,6 +33,7 @@ class ServerSettings(Model):
     role_client: StrictStr = "chipload"
     bindings: Annotated[tuple[Principal, ...], Field(max_length=1000)] = ()
     allowed_origins: tuple[StrictStr, ...] = ()
+    instance_id: InstanceId | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @field_validator("trusted_proxy_ips")
     @classmethod

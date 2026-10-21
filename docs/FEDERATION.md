@@ -1,9 +1,8 @@
 # Communication between Chipload instances
 
-Status: implementation in progress. The listing contract below is implemented.
-Chipload's Python HTTP client can call a configured instance. A cross-instance
-directory, geographic supplier search and cloud relay are not implemented yet;
-the later sections specify their intended behavior and acceptance criteria.
+Status: implementation in progress. Listings and direct public instance queries
+are implemented. The directory, geographic supplier search, connector and cloud
+relay remain to be implemented against the acceptance criteria below.
 
 ## Implemented listing contract
 
@@ -54,6 +53,77 @@ in the CI Python live profile. These checks do not exercise a directory or relay
 The first checkpoint passed 551 ordinary checks (76 opt-in skips), 16 selected
 live worker/agent checks with no skips, and all reference/process example suites.
 The five listing projects passed 20 technical/business acceptance cases.
+
+## Implemented direct instance protocol
+
+Generate an ID once with `uv run python -c 'import uuid; print(uuid.uuid4().hex)'`
+and store it as `instance_id` in the operator-owned server configuration. Preserve
+this 32-character hexadecimal ID in configuration and backups across restarts,
+host moves and certificate changes. Apply configuration changes while the API
+is stopped and recreate its container after replacing a mounted file. Existing
+configurations omit this field and keep federation routes disabled.
+
+`GET /.well-known/chipload` identifies the instance. `POST /v1/peer/query` accepts
+a `chipload-peer-1` envelope containing destination `instance_id`, unique
+`request_id`, a deadline within 30 seconds and a typed `query`. Actions are
+`catalog`, `listing_evaluate`, `evaluate` and `variables`. The existing admission,
+Host/Origin and public-data policies apply; replies use `no-store`.
+
+Replies echo instance/request identity and carry a public result, public revision
+and publication generation selected with observations/evidence in one database
+snapshot. Optional `expected_generation` fences rollback or republishing even
+when public catalog bytes stay identical. Evaluation and variable queries also
+require the public revision; listing queries carry it in `ListingQuery`.
+Wrong/disabled instances and unpublished shops return 404, changed publication
+guards return 409, and an expired in-flight query returns 408.
+
+Trusted conventional Python clients use `PeerClient` from `chipload.peer`:
+
+```python
+from chipload.peer import PeerClient
+
+peer = PeerClient("https://supplier.example", instance_id)
+peer.descriptor()
+publication = peer.catalog("supplier")
+result = peer.evaluate_listing("supplier", listing_id, query,
+                               expected_generation=publication.generation)
+```
+
+Here `query` is a `ListingQuery` built from published terms and
+`publication.revision`. `peer.query()` also accepts `PeerEvaluate` and
+`PeerVariables` from `chipload.peer_model`. OpenAPI and `/v1/sdk` include the
+envelopes. The client verifies response identity, action, target, revision,
+generation when pinned, and actual catalog content digests. Public queries
+carry no local bearer token and require no cloud service.
+
+Each HTTPS attempt runs in a disposable trusted process with CPU/memory/byte
+limits and a wall deadline covering DNS, TLS and reads. Every resolved address
+is validated; the socket connects to that exact address with the original TLS
+hostname. Defaults permit public addresses on port 443. Operator-owned
+`EgressPolicy` can add public ports, exact private HTTPS origins and a CA bundle
+for LAN peers. Link-local metadata, multicast and unspecified addresses remain
+blocked. Redirects, proxies, encoded responses, duplicate JSON keys, oversized
+output and credential echo are rejected; HTTP attempts are not replayed.
+These process limits contain trusted transport code, not hostile tenant code.
+Hosted shop programs retain their existing network boundary; caller-scoped
+network composition through the connector remains the next step.
+
+`test_peers.py` and `test_federation_wire.py` passed 18 checks using actual TLS
+listeners, independent repositories and the supervised service process. They
+cover generation/withdrawal fences, duplicate local shop IDs, altered replies,
+TLS trust/name failures, DNS/address restrictions, hostile responses and a real
+stalled DNS process killed by its parent deadline. Run them with
+`uv run --extra server python -m unittest discover -s tests -p 'test_peers.py' -v`
+and the same command with `test_federation_wire.py`.
+
+The direct checkpoint also passed 569 ordinary checks and the existing reference
+and process examples. `test_peer_tls_live.py` exercised a real isolated source
+build, Keycloak-authorized publication, peer queries through the packaged TLS
+gateway, restart with the same instance ID and rejection after withdrawal. The
+existing runtime and both TLS lifecycle checks passed against the same images.
+The peer container check is included in the CI `tls` profile; run it locally
+with `CHIPLOAD_TLS_TESTS=1` and the unittest command above selecting
+`test_peer_tls_live.py` after building worker, runtime and TLS images.
 
 ## Two ways to reach the same shop
 
