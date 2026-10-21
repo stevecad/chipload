@@ -35,12 +35,13 @@ class IdentityTests(unittest.TestCase):
             "alg": "RS256",
         }
         self.config = {
-            "version": 1,
+            "version": 2,
             "cluster_id": "cluster",
             "issuer": "https://identity.example/realms/chipload",
             "audience": "urn:chipload:secrets:cluster",
             "client_id": "chipload-secrets-cluster",
             "client_uuid": "client-uuid",
+            "mfa_flow": "b014ecac-539d-47f4-a4ab-82381c8d087b",
             "keys": identity.public_keys({"keys": [self.jwk]}),
         }
         self.grant = {
@@ -60,6 +61,7 @@ class IdentityTests(unittest.TestCase):
             "iat": int(time.time()),
             "exp": int(time.time()) + 120,
             "chipload_operator_roles": [self.grant["role"]],
+            "amr": ["pwd", "otp"],
         }
 
     def token(self, claims=None):
@@ -80,6 +82,11 @@ class IdentityTests(unittest.TestCase):
             ("iat", int(time.time()) + 30),
             ("chipload_operator_roles", ["shop:admin"]),
             ("chipload_operator_roles", "prefix-operator-alice-suffix"),
+            ("amr", None),
+            ("amr", ["pwd"]),
+            ("amr", ["otp"]),
+            ("amr", "pwd otp"),
+            ("amr", [["pwd"], "otp"]),
         ):
             with self.subTest(field=field, value=value):
                 with self.assertRaises((ValueError, jwt.PyJWTError)):
@@ -120,11 +127,92 @@ class IdentityTests(unittest.TestCase):
             ("serviceAccountsEnabled", True),
             ("defaultClientScopes", ["roles"]),
             ("fullScopeAllowed", True),
+            ("authenticationFlowBindingOverrides", {}),
         ):
             with self.subTest(field=field):
                 self.assertFalse(identity.same_client({**actual, field: value}, expected))
         actual["protocolMappers"][1]["config"]["claim.name"] = "another-claim"
         self.assertFalse(identity.same_client(actual, expected))
+
+    def test_openbao_itself_requires_otp_evidence_and_enrollment_precedes_a_grant(self):
+        self.assertEqual(identity.role_config(self.config, self.grant)["bound_claims"]["amr"], "otp")
+        provider = Mock()
+        provider.admin.return_value = (200, [{"type": "password"}])
+        with self.assertRaisesRegex(ValueError, "enroll"):
+            identity.operator_mfa.require_enrolled(provider, self.grant["subject"])
+        provider.admin.return_value = (200, [{"type": "password"}, {"type": "otp"}])
+        identity.operator_mfa.require_enrolled(provider, self.grant["subject"])
+
+    def test_existing_client_is_never_recreated_during_upgrade_preflight(self):
+        provider = Mock()
+        provider.admin.return_value = (404, {})
+        with self.assertRaisesRegex(ValueError, "client is missing"):
+            identity.ensure_client(provider, self.config)
+        provider.admin.assert_called_once_with(
+            "/clients/" + self.config["client_uuid"], expected=(200, 404)
+        )
+
+    def test_mfa_upgrade_preflight_checks_every_active_grant_without_mutating_services(self):
+        legacy = {key: value for key, value in self.config.items() if key != "mfa_flow"}
+        legacy["version"] = 1
+        archive.replace_json(self.state / identity.RECEIPT, legacy)
+        directory = self.state / "operators"
+        directory.mkdir(mode=0o700)
+        grants = [
+            {**self.grant, "status": "active"},
+            {**self.grant, "name": "bob", "subject": "subject-two", "role": "operator-bob",
+             "policy": "chipload-operator-bob", "status": "active"},
+        ]
+        for grant in grants:
+            archive.replace_json(directory / (grant["name"] + ".json"), grant)
+        provider = Mock(state=self.tls_state, values={"identity_host": "identity.example", "port": 443})
+
+        def provider_read(path, **kwargs):
+            self.assertEqual(kwargs.get("method", "GET"), "GET")
+            if path.startswith("/clients/"):
+                return 200, identity.client_config(legacy)
+            if path.endswith("/credentials"):
+                return 200, [{"type": "otp"}]
+            return 200, {"id": path.rsplit("/", 1)[1], "enabled": True}
+
+        responses = {f"auth/{identity.MOUNT}/config": identity.jwt_config(legacy)}
+        for grant in grants:
+            responses[f"auth/{identity.MOUNT}/role/{grant['name']}"] = identity.role_config(legacy, grant)
+            responses["sys/policies/acl/" + grant["policy"]] = {"policy": identity.policy(grant)}
+
+        def bao_read(method, path):
+            self.assertEqual(method, "GET")
+            return 200, {"data": responses[path]}
+
+        provider.admin.side_effect = provider_read
+        api = Mock(state=self.state, cluster=legacy["cluster_id"])
+        api.call.side_effect = bao_read
+        intent = identity.prepare(api, provider, SimpleNamespace(action="enable-mfa"))
+        self.assertEqual(intent["previous_identity"], legacy)
+        self.assertEqual(intent["grants"], grants)
+        self.assertEqual(intent["identity"]["version"], 2)
+        self.assertEqual(intent["identity"]["client_uuid"], legacy["client_uuid"])
+        self.assertFalse((self.state / identity.MARKER).exists())
+        responses[f"auth/{identity.MOUNT}/role/bob"]["token_policies"] = ["unexpected"]
+        with self.assertRaisesRegex(ValueError, "role differs"):
+            identity.prepare(api, provider, SimpleNamespace(action="enable-mfa"))
+        self.assertFalse((self.state / identity.MARKER).exists())
+
+    def test_pending_mfa_upgrade_uses_new_claim_requirements_for_completed_grants(self):
+        legacy = {key: value for key, value in self.config.items() if key != "mfa_flow"}
+        legacy["version"] = 1
+        archive.replace_json(self.state / identity.RECEIPT, legacy)
+        (self.state / "operators").mkdir(mode=0o700)
+        active = {**self.grant, "status": "active"}
+        archive.replace_json(self.state / "operators/alice.json", active)
+        journal = {
+            "owner": identity.owner(self.state, self.tls_state), "action": "enable-mfa",
+            "identity": self.config, "previous_identity": legacy, "grants": [active],
+        }
+        identity.save_pending(self.state, self.tls_state, journal)
+        configured, grant, _ = identity.login_configuration(self.state, self.tls_state, "alice")
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            identity.check_jwt(configured, grant, self.token({**self.claims, "amr": ["pwd"]}))
 
     def test_lost_second_journal_write_is_resumed_from_first_exact_copy(self):
         journal = {

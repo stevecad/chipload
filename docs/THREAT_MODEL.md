@@ -58,6 +58,7 @@ a filesystem or network namespace inside the API container.
 | Threat | Implemented controls | Verification |
 | --- | --- | --- |
 | Cross-shop access or excessive authority | Verified issuer/audience/signature and explicit shop/action grants; operation ID restrictions; public projection; current grant intersection on hosted SDK calls | `test_auth.py`, `test_transports.py`, `test_programs.py`, `test_execution_transports.py`, actual Keycloak/TLS lifecycle tests |
+| A password-only token obtaining managed secrets-operator access | Version-2 operator clients require enrolled OTP, a dedicated required password/OTP flow, signed AMR checks and an independent OpenBao OTP claim binding; refresh issuance disabled; explicit journaled upgrade for older receipts | `test_operator_mfa.py`, `test_secrets_identity.py`, real browser factors, direct OpenBao denial, interrupted upgrade and restored login in `test_secrets_identity_live.py` |
 | Public disclosure of private claims or stale publication | Explicit projection, publication selection from the database on every request, integrity-bound immutable caches, uncached observations and permissions | `test_published.py`, `test_cache.py`, process/transport parity tests |
 | Source execution obtaining host data, network or credentials | Separate non-root containers, no host mounts/network, read-only image, restricted temporary storage, memory/CPU/process/output limits | `test_worker_live.py`, `test_program_live.py` |
 | Shop dependency code executing with database authority | Separate shop Python environment; explicit core interpreter for SDK services; binary hash-pinned installs and unchanged core package constraints; no shop interpreter invocation after installation during image build | `test_worker_dependencies.py`, `test_worker_dependencies_live.py`; [environment contract](DEPENDENCIES.md) |
@@ -176,11 +177,15 @@ establish reachability from a shop caller.
   and are refused. Preserve reserved containers and their images, exclude them
   from pruning, and stop old writers before restore. Absence or elapsed time
   alone cannot prove that every old daemon request has ended.
-- Qualify production OpenBao operator enrollment, MFA and emergency access,
+- Qualify production OpenBao operator enrollment, authenticator custody and emergency access,
   audit retention and replacement-host recovery. The separate [private secrets
   service](SECRETS.md) now supplies TLS, PGP-encrypted threshold initialization,
   explicit unsealing, audit storage and certificate reload. Its tests verify
-  actual AppRole denials and sealed restart. Encrypted offline backup/restore is
+  actual AppRole denials and sealed restart. New operator grants require an
+  enrolled authenticator and password/OTP login, with OTP evidence enforced by
+  OpenBao. Version-1 receipts require the explicit `enable-mfa` upgrade; this does
+  not qualify identity proofing, master-realm administration or phishing resistance.
+  Encrypted offline backup/restore is
   tested after deleting the original store, including quorum, cluster identity,
   revoked root-token and workload-policy preservation. This covers fresh storage
   on the same host; replacement-host and custody arrangements need qualification.

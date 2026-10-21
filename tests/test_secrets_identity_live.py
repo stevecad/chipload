@@ -2,6 +2,7 @@
 
 import base64
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -145,8 +146,10 @@ class IdentityLiveTests(unittest.TestCase):
 
                 password = secrets.token_urlsafe(24)
                 users = {}
+                otp_secrets = {}
                 for username in ("operator", "rotator", "outsider"):
                     subject = str(uuid.uuid4())
+                    otp_secrets[username] = secrets.token_bytes(20)
                     provider().admin(
                         "/users",
                         method="POST",
@@ -159,7 +162,18 @@ class IdentityLiveTests(unittest.TestCase):
                             "email": username + "@example.invalid",
                             "emailVerified": True,
                             "credentials": [
-                                {"type": "password", "value": password, "temporary": False}
+                                {"type": "password", "value": password, "temporary": False},
+                                {
+                                    "type": "otp", "userLabel": "Fixture authenticator",
+                                    "secretData": json.dumps({
+                                        "value": base64.b32encode(otp_secrets[username]).decode()
+                                    }),
+                                    "credentialData": json.dumps({
+                                        "subType": "totp", "digits": 6, "period": 30,
+                                        "counter": 0, "algorithm": "HmacSHA1",
+                                        "secretEncoding": "BASE32",
+                                    }),
+                                },
                             ],
                         },
                         expected=(201,),
@@ -235,6 +249,23 @@ class IdentityLiveTests(unittest.TestCase):
                     len(provider().admin("/clients?clientId=" + configured["client_id"])[1]), 1
                 )
                 browser_context = ssl.create_default_context(cafile=tls_state / "identity-ca.pem")
+                otp_counters = {}
+
+                def otp(username):
+                    # Keycloak rejects replay of a TOTP within its valid window.
+                    # Wait for a new authenticator code between separate logins.
+                    counter = int(time.time()) // 30
+                    if counter <= otp_counters.get(username, -1):
+                        time.sleep((counter + 1) * 30 - time.time() + 0.1)
+                        counter = int(time.time()) // 30
+                    otp_counters[username] = counter
+                    digest = hmac.digest(
+                        otp_secrets[username], counter.to_bytes(8, "big"), "sha1"
+                    )
+                    offset = digest[-1] & 15
+                    return f"{(int.from_bytes(digest[offset:offset + 4], 'big') & 0x7fffffff) % 1000000:06d}"
+
+                rejected_otp = set()
 
                 def approve(username):
                     def browser(message, **_):
@@ -253,7 +284,10 @@ class IdentityLiveTests(unittest.TestCase):
                             for _ in range(8):
                                 forms = Forms(page.text).forms
                                 if not forms:
-                                    self.assertIn("success", page.text.lower())
+                                    self.assertTrue("success" in page.text.lower(),
+                                        "device login did not finish; feedback=" + repr(re.findall(
+                                            r'<p class="instruction">([^<]*)', page.text
+                                        )))
                                     return
                                 form = next(
                                     (
@@ -261,7 +295,7 @@ class IdentityLiveTests(unittest.TestCase):
                                         for f in forms
                                         if any(
                                             k in f["fields"]
-                                            for k in ("username", "device_user_code", "accept")
+                                            for k in ("username", "otp", "device_user_code", "accept")
                                         )
                                     ),
                                     forms[0],
@@ -269,6 +303,20 @@ class IdentityLiveTests(unittest.TestCase):
                                 data = form["fields"]
                                 if "username" in data:
                                     data.update(username=username, password=password)
+                                elif "otp" in data:
+                                    if username == "outsider" and username not in rejected_otp:
+                                        wrong = client.post(
+                                            urljoin(str(page.url), form["action"]),
+                                            data={**data, "otp": "invalid-code"},
+                                        )
+                                        self.assertEqual(wrong.status_code, 200)
+                                        self.assertTrue(any(
+                                            "otp" in item["fields"] for item in Forms(wrong.text).forms
+                                        ), "an invalid OTP must leave authentication incomplete")
+                                        rejected_otp.add(username)
+                                        page = wrong
+                                        continue
+                                    data["otp"] = otp(username)
                                 elif "device_user_code" in data:
                                     data["device_user_code"] = code
                                 elif "accept" in data:
@@ -297,7 +345,7 @@ class IdentityLiveTests(unittest.TestCase):
                 raw_jwts = {}
                 original_device = identity.device_login
 
-                def get_jwt(username):
+                def get_jwt(username, *, mfa=True):
                     polls = 0
 
                     def approved(_):
@@ -307,13 +355,26 @@ class IdentityLiveTests(unittest.TestCase):
                             polls, 3, "browser approval did not finish device login"
                         )
 
-                    value = original_device(
-                        identity.Provider(tls_state),
-                        configured,
-                        announce=approve(username),
-                        sleep=approved,
-                    )
+                    request = identity.device_request
+
+                    def check_token_response(*args, **kwargs):
+                        status, result = request(*args, **kwargs)
+                        if configured["version"] == 2 and status == 200 and "access_token" in result:
+                            self.assertTrue(not result.get("refresh_token"),
+                                            "the operator client must not issue refresh tokens")
+                        return status, result
+
+                    with patch.object(identity, "device_request", side_effect=check_token_response):
+                        value = original_device(
+                            identity.Provider(tls_state),
+                            configured,
+                            announce=approve(username),
+                            sleep=approved,
+                        )
                     raw_jwts[username] = value
+                    claims = jwt.decode(value, options={"verify_signature": False})
+                    if mfa:
+                        self.assertEqual(set(claims.get("amr", [])), {"pwd", "otp"})
                     return value
 
                 def login(username, grant, filename):
@@ -333,6 +394,80 @@ class IdentityLiveTests(unittest.TestCase):
                     return target
 
                 admin_token = login("operator", "admin", "admin-token")
+                admin = identity.workload.API(state, admin_token)
+                # A real provider-signed password-only token must fail at OpenBao,
+                # including when the caller bypasses the local login helper.
+                flow, executions = identity.operator_mfa.specification(configured["mfa_flow"])
+                execution_path = "/authentication/flows/" + flow["alias"] + "/executions"
+                otp_execution = executions[1][0]["id"]
+                provider().admin(execution_path, method="PUT", data={
+                    "id": otp_execution, "requirement": "DISABLED"
+                }, expected=(204,))
+                try:
+                    with self.assertRaisesRegex(ValueError, "differs"):
+                        identity.operator_mfa.ensure(provider(), configured["mfa_flow"])
+                    password_only = get_jwt("operator", mfa=False)
+                    self.assertEqual(
+                        jwt.decode(password_only, options={"verify_signature": False})["amr"], ["pwd"]
+                    )
+                finally:
+                    provider().admin(execution_path, method="PUT", data={
+                        "id": otp_execution, "requirement": "REQUIRED"
+                    }, expected=(204,))
+                self.assertEqual(admin.call(
+                    "POST", f"auth/{identity.MOUNT}/login", {"role": "admin", "jwt": password_only},
+                    token=None, statuses=(400,),
+                )[0], 400)
+                # Recreate the previous released identity contract as an upgrade
+                # fixture. The production command offers no MFA downgrade.
+                legacy = {key: value for key, value in configured.items() if key != "mfa_flow"}
+                legacy["version"] = 1
+                legacy_client = identity.client_config(legacy)
+                # A version-1 client could use an operator-selected password-only
+                # browser flow. Keep that explicit instead of inheriting the realm flow.
+                legacy_client["authenticationFlowBindingOverrides"] = {"browser": flow["id"]}
+                provider().admin(execution_path, method="PUT", data={
+                    "id": otp_execution, "requirement": "DISABLED"
+                }, expected=(204,))
+                provider().admin("/clients/" + legacy["client_uuid"], method="PUT",
+                                 data=legacy_client, expected=(204,))
+                receipt = state / "operators/admin.json"
+                preserved_grant = receipt.read_bytes()
+                grant = script.read_json(receipt)
+                admin.call("POST", f"auth/{identity.MOUNT}/role/admin", identity.role_config(legacy, grant))
+                archive.replace_json(state / identity.RECEIPT, legacy)
+                configured = legacy
+                legacy_jwt = get_jwt("operator", mfa=False)
+                self.assertNotIn("amr", jwt.decode(legacy_jwt, options={"verify_signature": False}))
+                issued = admin.call("POST", f"auth/{identity.MOUNT}/login",
+                                   {"role": "admin", "jwt": legacy_jwt}, token=None)[1]
+                admin.call("POST", "auth/token/revoke-self", token=issued["auth"]["client_token"])
+                args.action = "enable-mfa"
+                provider()
+                original_call = identity.workload.API.call
+
+                def lost_mfa_role(obj, method, path, *values, **kwargs):
+                    result = original_call(obj, method, path, *values, **kwargs)
+                    if method == "POST" and path == f"auth/{identity.MOUNT}/role/admin":
+                        raise OSError("lost committed MFA role update")
+                    return result
+
+                with patch.object(identity.workload.API, "call", new=lost_mfa_role):
+                    with self.assertRaises(OSError):
+                        identity.operate(args)
+                configured = identity.pending(state, tls_state)["identity"]
+                self.assertEqual(admin.call("POST", f"auth/{identity.MOUNT}/login",
+                    {"role": "admin", "jwt": legacy_jwt}, token=None, statuses=(400,))[0], 400)
+                # A completed administrator can reauthenticate with MFA and
+                # resume the interrupted upgrade without using the root token.
+                args.operator_token = login("operator", "admin", "mfa-resume-token")
+                args.action = "resume"
+                provider()
+                self.assertEqual(identity.operate(args)["status"], "mfa-enabled")
+                self.assertEqual(receipt.read_bytes(), preserved_grant)
+                self.assertEqual(configured["client_uuid"], legacy["client_uuid"])
+                configured = script.read_json(state / identity.RECEIPT)
+                admin_token = login("operator", "admin", "mfa-admin-token")
                 admin = identity.workload.API(state, admin_token)
                 root_value = root_token.read_text().strip()
                 admin.call("POST", "auth/token/revoke-self", token=root_value)

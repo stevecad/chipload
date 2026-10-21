@@ -15,6 +15,7 @@ Steve integration is planned for a later stage.
 - The repository has issue-driven contributor tooling and a legacy v0.1.0 data specification.
 - Local Compose infrastructure provides Keycloak, PostgreSQL, and OpenBao, with bootstrap and access-denial tests.
 - A separate private TLS OpenBao container supports PGP-encrypted threshold initialization, explicit unsealing, audit storage, certificate reload and initialized-store checks. Operator helpers manage scoped AppRole provisioning, verification, rotation and revocation, with subject-bound Keycloak device login and explicit signing-key synchronization. Live drills exercise access denials, interrupted bootstrap/credential/identity changes and encrypted offline recovery after deleting the original store. See `docs/SECRETS.md`; operational custody, emergency access and replacement-host qualification remain open.
+- New secrets-operator grants require an enrolled authenticator and a dedicated password/OTP login flow. Signed AMR checks and an OpenBao OTP claim binding protect token exchange. The explicit `enable-mfa` upgrade preserves existing subjects, client IDs and permissions through interrupted configuration; operational enrollment and emergency custody remain separate requirements.
 - The experimental Python SDK, validation, artifact codec, evaluator, contextual variable queries, and public catalog projection are implemented. A fictional shop has sixteen executable manufacturing scenarios; a heat-treatment-only example adds nine scenarios; the Swiss shop example covers shop variables and business rules. Tests also cover a document-review service with no physical resources or materials.
 - Shop agents can revoke evidence through Python and REST with a separate grant. Receipts survive source rollback, and live queries and operation preconditions exclude revoked IDs. The schema-10 migration, private receipt projection, retries, concurrency and recovery are covered by tests. Independent certification and external revocation feeds remain work.
 - Shop-defined Python constraints now run during isolated build acceptance tests. Their answers are bound to the build/query/time and combined with static rules and evidence constraints; they cannot override those constraints. Three examples cover nonlinear technical relationships and business conditions. Queued assessments now execute these functions for REST/MCP queries with scoped grants and exact publication bindings; ordinary discovery never imports source or reuses build-test answers.
@@ -298,6 +299,11 @@ state and archives still require their matching checkout and deployment contract
 Local validation passed all six secrets live checks, including real identity,
 credential rotation, storage-loss recovery and contained adapters. Development
 identity, scoped secret access and compiled UI asset checks also passed.
+Secrets operator login now requires password and OTP for new configurations,
+checks signed authentication evidence and disables refresh-token issuance.
+Existing operator contracts have an explicit, journaled MFA upgrade. This covers
+the dedicated secrets client; master-realm operator lifecycle, identity proofing
+and emergency custody remain deployment work.
 Structural admission and deterministic work budgets are implemented;
 see `docs/SHOP_MODEL.md`. `docs/AUTHORING.md` records reproducible data-operation
 measurements. Immutable build/projection caching now reduces repeated-read cost

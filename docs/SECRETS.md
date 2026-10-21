@@ -150,11 +150,16 @@ These helpers run as the deployment owner. The grants constrain OpenBao API
 access; they do not restrict that owner's separate OS or Docker authority.
 
 Create the human account in the `chipload` realm through Keycloak administration
-and apply your browser authentication/MFA policy there. The helper does not create
-users, enroll MFA, or collect their passwords. For configuration, supply private
+and have that person enroll their authenticator through the Keycloak account
+console before granting access. Verify their identity and enrollment through your
+operator onboarding procedure. The helper refuses a grant without an existing
+OTP credential; it does not create users, enroll authenticators or collect passwords.
+New configurations install a dedicated browser flow requiring password and OTP,
+with no cookie-only or alternative authentication branch. This flow applies to
+the secrets operator client. For configuration, supply private
 files containing an existing OpenBao administrative token and a Keycloak
-administrative bearer token authorized to manage the realm's clients, client
-roles, scope mappings and user role assignments. An ordinary shop token has
+administrative bearer token authorized to manage the realm's authentication flows,
+clients, client roles, scope mappings and user role assignments. An ordinary shop token has
 neither authority. Keep token files and their parent directory owner-only,
 outside both deployment states and every workload credential directory.
 
@@ -180,8 +185,15 @@ verifies the returned JWT locally, and exchanges it with OpenBao. The output fil
 must be new and is written with mode 0600; the token itself is never printed.
 `--jwt-file PATH` can supply an already-issued JWT for this dedicated client
 instead. Both paths verify the issuer, audience, subject, client, grant, token
-type and signing key. Password grants, service accounts and implicit login are
-disabled on this client. Browser login uses your configured Keycloak policy.
+type and signing key. New configurations also require the signed `amr` claim to
+contain `pwd` and `otp`. OpenBao independently binds its login roles to `amr=otp`,
+so calling its login API directly cannot bypass the OTP requirement.
+[Keycloak's AMR mapper](https://www.keycloak.org/admin-api/protocol-mappers)
+derives this evidence from completed authenticator executions. The recorded
+references expire after five minutes; the dedicated flow requires both factors
+on each login. Password grants, service accounts, implicit login and refresh
+tokens are disabled on this client. This is authenticator-based MFA; it does not
+establish phishing-resistant authentication or qualify operator identity proofing.
 
 The Keycloak access token lasts at most two minutes. The resulting OpenBao token
 has one policy, no default or additional identity policies, and a hard five-minute
@@ -189,6 +201,27 @@ maximum lifetime. It is independent of the bootstrap root token. Use it with
 `secrets-workload --operator-token /secure/alice-bao-token`; log in again to a new
 private output file when it expires. Full administration deliberately grants
 OpenBao-wide authority, including secret access and policy changes.
+
+Existing version-1 operator receipts retain their previous login contract until
+the owner explicitly upgrades them. Enroll an authenticator for every active
+operator, obtain current administrative tokens, then run:
+
+```sh
+uv run --extra server python scripts/secrets-identity \
+  --state .local/secrets --identity-state .local/tls \
+  --operator-token /secure/alice-bao-token --keycloak-token /secure/keycloak-admin-token \
+  enable-mfa
+```
+
+The upgrade preserves client IDs, subjects, grants and policies. It records the
+new flow and all affected managed roles before changing either service, verifies
+the existing contract, then binds the client and every active managed OpenBao
+role to MFA. New grants require version 2. If interrupted, preserve both
+`.secrets-identity-incomplete.json` journals and use `resume` with fresh authorized
+administrative tokens. Completed grants can reauthenticate during recovery once
+the new browser flow is active; the helper applies the new factor requirements
+while the upgrade is pending. Existing OpenBao tokens retain their original
+bounded lifetime. This upgrade does not revoke them or replace emergency access.
 
 Before retiring root, verify the new operator can authenticate independently and
 perform the needed administration. Configure the official OpenBao CLI's verified
@@ -496,6 +529,8 @@ replacement-host recovery need operator drills.
 ./scripts/build-runtime
 ./scripts/build-tls
 ./scripts/build-secrets
+uv run --extra server python -m unittest discover -s tests -p 'test_operator_mfa.py' -v
+uv run --extra server python -m unittest discover -s tests -p 'test_secrets_identity.py' -v
 CHIPLOAD_SECRETS_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_secrets_stack_live.py' -v
 CHIPLOAD_SECRETS_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_secrets_recovery_live.py' -v
 CHIPLOAD_SECRETS_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_secrets_workload_live.py' -v
@@ -516,6 +551,14 @@ original deployment, restores fresh storage, and unseals with the original
 quorum. It checks the original cluster ID, stored receiver secret, AppRole
 permissions, preserved root-token revocation, audit history and a second backup
 of the restored deployment.
+
+The identity drill uses real password/OTP browser authentication and signed AMR
+claims. Keycloak rejects invalid OTPs; OpenBao rejects a provider-signed
+password-only token. The drill upgrades an earlier operator contract through a
+lost committed response, resumes with an MFA-authenticated administrator, and
+verifies access after key rotation and encrypted OpenBao recovery. Its seeded
+test authenticators do not qualify human enrollment or authenticator recovery
+procedures.
 
 The workload drill provisions an exact-path identity, checks real client access,
 and injects lost responses after issuance, credential installation and retirement.
