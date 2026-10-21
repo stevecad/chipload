@@ -1,0 +1,161 @@
+{
+  "date": "2026-10-21",
+  "source_revision": "818e6748130bbe9a71be225fb36c82e811247765",
+  "scope": "Core API, broker, executor and worker images named below. Image observations are from disposable containers with explicit inspection flags, not observations of a deployed service. Live deployment restrictions are independently exercised by tests/test_runtime_live.py, test_worker_live.py and test_program_live.py. This review does not clear all severities or all images.",
+  "inspection_command": [
+    "docker",
+    "run",
+    "--rm",
+    "--network=none",
+    "--read-only",
+    "--cap-drop=ALL",
+    "--security-opt=no-new-privileges:true",
+    "--user=65532:65532",
+    "--pids-limit=16",
+    "--memory=128m",
+    "--cpus=1",
+    "--entrypoint=/usr/local/bin/python",
+    "IMAGE",
+    "-I",
+    "-B",
+    "-c",
+    "INSPECTION_CODE"
+  ],
+  "inspection_code": "import glob,json,pathlib,subprocess\nstatus=pathlib.Path('/proc/self/status').read_text().splitlines()\nq=subprocess.run(['perl','-MArchive::Tar','-e','print $Archive::Tar::VERSION'],capture_output=True,text=True)\nprint(json.dumps({'archive_tar_available':q.returncode==0,'archive_tar_diagnostic':q.stderr.strip(),'systemd_homed_paths':glob.glob('/usr/lib/systemd/systemd-homed')+glob.glob('/lib/systemd/systemd-homed'),'infocmp_present':pathlib.Path('/usr/bin/infocmp').exists(),'fstab':pathlib.Path('/etc/fstab').read_text(),'process_status':{k:v.strip() for line in status if (k:=line.split(':')[0]) in ('Uid','Gid','CapEff','CapBnd','NoNewPrivs','Seccomp') for v in [line.split(':',1)[1]]}},sort_keys=True))",
+  "observations": [
+    {
+      "role": "api",
+      "image": "sha256:6fb93b756209dd77d47cf3e77f4fbd80328283472ea52621a2e0654a7d9bc89d",
+      "inspection": {
+        "archive_tar_available": false,
+        "archive_tar_diagnostic": "Can't locate Archive/Tar.pm in @INC (you may need to install the Archive::Tar module) (@INC entries checked: /etc/perl /usr/local/lib/x86_64-linux-gnu/perl/5.40.1 /usr/local/share/perl/5.40.1 /usr/lib/x86_64-linux-gnu/perl5/5.40 /usr/share/perl5 /usr/lib/x86_64-linux-gnu/perl-base /usr/lib/x86_64-linux-gnu/perl/5.40 /usr/share/perl/5.40 /usr/local/lib/site_perl).\nBEGIN failed--compilation aborted.",
+        "fstab": "# UNCONFIGURED FSTAB FOR BASE SYSTEM\n",
+        "infocmp_present": true,
+        "process_status": {
+          "CapBnd": "0000000000000000",
+          "CapEff": "0000000000000000",
+          "Gid": "65532\t65532\t65532\t65532",
+          "NoNewPrivs": "1",
+          "Seccomp": "2",
+          "Uid": "65532\t65532\t65532\t65532"
+        },
+        "systemd_homed_paths": []
+      }
+    },
+    {
+      "role": "broker",
+      "image": "sha256:9d124ddcc3f06c65e7975b5f234793735d793c6af5776d1558a223acdf7296c6",
+      "inspection": {
+        "archive_tar_available": false,
+        "archive_tar_diagnostic": "Can't locate Archive/Tar.pm in @INC (you may need to install the Archive::Tar module) (@INC entries checked: /etc/perl /usr/local/lib/x86_64-linux-gnu/perl/5.40.1 /usr/local/share/perl/5.40.1 /usr/lib/x86_64-linux-gnu/perl5/5.40 /usr/share/perl5 /usr/lib/x86_64-linux-gnu/perl-base /usr/lib/x86_64-linux-gnu/perl/5.40 /usr/share/perl/5.40 /usr/local/lib/site_perl).\nBEGIN failed--compilation aborted.",
+        "fstab": "# UNCONFIGURED FSTAB FOR BASE SYSTEM\n",
+        "infocmp_present": true,
+        "process_status": {
+          "CapBnd": "0000000000000000",
+          "CapEff": "0000000000000000",
+          "Gid": "65532\t65532\t65532\t65532",
+          "NoNewPrivs": "1",
+          "Seccomp": "2",
+          "Uid": "65532\t65532\t65532\t65532"
+        },
+        "systemd_homed_paths": []
+      }
+    },
+    {
+      "role": "executor",
+      "image": "sha256:f4db1baf5826a29899f33cdc7820dd425ddaa6751e88d8deabc8c994e38d0b75",
+      "inspection": {
+        "archive_tar_available": false,
+        "archive_tar_diagnostic": "Can't locate Archive/Tar.pm in @INC (you may need to install the Archive::Tar module) (@INC entries checked: /etc/perl /usr/local/lib/x86_64-linux-gnu/perl/5.40.1 /usr/local/share/perl/5.40.1 /usr/lib/x86_64-linux-gnu/perl5/5.40 /usr/share/perl5 /usr/lib/x86_64-linux-gnu/perl-base /usr/lib/x86_64-linux-gnu/perl/5.40 /usr/share/perl/5.40 /usr/local/lib/site_perl).\nBEGIN failed--compilation aborted.",
+        "fstab": "# UNCONFIGURED FSTAB FOR BASE SYSTEM\n",
+        "infocmp_present": true,
+        "process_status": {
+          "CapBnd": "0000000000000000",
+          "CapEff": "0000000000000000",
+          "Gid": "65532\t65532\t65532\t65532",
+          "NoNewPrivs": "1",
+          "Seccomp": "2",
+          "Uid": "65532\t65532\t65532\t65532"
+        },
+        "systemd_homed_paths": []
+      }
+    },
+    {
+      "role": "worker",
+      "image": "sha256:2a46602ce5573bf3e3b7fe57edb52f17233cc0eb449577ad4166990a905d511a",
+      "inspection": {
+        "archive_tar_available": false,
+        "archive_tar_diagnostic": "Can't locate Archive/Tar.pm in @INC (you may need to install the Archive::Tar module) (@INC entries checked: /etc/perl /usr/local/lib/x86_64-linux-gnu/perl/5.40.1 /usr/local/share/perl/5.40.1 /usr/lib/x86_64-linux-gnu/perl5/5.40 /usr/share/perl5 /usr/lib/x86_64-linux-gnu/perl-base /usr/lib/x86_64-linux-gnu/perl/5.40 /usr/share/perl/5.40 /usr/local/lib/site_perl).\nBEGIN failed--compilation aborted.",
+        "fstab": "# UNCONFIGURED FSTAB FOR BASE SYSTEM\n",
+        "infocmp_present": true,
+        "process_status": {
+          "CapBnd": "0000000000000000",
+          "CapEff": "0000000000000000",
+          "Gid": "65532\t65532\t65532\t65532",
+          "NoNewPrivs": "1",
+          "Seccomp": "2",
+          "Uid": "65532\t65532\t65532\t65532"
+        },
+        "systemd_homed_paths": []
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "advisories": [
+        "CVE-2026-9538"
+      ],
+      "assessment": "affected_module_absent",
+      "reason": "The vulnerability is in Archive::Tar; loading that module fails in every inspected image. The installed perl-base package does not supply it. Reassess if Perl modules are added.",
+      "sources": [
+        "https://security-tracker.debian.org/tracker/CVE-2026-9538"
+      ]
+    },
+    {
+      "advisories": [
+        "CVE-2026-16742"
+      ],
+      "assessment": "affected_service_absent",
+      "reason": "The vulnerability requires systemd-homed and a homed-managed local user. Neither standard service executable path exists, and the Chipload entrypoints do not launch systemd. The matched libsystemd0/libudev1 packages are not the affected service. Reassess if the image or entrypoints change.",
+      "sources": [
+        "https://security-tracker.debian.org/tracker/CVE-2026-16742"
+      ]
+    },
+    {
+      "advisories": [
+        "CVE-2026-76642",
+        "CVE-2026-78408",
+        "CVE-2026-78409",
+        "CVE-2026-78410"
+      ],
+      "assessment": "privileged_prerequisites_excluded_by_documented_container_policy",
+      "reason": "These paths require privileged mount hooks, an fstab-authorized mount, or a root nsenter --join-cgroup invocation. The supplied runtime/worker launchers run nonroot with all capabilities dropped and no-new-privileges. Images contain no authorized fstab entries. Trusted application subprocess paths do not invoke mount or nsenter. This conclusion excludes manual privileged debugging, altered launchers and host packages; it does not reduce the broker Docker socket authority.",
+      "sources": [
+        "https://security-tracker.debian.org/tracker/CVE-2026-76642",
+        "https://security-tracker.debian.org/tracker/CVE-2026-78408",
+        "https://security-tracker.debian.org/tracker/CVE-2026-78409",
+        "https://security-tracker.debian.org/tracker/CVE-2026-78410"
+      ]
+    },
+    {
+      "advisories": [
+        "CVE-2025-69720"
+      ],
+      "assessment": "utility_present_no_trusted_application_call_path_identified",
+      "reason": "The affected infocmp utility is present. Chipload trusted service subprocess paths do not invoke it or process terminal definitions with it. Shop Python may invoke utilities within its existing untrusted container; code execution there is already allowed and resource limits still apply. Retain the package finding and reassess if trusted terminal-processing functionality is added.",
+      "sources": [
+        "https://security-tracker.debian.org/tracker/CVE-2025-69720"
+      ]
+    },
+    {
+      "advisories": [
+        "CVE-2026-54369"
+      ],
+      "assessment": "retained_pending_complete_caller_review",
+      "reason": "The vulnerable pathname ACL functions are in libacl1. Nonroot execution and the absence of shared source mounts limit authority, but these facts alone do not prove every indirect ACL caller safe. No stable Debian fix is recorded by the cited tracker at this review date.",
+      "sources": [
+        "https://security-tracker.debian.org/tracker/CVE-2026-54369"
+      ]
+    }
+  ]
+}

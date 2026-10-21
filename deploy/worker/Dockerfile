@@ -2,10 +2,12 @@ ARG WORKER_BASE=minimal
 FROM python:3.12.15-slim-trixie@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 AS minimal
 
 FROM minimal AS graphics
-# Pin the entire signed package index, including transitive native libraries.
+# Pin both signed package indexes, including transitive security updates.
 RUN rm /etc/apt/sources.list.d/debian.sources && \
-    echo 'deb [check-valid-until=no] https://snapshot.debian.org/archive/debian/20260801T000000Z trixie main' > /etc/apt/sources.list && \
-    apt-get update && apt-get install --no-install-recommends -y libgl1 libxrender1 libxext6 && \
+    echo 'deb [check-valid-until=no] https://snapshot.debian.org/archive/debian/20261021T000000Z trixie main' > /etc/apt/sources.list && \
+    echo 'deb [check-valid-until=no] https://snapshot.debian.org/archive/debian-security/20261021T000000Z trixie-security main' >> /etc/apt/sources.list && \
+    apt-get update && apt-get install --no-install-recommends -y \
+        libgl1 libxrender1 libxext6 'libexpat1=2.9.0-1~deb13u1' && \
     rm -rf /var/lib/apt/lists/*
 
 FROM minimal AS shop-wheels

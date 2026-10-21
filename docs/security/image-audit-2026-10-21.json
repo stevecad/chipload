@@ -9,7 +9,7 @@
   "scope": "Version-based image findings; high/critical entries are retained for review. Gateway includes its remaining unknown-severity finding and a compiled-package exclusion check. Counts are package/advisory matches, not distinct CVEs or confirmed exploitable paths. This is not a release clearance. The test_ca image is a disposable test dependency; cadquery-worker is optional.",
   "inputs_sha256": {
     "uv.lock": "ea2aa8c2d7a44a998fdc51202718a31e33a790efe1b0ff18a57ed5f48a3eb704",
-    "deploy/worker/Dockerfile": "d6cb7fe09935a238ef55130dea5c2aeb633b29c4e77f375b44a6ba4c4bfe6d42",
+    "deploy/worker/Dockerfile": "e4458e6b4976f9a3826f4a2205f5f129236ea138797d2bed9e1f59b1ca2c1246",
     "deploy/runtime/Dockerfile": "d830256734c8debc168903ffb2ea86053469acba57983fcf38d9461c09776ac7",
     "deploy/tls/gateway.Dockerfile": "6d5eece2c6a6f6cbab44d9467c1a6d60cb7a537b0a4355da9c45ebec2f2d99bf",
     "deploy/tls/gateway.go.mod": "df58c87d34b80a75998a06e6bbe86040253595225ee23d54290545f1d259724a",
@@ -1694,18 +1694,18 @@
     },
     {
       "role": "cadquery-worker",
-      "image": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1",
-      "scanned_at": "2026-10-21T08:14:31.010843742-05:00",
+      "image": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2",
+      "scanned_at": "2026-10-21T09:04:02.555645029-05:00",
       "counts": {
-        "LOW": 96,
-        "HIGH": 63,
-        "MEDIUM": 98,
+        "LOW": 94,
+        "HIGH": 55,
+        "MEDIUM": 80,
         "UNKNOWN": 4,
         "CRITICAL": 1
       },
       "findings": [
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-76642",
           "PkgName": "bsdutils",
           "InstalledVersion": "1:2.41.5-0+deb13u1",
@@ -1714,7 +1714,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-78408",
           "PkgName": "bsdutils",
           "InstalledVersion": "1:2.41.5-0+deb13u1",
@@ -1723,7 +1723,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-78409",
           "PkgName": "bsdutils",
           "InstalledVersion": "1:2.41.5-0+deb13u1",
@@ -1732,7 +1732,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-78410",
           "PkgName": "bsdutils",
           "InstalledVersion": "1:2.41.5-0+deb13u1",
@@ -1741,7 +1741,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-54369",
           "PkgName": "libacl1",
           "InstalledVersion": "2.3.2-2+b1",
@@ -1750,7 +1750,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-76642",
           "PkgName": "libblkid1",
           "InstalledVersion": "2.41.5-0+deb13u1",
@@ -1759,7 +1759,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-78408",
           "PkgName": "libblkid1",
           "InstalledVersion": "2.41.5-0+deb13u1",
@@ -1768,7 +1768,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-78409",
           "PkgName": "libblkid1",
           "InstalledVersion": "2.41.5-0+deb13u1",
@@ -1777,7 +1777,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-78410",
           "PkgName": "libblkid1",
           "InstalledVersion": "2.41.5-0+deb13u1",
@@ -1786,79 +1786,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
-          "VulnerabilityID": "CVE-2025-59375",
-          "PkgName": "libexpat1",
-          "InstalledVersion": "2.7.1-2",
-          "FixedVersion": "2.8.2-1~deb13u1",
-          "Severity": "HIGH",
-          "Status": "fixed"
-        },
-        {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
-          "VulnerabilityID": "CVE-2026-25210",
-          "PkgName": "libexpat1",
-          "InstalledVersion": "2.7.1-2",
-          "FixedVersion": "2.8.2-1~deb13u1",
-          "Severity": "HIGH",
-          "Status": "fixed"
-        },
-        {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
-          "VulnerabilityID": "CVE-2026-45186",
-          "PkgName": "libexpat1",
-          "InstalledVersion": "2.7.1-2",
-          "FixedVersion": "2.8.2-1~deb13u1",
-          "Severity": "HIGH",
-          "Status": "fixed"
-        },
-        {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
-          "VulnerabilityID": "CVE-2026-66046",
-          "PkgName": "libexpat1",
-          "InstalledVersion": "2.7.1-2",
-          "FixedVersion": "2.9.0-1~deb13u1",
-          "Severity": "HIGH",
-          "Status": "fixed"
-        },
-        {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
-          "VulnerabilityID": "CVE-2026-76956",
-          "PkgName": "libexpat1",
-          "InstalledVersion": "2.7.1-2",
-          "FixedVersion": "2.9.0-1~deb13u1",
-          "Severity": "HIGH",
-          "Status": "fixed"
-        },
-        {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
-          "VulnerabilityID": "CVE-2026-76957",
-          "PkgName": "libexpat1",
-          "InstalledVersion": "2.7.1-2",
-          "FixedVersion": "2.9.0-1~deb13u1",
-          "Severity": "HIGH",
-          "Status": "fixed"
-        },
-        {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
-          "VulnerabilityID": "CVE-2026-77214",
-          "PkgName": "libexpat1",
-          "InstalledVersion": "2.7.1-2",
-          "FixedVersion": "2.9.0-1~deb13u1",
-          "Severity": "HIGH",
-          "Status": "fixed"
-        },
-        {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
-          "VulnerabilityID": "CVE-2026-93990",
-          "PkgName": "libexpat1",
-          "InstalledVersion": "2.7.1-2",
-          "FixedVersion": "2.9.0-1~deb13u1",
-          "Severity": "HIGH",
-          "Status": "fixed"
-        },
-        {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-76642",
           "PkgName": "liblastlog2-2",
           "InstalledVersion": "2.41.5-0+deb13u1",
@@ -1867,7 +1795,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-78408",
           "PkgName": "liblastlog2-2",
           "InstalledVersion": "2.41.5-0+deb13u1",
@@ -1876,7 +1804,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-78409",
           "PkgName": "liblastlog2-2",
           "InstalledVersion": "2.41.5-0+deb13u1",
@@ -1885,7 +1813,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-78410",
           "PkgName": "liblastlog2-2",
           "InstalledVersion": "2.41.5-0+deb13u1",
@@ -1894,7 +1822,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-76642",
           "PkgName": "libmount1",
           "InstalledVersion": "2.41.5-0+deb13u1",
@@ -1903,7 +1831,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-78408",
           "PkgName": "libmount1",
           "InstalledVersion": "2.41.5-0+deb13u1",
@@ -1912,7 +1840,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-78409",
           "PkgName": "libmount1",
           "InstalledVersion": "2.41.5-0+deb13u1",
@@ -1921,7 +1849,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-78410",
           "PkgName": "libmount1",
           "InstalledVersion": "2.41.5-0+deb13u1",
@@ -1930,7 +1858,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2025-69720",
           "PkgName": "libncursesw6",
           "InstalledVersion": "6.5+20250216-2",
@@ -1939,7 +1867,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-76642",
           "PkgName": "libsmartcols1",
           "InstalledVersion": "2.41.5-0+deb13u1",
@@ -1948,7 +1876,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-78408",
           "PkgName": "libsmartcols1",
           "InstalledVersion": "2.41.5-0+deb13u1",
@@ -1957,7 +1885,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-78409",
           "PkgName": "libsmartcols1",
           "InstalledVersion": "2.41.5-0+deb13u1",
@@ -1966,7 +1894,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-78410",
           "PkgName": "libsmartcols1",
           "InstalledVersion": "2.41.5-0+deb13u1",
@@ -1975,7 +1903,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-16742",
           "PkgName": "libsystemd0",
           "InstalledVersion": "257.13-1~deb13u1",
@@ -1984,7 +1912,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2025-69720",
           "PkgName": "libtinfo6",
           "InstalledVersion": "6.5+20250216-2",
@@ -1993,7 +1921,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-16742",
           "PkgName": "libudev1",
           "InstalledVersion": "257.13-1~deb13u1",
@@ -2002,7 +1930,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-76642",
           "PkgName": "libuuid1",
           "InstalledVersion": "2.41.5-0+deb13u1",
@@ -2011,7 +1939,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-78408",
           "PkgName": "libuuid1",
           "InstalledVersion": "2.41.5-0+deb13u1",
@@ -2020,7 +1948,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-78409",
           "PkgName": "libuuid1",
           "InstalledVersion": "2.41.5-0+deb13u1",
@@ -2029,7 +1957,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-78410",
           "PkgName": "libuuid1",
           "InstalledVersion": "2.41.5-0+deb13u1",
@@ -2038,7 +1966,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-88806",
           "PkgName": "libx11-6",
           "InstalledVersion": "2:1.8.12-1",
@@ -2047,7 +1975,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-88806",
           "PkgName": "libx11-data",
           "InstalledVersion": "2:1.8.12-1",
@@ -2056,7 +1984,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-88806",
           "PkgName": "libx11-xcb1",
           "InstalledVersion": "2:1.8.12-1",
@@ -2065,7 +1993,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-6653",
           "PkgName": "libxml2",
           "InstalledVersion": "2.12.7+dfsg+really2.9.14-2.1+deb13u3",
@@ -2074,7 +2002,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-74860",
           "PkgName": "libxml2",
           "InstalledVersion": "2.12.7+dfsg+really2.9.14-2.1+deb13u3",
@@ -2083,7 +2011,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-86138",
           "PkgName": "libxml2",
           "InstalledVersion": "2.12.7+dfsg+really2.9.14-2.1+deb13u3",
@@ -2092,7 +2020,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-86139",
           "PkgName": "libxml2",
           "InstalledVersion": "2.12.7+dfsg+really2.9.14-2.1+deb13u3",
@@ -2101,7 +2029,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-86140",
           "PkgName": "libxml2",
           "InstalledVersion": "2.12.7+dfsg+really2.9.14-2.1+deb13u3",
@@ -2110,7 +2038,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-86142",
           "PkgName": "libxml2",
           "InstalledVersion": "2.12.7+dfsg+really2.9.14-2.1+deb13u3",
@@ -2119,7 +2047,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-86143",
           "PkgName": "libxml2",
           "InstalledVersion": "2.12.7+dfsg+really2.9.14-2.1+deb13u3",
@@ -2128,7 +2056,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-86144",
           "PkgName": "libxml2",
           "InstalledVersion": "2.12.7+dfsg+really2.9.14-2.1+deb13u3",
@@ -2137,7 +2065,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-88807",
           "PkgName": "libxrender1",
           "InstalledVersion": "1:0.9.12-1",
@@ -2146,7 +2074,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-76642",
           "PkgName": "login",
           "InstalledVersion": "1:4.16.0-2+really2.41.5-0+deb13u1",
@@ -2155,7 +2083,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-78408",
           "PkgName": "login",
           "InstalledVersion": "1:4.16.0-2+really2.41.5-0+deb13u1",
@@ -2164,7 +2092,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-78409",
           "PkgName": "login",
           "InstalledVersion": "1:4.16.0-2+really2.41.5-0+deb13u1",
@@ -2173,7 +2101,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-78410",
           "PkgName": "login",
           "InstalledVersion": "1:4.16.0-2+really2.41.5-0+deb13u1",
@@ -2182,7 +2110,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-76642",
           "PkgName": "mount",
           "InstalledVersion": "2.41.5-0+deb13u1",
@@ -2191,7 +2119,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-78408",
           "PkgName": "mount",
           "InstalledVersion": "2.41.5-0+deb13u1",
@@ -2200,7 +2128,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-78409",
           "PkgName": "mount",
           "InstalledVersion": "2.41.5-0+deb13u1",
@@ -2209,7 +2137,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-78410",
           "PkgName": "mount",
           "InstalledVersion": "2.41.5-0+deb13u1",
@@ -2218,7 +2146,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2025-69720",
           "PkgName": "ncurses-base",
           "InstalledVersion": "6.5+20250216-2",
@@ -2227,7 +2155,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2025-69720",
           "PkgName": "ncurses-bin",
           "InstalledVersion": "6.5+20250216-2",
@@ -2236,7 +2164,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-9538",
           "PkgName": "perl-base",
           "InstalledVersion": "5.40.1-6+deb13u1",
@@ -2245,7 +2173,7 @@
           "Status": "fix_deferred"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-76642",
           "PkgName": "util-linux",
           "InstalledVersion": "2.41.5-0+deb13u1",
@@ -2254,7 +2182,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-78408",
           "PkgName": "util-linux",
           "InstalledVersion": "2.41.5-0+deb13u1",
@@ -2263,7 +2191,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-78409",
           "PkgName": "util-linux",
           "InstalledVersion": "2.41.5-0+deb13u1",
@@ -2272,7 +2200,7 @@
           "Status": "affected"
         },
         {
-          "target": "sha256:c2a341f88a10eca54ecf7c18a5c28173df70b1adb9b11fa051049bd1056dd9d1 (debian 13.7)",
+          "target": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2 (debian 13.7)",
           "VulnerabilityID": "CVE-2026-78410",
           "PkgName": "util-linux",
           "InstalledVersion": "2.41.5-0+deb13u1",
@@ -2280,7 +2208,39 @@
           "Severity": "HIGH",
           "Status": "affected"
         }
-      ]
+      ],
+      "native_package_verification": {
+        "image": "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2",
+        "command": [
+          "docker",
+          "run",
+          "--rm",
+          "--network=none",
+          "--read-only",
+          "--user=65532:65532",
+          "--cap-drop=ALL",
+          "--security-opt=no-new-privileges:true",
+          "--pids-limit=16",
+          "--memory=128m",
+          "--cpus=1",
+          "--entrypoint=dpkg-query",
+          "sha256:60e3134fa10f9c5437b4779f0ce9253d2a2734715688c72eff1ea63192d640c2",
+          "-W",
+          "-f=${Package} ${Version}\n",
+          "libexpat1",
+          "libxml2",
+          "libgl1",
+          "libx11-6",
+          "libxrender1"
+        ],
+        "packages": {
+          "libexpat1": "2.9.0-1~deb13u1",
+          "libgl1": "1.7.0-1+b2",
+          "libx11-6": "2:1.8.12-1",
+          "libxml2": "2.12.7+dfsg+really2.9.14-2.1+deb13u3",
+          "libxrender1": "1:0.9.12-1"
+        }
+      }
     },
     {
       "role": "openbao",

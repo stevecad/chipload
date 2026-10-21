@@ -98,11 +98,17 @@ to generate or inspect source bundles. See [pip's secure installation
 guidance](https://pip.pypa.io/en/stable/topics/secure-installs/) and [Python's
 virtual environment behavior](https://docs.python.org/3.12/library/venv.html).
 
-`--graphics` adds GL/X11 loader libraries from a signed Debian snapshot dated
-2026-08-01, including its fixed transitive package versions. This profile supports
-geometry libraries that import those loaders even when no display is used.
+`--graphics` adds GL/X11 loader libraries from signed Debian and Debian security
+snapshots dated 2026-10-21, pinning the transitive native package versions.
+The Expat XML parser is pinned to `2.9.0-1~deb13u1`, containing the fixes in
+[DSA-6566-1](https://security-tracker.debian.org/tracker/DSA-6566-1).
+This profile supports geometry libraries that import those loaders even when no
+display is used.
 The default image omits them. Updating the snapshot requires rebuilding and
 retesting the environment; it is not an automatic security update mechanism.
+The graphics recipe participates in the dependency digest. Update the project's
+environment pin and rebuild before publishing it against the replacement image.
+Existing source revisions retain their original pin.
 
 Workers retain their existing network, filesystem, CPU, memory, process, output
 and execution limits. Libraries requiring additional OS packages or more

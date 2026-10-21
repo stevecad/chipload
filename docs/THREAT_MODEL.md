@@ -108,10 +108,22 @@ The gateway now builds Caddy with patched Go and HTTP/2 dependencies and install
 the pinned zlib fix. Its remaining scanner match is GO-2026-5932: the build checks
 the actual package graph and refuses any deprecated `x/crypto/openpgp` package.
 The Docker CLI now uses Go 1.26.10 as well. See [the gateway build](TLS.md).
-The report retains outstanding matches in base utilities, private identity/secrets
-infrastructure, the certificate client, optional geometry libraries and the test
-CA. Their fixes and reachability still need review; no broad suppression or
-zero-vulnerability claim applies to the deployment.
+The [base-package review](security/base-package-review-2026-10-21.json) records
+commands and observations for the exact core images. The affected Perl
+`Archive::Tar` module and `systemd-homed` service are absent. The reported
+util-linux paths require privileged mount or namespace operations excluded by the
+supplied container policy. The affected `infocmp` utility is present, with no
+trusted application invocation identified; untrusted shop code can already run
+utilities within its container. The libacl finding remains open pending a complete
+caller review. These conclusions must be revisited if images, launch policies or
+trusted subprocess paths change; they do not reduce the broker's Docker authority.
+
+The optional geometry image now includes the Debian security snapshot and the
+Expat `2.9.0-1~deb13u1` fix; see [dependency maintenance](DEPENDENCIES.md).
+The image report retains outstanding matches in base utilities, private
+identity/secrets infrastructure, the certificate client, other optional geometry
+libraries and the test CA. No scanner findings are suppressed. Remaining fixes
+and exposure review are still required before release clearance.
 
 ## Remaining deployment work
 

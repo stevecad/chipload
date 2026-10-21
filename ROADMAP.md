@@ -275,7 +275,10 @@ test evidence and remaining deployment work. Its dated dependency audit records
 image identities and remaining advisory matches. The gateway now compiles
 released Caddy with pinned patched Go/HTTP dependencies, verified module locks
 and a check excluding deprecated OpenPGP packages; the broker's Docker CLI is
-also patched. Remaining image findings need exposure review and applicable fixes.
+also patched. The optional geometry image now includes a pinned Debian security
+snapshot and Expat fix. An image-specific base-package review distinguishes absent
+components and excluded privileged prerequisites from findings still under review.
+Remaining image findings need exposure review and applicable fixes.
 Structural admission and deterministic work budgets are implemented;
 see `docs/SHOP_MODEL.md`. `docs/AUTHORING.md` records reproducible data-operation
 measurements. Immutable build/projection caching now reduces repeated-read cost

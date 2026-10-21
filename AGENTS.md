@@ -132,6 +132,11 @@ compilation without network access, dependency notices and startup fingerprint
 coverage when updating it. Image pins require advisory review as well as
 functional tests; a fixed application version can still contain vulnerable
 runtime libraries.
+The optional graphics worker pins both Debian and Debian security snapshots.
+Review native packages as well as Python wheels when updating that environment;
+retain exact image observations and unresolved findings in `docs/security/`.
+Keep the dependency digest tied to the graphics recipe and recheck deterministic
+builds, business cases and separation from the trusted SDK interpreter.
 
 Recovery is an operator command, never an HTTP/MCP shop action. Back up the paired SQLite stores and identity/configuration state together while writers are stopped. Authenticate encrypted archives before using plaintext. Restore only into fresh state and a new PostgreSQL volume; retain the incomplete marker across failure and reject application startup until restore finishes. Preserve policy generations, spent request credit, subjects, signing keys, publication generations, and observation timestamps. Use the shared deployment operation lock, retain private modes, and never clean up resources belonging to another project.
 
