@@ -1,8 +1,8 @@
 # Rotate TLS deployment credentials
 
-`scripts/tls-credentials` rotates the provisioned `chipload-agent` client secret
-or the PostgreSQL password used by Keycloak. It preserves client and subject IDs,
-shop grants, identity signing keys, and shop data. This is a local operator tool
+`scripts/tls-credentials` rotates the provisioned `chipload-agent` client secret,
+the PostgreSQL password used by Keycloak, or the Chipload realm's RS256 signing
+key. It preserves client and subject IDs, shop grants, and shop data. This is a local operator tool
 for the [TLS deployment](TLS.md); it is not an agent permission or REST/MCP action.
 
 Use the non-root deployment owner, the matching checkout and images, and a
@@ -83,8 +83,10 @@ fail during reconnection. This is a maintenance cutover, not zero-downtime rotat
 ## Resume an interrupted cutover
 
 Before the first external change, the command fsyncs an owner-only
-`.credentials-incomplete.json` journal containing both credentials and the selected
-rotation. Preserve it after failure. While it exists, `tls-stack up`, `reload`,
+`.credentials-incomplete.json` journal containing the selected rotation and its
+retry intent. Password rotations include the previous and pending credentials;
+signing rotations record provider/key IDs and phases, without exporting private
+keys. Preserve it after failure. While it exists, `tls-stack up`, `reload`,
 and recovery backups refuse to proceed. The normal operation lock also prevents
 concurrent deployment/recovery commands during rotation.
 
@@ -92,7 +94,7 @@ concurrent deployment/recovery commands during rotation.
 uv run --extra server python scripts/tls-credentials --state .local/tls resume
 ```
 
-For an agent rotation, supply the same operator options or another authorized
+For an agent or signing rotation, supply the same operator options or another authorized
 operator account when resuming. Retry reuses the pending secret even if the
 remote change committed before its response was lost. Changes to deployment
 settings, the identity volume, the configured subject/client, or an unrelated
@@ -108,15 +110,74 @@ then removed. Protected host storage is still required; deletion is not secure
 erasure and an abrupt exit may leave private temporary files.
 
 Take a new [encrypted backup](RECOVERY.md) after rotation. It includes the current
-secrets, identity database, realm import, and receipt. A backup from before a
+secrets, identity database, realm import, and receipts. A backup from before a
 rotation contains the earlier credentials; review and rotate them before exposing
-a restored service. This helper does not rotate Keycloak signing keys, operator
+a restored service. This helper does not rotate master-realm signing keys, operator
 passwords, TLS certificates, OpenBao credentials, or external adapter secrets.
+
+## Rotate the realm signing key
+
+```sh
+uv run --extra server python scripts/tls-credentials --state .local/tls rotate-signing
+```
+
+The helper creates a 3072-bit generated RSA provider inside Keycloak for RS256,
+with a recorded provider ID and a higher priority. It verifies the new key and
+a fresh agent token through the actual Chipload API before making the previous
+provider passive. Both public keys stay in JWKS during the overlap; existing
+unexpired tokens retain their identity and grants. The private keys stay in the
+identity database and its encrypted recovery archives. Password/client-secret
+rotations do not change these keys.
+
+This uses Keycloak's [generated providers and passive keys](https://www.keycloak.org/docs/latest/server_admin/#rotating-keys)
+and [component administration API](https://www.keycloak.org/docs-api/26.8.1/rest-api/index.html#_component).
+It supports the generated RSA provider used by the supplied deployment. External
+keystores, other signing algorithms, master-realm keys, and concurrent identity
+administration require their own procedures. Keep unrelated key changes out of
+the rotation window; changed key IDs, provider settings, or the active selection
+cause refusal. The operator needs realm view/manage permission.
+
+The default verification overlap is **60 days**, starting after the previous
+provider becomes passive. `--retain-days N`, before `rotate-signing`, accepts
+1–365 days. `signing.json` records both provider/key IDs, activation time and the
+earliest retirement time as Unix seconds. The helper never retires keys merely
+because time passed. Plan the interval for every client of this realm: old
+cookies, refresh tokens and offline tokens may still rely on the previous key.
+Those clients must refresh or reauthenticate before retirement. The interval
+does not prove all clients have updated.
+
+The API's bounded unknown-key refresh can briefly reject a newly issued token
+for up to five seconds after activation. Verification retries the identity read
+through that window; it never retries shop mutations. This is a managed rotation
+with verification, not a guarantee of uninterrupted authentication for all clients.
+
+After the recorded retention deadline, retire the previous key explicitly:
+
+```sh
+uv run --extra server python scripts/tls-credentials --state .local/tls retire-signing
+```
+
+Retirement disables the recorded old provider, recreates the API to discard
+cached verification keys, verifies new-token authentication and removal of the
+old public key, then deletes that old provider. Plan a brief API interruption.
+Other clients manage their own JWKS caches. Tokens or sessions still using the
+old key can stop working. A new signing rotation is refused until the recorded
+previous key is retired, keeping outstanding retirement work explicit.
+
+Both commands use the same private journal, deployment lock and `resume` command
+as credential rotation. Lost create/update/delete responses are reconciled
+against the recorded provider and key IDs; resume does not generate another key.
+The retention interval cannot be shortened during resume. Backups preserve
+`signing.json` and the actual Keycloak keys; a retired provider stays absent after
+restore. Earlier backups can contain earlier keys, so coordinate their retention
+and access with incident recovery. This helper's timed retirement is not an
+emergency compromised-key revocation procedure.
 
 ## Verify
 
 ```sh
 CHIPLOAD_CREDENTIAL_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_credentials_live.py' -v
+CHIPLOAD_CREDENTIAL_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_signing_live.py' -v
 ```
 
 The live drill publishes a shop, interrupts immediately after each remote
@@ -125,3 +186,12 @@ credential rejection, unchanged identity/grants, source/publication/catalog
 preservation, and cross-shop denial. It then backs up and restores the rotated
 deployment and checks the new credentials and signing keys again. Tests use
 temporary state and remove only their own containers and volumes.
+
+The signing drill loses a provider-creation response, verifies both generations
+of tokens and cross-shop denial during overlap, rejects premature retirement,
+and loses the disable response. It advances only the operator retention clock
+to exercise retirement while the original JWT is still unexpired. Actual API
+rejection then proves key removal rather than token expiry. It backs up and
+restores the identity database and retirement receipt, checking that the old key
+remains absent. Unit checks cover activation/passivation/deletion interruptions,
+changed-provider refusal, retention, and bounded verifier-cache behavior.

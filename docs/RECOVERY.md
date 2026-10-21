@@ -6,7 +6,9 @@ TLS certificates and keys, and deployment secrets. It can restore that set into
 a fresh state directory and PostgreSQL volume. Application services stay stopped
 until the operator starts the restored deployment.
 
-The latest credential-rotation receipt is included when present. Backups reject
+The latest credential-rotation and signing-key receipts are included when present.
+The identity database preserves active and retained verification keys; a retired
+provider stays deleted after restoration from a later backup. Backups reject
 unfinished [credential rotations](CREDENTIALS.md); finish the pending cutover
 before taking a new recovery set.
 

@@ -1,8 +1,10 @@
+import json
 import tempfile
 import time
 import unittest
 
 import jwt
+from cryptography.hazmat.primitives.asymmetric import rsa
 from pydantic import ValidationError
 from server_support import IdentityFixture
 
@@ -94,6 +96,27 @@ class AuthTests(unittest.TestCase):
         self.verifier._last_attempt -= 6
         with self.assertRaises(IdentityUnavailable):
             self.verifier.verify(self.identity.token())
+
+    def test_distinct_signing_keys_overlap_then_retire_after_cache_refresh(self):
+        old = self.identity.token()
+        before = self.verifier.verify(old)
+        replacement = rsa.generate_private_key(public_exponent=65537, key_size=3072)
+        key = json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(replacement.public_key()))
+        key.update(kid="replacement", alg="RS256", use="sig")
+        self.identity.keys.append(key)
+        self.identity.private = replacement
+        new = self.identity.token(headers={"kid": "replacement"})
+        self.verifier._last_attempt -= 6
+        self.assertEqual(self.verifier.verify(new), before)
+        self.assertEqual(self.verifier.verify(old), before)
+        self.identity.keys = [key]
+        # Local verification retains a usable cached key until its bounded expiry.
+        self.assertEqual(self.verifier.verify(old), before)
+        self.verifier._valid_until = 0
+        self.verifier._last_attempt -= 6
+        self.assertEqual(self.verifier.verify(new), before)
+        with self.assertRaises(AuthenticationError):
+            self.verifier.verify(old)
 
     def test_endpoints_require_secure_production_configuration(self):
         values = self.identity.settings.model_dump()

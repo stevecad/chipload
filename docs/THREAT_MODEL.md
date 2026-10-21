@@ -76,9 +76,14 @@ so their trusted implementation must enforce the caller's shop/action grants.
 - Qualify actual vendor receivers and external systems, including ambiguous
   effects, receiver persistence and recovery. The test receiver and simulator are
   evidence of protocol behavior, not qualification of a shop or machine.
-- Complete retention/storage policy, operator lifecycle, signing-key rotation,
+- Complete retention/storage policy, operator lifecycle, emergency signing-key revocation,
   monitoring, off-host restores and external-secret recovery. Agent-secret
   rotation does not revoke already-issued access tokens.
+
+The supplied deployment supports managed RS256 signing-key rotation with a
+recorded overlap and separate retirement, including cache clearing and encrypted
+recovery. See [credential operations](CREDENTIALS.md). It does not manage
+master-realm keys or prove every offline client refreshed before retirement.
 
 See [service workers](SERVICE_WORKERS.md), [application packaging](RUNTIME.md),
 [TLS](TLS.md), [Python execution](PYTHON_API.md), [adapters](ADAPTERS.md) and

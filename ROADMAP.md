@@ -29,7 +29,7 @@ Steve integration is planned for a later stage.
 - The TLS topology adds a pinned Caddy gateway, production-mode Keycloak, private application/database networks, explicit CA trust, and one-shop agent provisioning. Its separate client/admin host listeners bind to loopback. Live checks exercise real tokens, verified HTTPS, certificate/CA replacement, the agent lifecycle, restart persistence, trust failures, forwarding-header spoofing, and network/port restrictions. See `docs/TLS.md`; public routing, production secrets delivery, automatic renewal, and deployment load qualification remain open.
 - A contained executor now supports offline simulators and the bounded `chipload-receiver-1` HTTPS protocol with scoped OpenBao AppRole credentials. Configuration fingerprints pin receiver routes; uncertain work queries durable receipts without repeating commands. See `docs/ADAPTERS.md`. Production OpenBao lifecycle, qualified vendor bridges, additional dependency environments, custom executable evaluation, and hardened internet deployment remain work.
 - Encrypted recovery now snapshots both shop databases, Keycloak, grants, and TLS/secrets state together. Restore targets fresh state, retains spent request capacity, blocks application startup during interruption, and resumes the same recovery attempt. A live drill checks real identity/signing keys, publication and observation history, REST/MCP discovery, and interruption before backup completion and after identity restore commits. See `docs/RECOVERY.md`; external secrets and off-host disaster recovery remain operational work.
-- Operator credential rotation now journals agent-secret and identity-database password changes, retries the same pending credential, verifies old-credential rejection, and preserves subjects and grants. Startup and backups reject unfinished rotations. See `docs/CREDENTIALS.md`; operator-account lifecycle, signing-key rotation, and production OpenBao delivery/rotation remain work.
+- Operator credential rotation now journals agent-secret and identity-database password changes, retries the same pending credential, verifies old-credential rejection, and preserves subjects and grants. Realm RS256 rotation records its provider/key IDs, verifies new tokens, preserves the old key during a timed overlap, and retires it through a separate command that clears the API key cache. Signing receipts and keys belong to encrypted recovery. Startup and backups reject unfinished rotations. See `docs/CREDENTIALS.md`; operator-account lifecycle, emergency key revocation, and production OpenBao delivery/rotation remain work.
 - No open GitHub issues existed when this plan was written. The milestones below are a local implementation backlog; they have not been published as issues.
 
 The existing Compose configuration is for local development. Completing a local demo will not complete the deployment goal.
@@ -225,9 +225,16 @@ external systems, or a qualified recovery onto a replacement host.
 Agent-secret and identity-database password rotation now have durable retry,
 old-credential rejection, unchanged-grant checks, and a recovery drill using the
 rotated credentials. Already-issued JWTs retain their normal expiry. Managed
-operator lifecycle, signing-key rotation, and production OpenBao provisioning
+operator lifecycle, emergency key revocation, and production OpenBao provisioning
 and recovery remain separate work. Per-adapter HTTPS secret delivery is
 implemented and exercises actual KV and AppRole rotation in the live test.
+
+Realm signing rotation now preserves an explicitly timed verification overlap,
+records the exact replacement provider, and supports interrupted activation and
+retirement. A live Keycloak drill checks old/new tokens, early-retirement refusal,
+cache clearing, lost responses and encrypted recovery of the resulting keys and
+receipt. This manages the supplied realm's RS256 keys; master-realm keys and
+emergency revocation remain operator lifecycle work.
 
 **Complete when:** a clean installation can be configured from documented inputs; automated security and integration checks pass; backup/restore and credential rotation are exercised; failed identity/secrets dependencies fail safely; deployment tests verify exposed ports and network access; load-test results and operational requirements are documented. Local development settings must not pass production validation.
 

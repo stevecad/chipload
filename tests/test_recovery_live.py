@@ -11,6 +11,7 @@ import ssl
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 import uuid
 from contextlib import closing
@@ -155,8 +156,11 @@ class RecoveryLiveTests(unittest.IsolatedAsyncioTestCase):
                     repository = Repository(original / "data/chipload.db")
                     policy = repository.read_quotas()["policy"]
                     policy["shop"]["pending_builds"] = 7
+                    # Keep spent identity credit outstanding through maintenance;
+                    # an old fixed date lets normal bucket pruning erase the canary.
+                    policy["requests"]["identity"]["per_minute"] = 1
                     repository.set_quotas(QuotaPolicy.model_validate(policy), expected_generation=0)
-                    fixed = 1_792_454_400_000
+                    fixed = time.time_ns() // 1_000_000
                     limiter = RequestLimiter(repository, clock=lambda: fixed)
                     for _ in range(policy["requests"]["identity"]["burst"]):
                         limiter.identity("recovery-canary")

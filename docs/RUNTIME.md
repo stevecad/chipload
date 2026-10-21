@@ -8,10 +8,11 @@ the host Docker daemon.
 This packaging adds process and filesystem limits. The supplied Compose file
 exposes HTTP only on host loopback. The [TLS stack](TLS.md) adds a gateway,
 production-mode Keycloak, and private application/identity networks. Production
-OpenBao lifecycle, automatic signing-key/certificate rotation, off-host recovery,
+OpenBao lifecycle, automatic certificate renewal, off-host recovery,
 and deployment load qualification remain required for public deployment.
 The separate [executor packaging](ADAPTERS.md) supports offline simulation and
 HTTPS calls with scoped OpenBao credentials.
+The TLS deployment has [operator-driven credential and signing-key rotation](CREDENTIALS.md).
 
 ## Build and configure
 

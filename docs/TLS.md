@@ -6,7 +6,7 @@ same HTTPS endpoint and authorization policy. Only the gateway publishes ports;
 both its client and administration listeners bind to host loopback.
 
 This is a tested deployment building block. Public routing, production OpenBao
-delivery, credential rotation, off-host disaster recovery, deployment load testing,
+delivery, operator-account lifecycle, off-host disaster recovery, deployment load testing,
 and stronger worker-host isolation remain deployment gates. Starting this stack
 does not expose a public service.
 
@@ -214,7 +214,10 @@ The live test exercises replacement of both certificates and CA trust while
 preserving identities and grants, and rejects clients that retain only the old
 CA. Automatic certificate renewal remains work. Use the
 [credential rotation helper](CREDENTIALS.md) for the provisioned shop-agent secret
-and Keycloak database password, including interruption and retry.
+and Keycloak database password, including interruption and retry. The helper also
+rotates the realm's RS256 signing key with a recorded verification overlap and a
+separate retirement command that clears the API key cache. Signing-key rotation
+and HTTPS certificate renewal are separate operations.
 
 Keycloak imports a realm only when absent. Editing `realm.json` or an initial
 secret file does **not** update existing users, clients, or database passwords.
