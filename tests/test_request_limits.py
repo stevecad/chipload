@@ -1,6 +1,7 @@
 """Shared request budgets under process contention, clock changes, and saturation."""
 
 import multiprocessing
+import pickle
 import tempfile
 import time
 import unittest
@@ -18,11 +19,23 @@ AT = 1_792_454_400_000
 def admit_process(arguments):
     path, peer = arguments
     limiter = RequestLimiter(Repository(Path(path)), clock=lambda: AT)
-    try:
-        limiter.ingress((peer, 1234))
-        return "accepted"
-    except RateLimited:
-        return "limited"
+    until = time.monotonic() + 5
+    while True:
+        try:
+            limiter.ingress((peer, 1234))
+            return "accepted"
+        except RateLimited:
+            return "limited"
+        except RequestCapacity:
+            # A pre-admission refusal runs no application work. Wait for the
+            # competing writer, while keeping the quota clock frozen at AT.
+            if time.monotonic() >= until:
+                raise
+            time.sleep(.005)
+
+
+def capacity_process():
+    raise RequestCapacity()
 
 
 class RequestLimitTests(unittest.TestCase):
@@ -60,6 +73,18 @@ class RequestLimitTests(unittest.TestCase):
         self.assertEqual(results.count("limited"), 7)
         # Denied attempts leave no peer state behind.
         self.assertEqual(self.repository.read_quotas()["usage"]["deployment"]["request_buckets"], 6)
+
+    def test_admission_refusals_preserve_their_type_and_metadata_across_processes(self):
+        for original in (RequestCapacity(), RateLimited("identity", 7)):
+            restored = pickle.loads(pickle.dumps(original))
+            self.assertIs(type(restored), type(original))
+            self.assertEqual(restored.retry_after, original.retry_after)
+            self.assertEqual(str(restored), str(original))
+            if isinstance(original, RateLimited):
+                self.assertEqual(restored.limit, "identity")
+        with ProcessPoolExecutor(max_workers=1, mp_context=multiprocessing.get_context("spawn")) as pool:
+            with self.assertRaises(RequestCapacity):
+                pool.submit(capacity_process).result(timeout=10)
 
     def test_denied_peer_does_not_spend_another_peers_deployment_budget(self):
         self.policy(deployment={"burst": 2}, peer={"burst": 1})

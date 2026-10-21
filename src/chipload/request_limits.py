@@ -60,12 +60,18 @@ class RateLimited(ValueError):
         self.retry_after = retry_after
         super().__init__("request rate exceeded; retry later")
 
+    def __reduce__(self):
+        return type(self), (self.limit, self.retry_after), self.__dict__
+
 
 class RequestCapacity(RuntimeError):
     retry_after = 1
 
     def __init__(self):
         super().__init__("request admission is at capacity; retry later")
+
+    def __reduce__(self):
+        return type(self), (), self.__dict__
 
 
 def peer_key(client) -> str:
