@@ -63,6 +63,11 @@ any [operator-provisioned shop libraries](DEPENDENCIES.md). Source projects can
 pin that environment with `dependencies_sha256`. The database-backed SDK service
 uses the core interpreter and never loads shop libraries or their startup hooks.
 
+The same evaluation method accepts `target_kind="offer"` for
+[alternative routes](SHOP_MODEL.md#alternative-routes). A Python program can
+inspect `shop.page("offers")` and call `shop.evaluate(query)` using the published
+offer ID and its inputs. No additional MCP tool is needed.
+
 Public discovery needs neither a login nor code execution:
 
 ```json

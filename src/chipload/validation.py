@@ -74,6 +74,7 @@ def validate_shop(shop: Shop) -> None:
         "processes",
         "capabilities",
         "workflows",
+        "offers",
         "evidence",
         "variables",
         "operations",
@@ -90,6 +91,12 @@ def validate_shop(shop: Shop) -> None:
             facts(item.properties, ("catalogs", catalog.id, "items", item.id, "properties"))
     for variable in shop.variables:
         rules(variable.applies_when, ("variables", variable.id, "applies_when"))
+    for offer in shop.offers:
+        path = ("offers", offer.id)
+        rules(offer.requirements, path + ("requirements",))
+        for index, route in enumerate(offer.alternatives):
+            ref(route.target, "capabilities" if route.target_kind == "capability" else "workflows",
+                path + ("alternatives", str(index), "target"))
     for operation in shop.operations:
         path = ("operations", operation.id)
         unique(operation.resources, path + ("resources",))

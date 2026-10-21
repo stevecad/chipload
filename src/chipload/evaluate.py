@@ -23,6 +23,7 @@ from .model import (
     Observation,
     Quantity,
     Range,
+    Route,
     Rule,
     Source,
     Timestamp,
@@ -36,7 +37,7 @@ ASSURANCE = {"declared": 0, "demonstrated": 1, "qualified": 2}
 
 
 class EvaluationRequest(Model):
-    target_kind: Literal["capability", "workflow"]
+    target_kind: Literal["capability", "workflow", "offer"]
     target: Id
     facts: Annotated[tuple[Fact, ...], Field(max_length=100)] = ()
     initial_state: Annotated[tuple[Fact, ...], Field(max_length=100)] = ()
@@ -89,13 +90,23 @@ class StepResult(Model):
     decision: Decision
 
 
+class AlternativeResult(Route):
+    decision: Decision
+    steps: tuple[StepResult, ...] = ()
+    simulated: StrictBool
+
+
 class Evaluation(Decision):
-    target_kind: Literal["capability", "workflow"]
+    target_kind: Literal["capability", "workflow", "offer"]
     target: Id
     model_sha256: str
     evaluated_at: Timestamp
     simulated: StrictBool
     steps: tuple[StepResult, ...] = ()
+    alternatives: tuple[AlternativeResult, ...] = Field(
+        default=(), max_length=32, exclude_if=lambda value: not value
+    )
+    matching_alternative: Route | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 def same(left: Value, right: Value) -> bool:
@@ -162,12 +173,28 @@ def evaluate(
     at: datetime,
     observations: tuple[Observation, ...] = (),
 ) -> Evaluation:
+    """Evaluate a validated artifact with no caller-supplied knowledge exemptions."""
+    return _evaluate(artifact, request, at=at, observations=observations)
+
+
+def _evaluate(
+    artifact: Artifact,
+    request: EvaluationRequest,
+    *,
+    at: datetime,
+    observations: tuple[Observation, ...] = (),
+    declared_facts: frozenset[str] = frozenset(),
+) -> Evaluation:
     """Evaluate an already validated artifact at an explicit observation time.
 
     Serving layers load artifacts using read_artifact and authorize both the
     target and returned data. `at` comes from the service clock for live queries.
     """
     aware(at)
+    if request.target_kind == "offer":
+        from .offers import evaluate_offer
+
+        return evaluate_offer(artifact, request, at=at, observations=observations)
     facts = {fact.name: fact.value for fact in request.facts}
     initial_state = {fact.name: fact.value for fact in request.initial_state}
     observation_index = {item.id: item for item in observations}
@@ -405,7 +432,7 @@ def evaluate(
             evidence=tuple(e for s in step_results for e in s.decision.evidence),
             observations=tuple(o for s in step_results for o in s.decision.observations),
         )
-    for name in sorted(facts.keys() - modeled_facts):
+    for name in sorted(facts.keys() - modeled_facts - declared_facts):
         extra_reasons.append(
             Reason(
                 code="unmodeled-requirement",

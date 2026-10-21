@@ -312,6 +312,26 @@ class Workflow(Entity):
     requirements: tuple[Rule, ...] = Field(default=(), max_length=100)
 
 
+class Route(Model):
+    """One concrete capability or workflow considered by an offer."""
+
+    target_kind: Literal["capability", "workflow"]
+    target: Id
+
+
+class Offer(Entity):
+    """Alternative routes to a shop-defined outcome, with shared conditions."""
+
+    alternatives: tuple[Route, ...] = Field(min_length=1, max_length=32)
+    requirements: tuple[Rule, ...] = Field(default=(), max_length=100)
+
+    @model_validator(mode="after")
+    def unique_routes(self) -> Self:
+        if len({(r.target_kind, r.target) for r in self.alternatives}) != len(self.alternatives):
+            raise ValueError("offer alternatives must be unique")
+        return self
+
+
 class Interval(Model):
     """A reported range, not automatically an enforceable manufacturing limit."""
 
@@ -421,6 +441,7 @@ class Shop(Entity):
     processes: tuple[Process, ...] = Field(default=(), max_length=1000)
     capabilities: tuple[Capability, ...] = Field(default=(), max_length=1000)
     workflows: tuple[Workflow, ...] = Field(default=(), max_length=1000)
+    offers: tuple[Offer, ...] = Field(default=(), max_length=1000, exclude_if=lambda value: not value)
     evidence: tuple[Evidence, ...] = Field(default=(), max_length=1000)
     variables: tuple[ShopVariable, ...] = Field(default=(), max_length=1000)
     operations: tuple[ShopOperation, ...] = Field(default=(), max_length=1000)

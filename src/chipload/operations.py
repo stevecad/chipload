@@ -191,7 +191,7 @@ class Operations:
             ),
             "shop_evaluate": Operation(
                 EvaluationInput,
-                "Evaluate a published capability or workflow at the service's current time.",
+                "Evaluate a published capability, workflow, or alternative offer at the service's current time.",
                 lambda who, r: p.evaluation(r.shop_id, r.query),
             ),
             "shop_variables": Operation(

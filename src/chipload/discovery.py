@@ -127,5 +127,27 @@ def public_catalog(artifact: Artifact) -> dict:
             if operation.visibility == "public"
         ],
     }
+    if shop.offers:
+        workflows = {item["id"]: item for item in catalog["workflows"]}
+        catalog["offers"] = [
+            {
+                **summary(offer),
+                "requirements": [public_rule(rule) for rule in offer.requirements],
+                "alternatives": [
+                    route.model_dump(mode="json") for route in offer.alternatives
+                    if (route.target_kind == "capability" and route.target in public_capabilities)
+                    or (route.target_kind == "workflow" and route.target in workflows)
+                ],
+                "complete": all(
+                    route.target in public_capabilities if route.target_kind == "capability"
+                    else route.target in workflows and workflows[route.target]["complete"]
+                    for route in offer.alternatives
+                ),
+            }
+            for offer in shop.offers if offer.visibility == "public"
+        ]
+        # Private offers must not change public cache identities.
+        if not catalog["offers"]:
+            del catalog["offers"]
     # Public cache identities must not fingerprint private equipment details.
     return {"public_sha256": digest(canonical_json(catalog)), **catalog}

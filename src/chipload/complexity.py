@@ -70,6 +70,20 @@ def target_budgets(shop: Shop) -> dict[tuple[str, str], tuple[int, int]]:
                 weight += state_size * 256  # possible conflict reasons
         # Workflow results include both aggregate and per-step decisions.
         budgets["workflow", workflow.id] = work, weight * 2
+    # Observations are dynamic: reserve indexing for the maximum 1000-record
+    # snapshot, as well as the model indexes rebuilt by every route evaluation.
+    indexing = (
+        1000 + len(shop.capabilities) + len(shop.evidence) + len(shop.resources) + len(shop.workflows)
+    )
+    for offer in shop.offers:
+        routes = [budgets[route.target_kind, route.target] for route in offer.alternatives]
+        # Every alternative is evaluated independently, including repeated use
+        # across workflows. Results retain route details and the aggregate decision.
+        work = sum(cost for cost, _ in routes) + len(routes) * (100 + indexing)
+        work += sum(rule_work(rule) for rule in offer.requirements)
+        weight = 3 * sum(weight for _, weight in routes) + 2048 * len(routes)
+        weight += sum(rule_result(rule) for rule in offer.requirements)
+        budgets["offer", offer.id] = work, weight
     return budgets
 
 
@@ -95,7 +109,7 @@ def complexity_errors(shop: Shop):
                 "Combined operation checks exceed the evaluation budget.",
             )
     for (kind, target), (work, weight) in budgets.items():
-        path = ("capabilities" if kind == "capability" else "workflows", target)
+        path = ({"capability": "capabilities", "workflow": "workflows", "offer": "offers"}[kind], target)
         if work > MAX_EVALUATION_WORK:
             yield path, f"Evaluation work score {work} exceeds {MAX_EVALUATION_WORK}."
         if weight > MAX_RESULT_WEIGHT:

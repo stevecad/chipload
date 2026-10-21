@@ -79,7 +79,7 @@ documents the launcher; the settings example contains no identities or grants.
 | `POST /v1/shops/{shop}/variables/query` | `shop.variables() / discover_shop: variables` |
 
 Collections are `sites`, `resources`, `catalogs`, `processes`, `capabilities`,
-`workflows`, `variables`, and `operations`. Only explicitly public records appear. Private and
+`workflows`, `offers`, `variables`, and `operations`. Only explicitly public records appear. Private and
 missing IDs both return 404. Page sizes are 1–100; `query` filters names and IDs.
 Follow the returned `next_cursor` with the same collection and filter. Cursors
 are tied to the public revision; a changed revision returns 409 so the client
@@ -102,6 +102,8 @@ The example's unknown qualification remains null. An evaluation body has the
 same `shop_id` envelope and a `query` matching the SDK's `EvaluationRequest`:
 target kind and ID, named facts, initial state, purpose, minimum evidence level,
 and whether simulation is permitted. The body shop ID must match the path.
+Target kinds are `capability`, `workflow`, and `offer`. Offers assess alternative
+routes under shared conditions; see [the model contract](SHOP_MODEL.md#alternative-routes).
 
 The service supplies the evaluation time and stored observation snapshot.
 Clients cannot inject a clock, observations, or a principal into an evaluation.
@@ -114,11 +116,16 @@ of a capability opts into disclosure of that capability's outcome and relevant
 freshness summaries. Private equipment IDs, evidence IDs, observation IDs,
 values, internal paths, model/build digests, and step traces are excluded.
 Public capability contracts include input/output states and declared requirements.
+An offer response also includes the public `alternatives` assessments and,
+when supported or conditional, a `matching_alternative`. These references are
+assessment results; callable operations retain their separate authorization.
 
 If a required input catalog contains hidden allowed values, public evaluation
 returns unknown without testing guessed values against the hidden set. Public
 workflows with private steps also remain unknown. Publication does not turn
 partial disclosure into proof of support.
+This rule also covers offers with hidden alternatives or hidden conditions in
+any nested workflow. Their public response contains no alternative decisions.
 
 ## Authenticated operations
 

@@ -2,9 +2,11 @@
 
 from typing import Literal
 
+from pydantic import Field
+
 from .artifact import Digest
 from .evaluate import Outcome
-from .model import Id, Model, Source, Timestamp
+from .model import Id, Model, Route, Source, Timestamp
 
 
 class CatalogView(Model):
@@ -19,6 +21,7 @@ class CatalogView(Model):
     workflows: tuple[dict, ...]
     variables: tuple[dict, ...]
     operations: tuple[dict, ...] = ()
+    offers: tuple[dict, ...] = Field(default=(), exclude_if=lambda value: not value)
 
 
 class PageView(Model):
@@ -44,8 +47,13 @@ class Freshness(Model):
     source: Source | None
 
 
+class PublicAlternative(Route):
+    outcome: Outcome
+    simulated: bool
+
+
 class PublicEvaluation(Model):
-    target_kind: Literal["capability", "workflow"]
+    target_kind: Literal["capability", "workflow", "offer"]
     target: Id
     revision: Digest
     evaluated_at: Timestamp
@@ -53,3 +61,5 @@ class PublicEvaluation(Model):
     simulated: bool
     reasons: tuple[PublicReason, ...]
     freshness: tuple[Freshness, ...]
+    alternatives: tuple[PublicAlternative, ...] = Field(default=(), max_length=32, exclude_if=lambda value: not value)
+    matching_alternative: Route | None = Field(default=None, exclude_if=lambda value: value is None)

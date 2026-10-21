@@ -145,7 +145,7 @@ Pair the project with manufacturing requests and expected explanations, includin
 
 ### 2. Build the Python SDK and versioned shop model
 
-**Status:** Initial implementation and domain tests pass, including generic input catalogs, open resource kinds, exact absolute-temperature conversion, and contextual shop-variable applicability. See `docs/SHOP_MODEL.md` for the draft schema and migration decision. More expressive process transformations, evidence lifecycle, policy composition, and custom executable evaluation remain design and implementation work; the current model does not claim general manufacturing feasibility.
+**Status:** Initial implementation and domain tests pass, including generic input catalogs, open resource kinds, exact absolute-temperature conversion, and contextual shop-variable applicability. Alternative offers now compose concrete capabilities/workflows with shared business conditions, independent route evidence/state, and bounded combined evaluation. Three example shops cover all four outcomes through REST/MCP and actual isolated source/Python execution. See `docs/SHOP_MODEL.md` for the draft schema and migration decision. More expressive process transformations, evidence lifecycle, additional policy composition, and custom executable evaluation remain design and implementation work; the current model does not claim general manufacturing feasibility.
 
 Implement typed domain models, reusable shop components, explicit units, stable references, constraints, evidence, observations, and workflow compatibility. Provide structured validation errors that identify the relevant source object or field. Define deterministic serialization and compatibility rules for generated artifacts.
 

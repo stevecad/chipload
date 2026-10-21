@@ -17,7 +17,7 @@ from .project import unique_json
 from .query import VariableQuery, query_variables
 
 Collection = Literal[
-    "sites", "resources", "catalogs", "processes", "capabilities", "workflows", "variables", "operations"
+    "sites", "resources", "catalogs", "processes", "capabilities", "workflows", "offers", "variables", "operations"
 ]
 
 
@@ -37,6 +37,10 @@ PUBLIC_REASONS = {
     "unmodeled-requirement": "The model cannot establish the requested additional requirement.",
     "incompatible-input-state": "The requested state is incompatible with this process or workflow.",
     "unpublished-condition": "Some necessary conditions have not been published for evaluation.",
+    "alternative-supported": "At least one complete route supports these inputs.",
+    "alternative-conditional": "At least one complete route has explicit conditions to resolve.",
+    "alternative-unknown": "No route establishes support; at least one needs more information.",
+    "alternative-unsupported": "Every declared route rejects these inputs.",
 }
 
 
@@ -120,7 +124,7 @@ class PublishedService:
                 raise ValueError("invalid page cursor") from None
         records = [
             item
-            for item in sorted(catalog[collection], key=lambda item: item["id"])
+            for item in sorted(catalog.get(collection, ()), key=lambda item: item["id"])
             if item["id"] > after
             and query.casefold() in (item["id"] + " " + item["name"]).casefold()
         ]
@@ -134,7 +138,7 @@ class PublishedService:
 
     def item(self, shop: str, collection: Collection, item_id: str) -> dict:
         catalog = self.catalog(shop)
-        item = next((item for item in catalog[collection] if item["id"] == item_id), None)
+        item = next((item for item in catalog.get(collection, ()) if item["id"] == item_id), None)
         if item is None:
             raise NotFound("published item not found")
         return {"revision": catalog["public_sha256"], "item": item}
@@ -171,15 +175,25 @@ class PublishedService:
             catalog = self.repository.public_catalog(artifact)
         except KeyError:
             raise NotFound("published shop not found") from None
-        collection = "capabilities" if query.target_kind == "capability" else "workflows"
-        target = next((c for c in catalog[collection] if c["id"] == query.target), None)
+        collection = {"capability": "capabilities", "workflow": "workflows", "offer": "offers"}[query.target_kind]
+        target = next((c for c in catalog.get(collection, ()) if c["id"] == query.target), None)
         if target is None:
             raise NotFound("evaluation target not found")
-        requirements = list(target["requirements"])
-        if query.target_kind == "workflow":
-            for capability in catalog["capabilities"]:
-                if capability["id"] in target["capabilities"]:
-                    requirements.extend(capability["requirements"])
+        capabilities = {cap["id"]: cap for cap in catalog["capabilities"]}
+        workflows = {workflow["id"]: workflow for workflow in catalog["workflows"]}
+
+        def conditions(kind, item):
+            result = list(item["requirements"])
+            if kind == "workflow":
+                for identifier in item["capabilities"]:
+                    result.extend(capabilities[identifier]["requirements"])
+            elif kind == "offer":
+                for route in item["alternatives"]:
+                    targets = capabilities if route["target_kind"] == "capability" else workflows
+                    result.extend(conditions(route["target_kind"], targets[route["target"]]))
+            return result
+
+        requirements = conditions(query.target_kind, target)
         # Do not test guessed values against hidden catalog membership or private steps.
         opaque = target.get("complete") is False or any(
             rule.get("complete") is False for rule in requirements
@@ -205,7 +219,7 @@ class PublishedService:
             }
         result = evaluate(artifact, query, at=at, observations=observations.observations)
         codes = sorted({reason.code for reason in result.reasons})
-        return {
+        response = {
             **common,
             "outcome": result.outcome,
             "simulated": result.simulated,
@@ -225,6 +239,15 @@ class PublishedService:
                 use.model_dump(mode="json", exclude={"id"}) for use in result.observations
             ],
         }
+        if result.alternatives:
+            response["alternatives"] = [
+                {"target_kind": route.target_kind, "target": route.target,
+                 "outcome": route.decision.outcome, "simulated": route.simulated}
+                for route in result.alternatives
+            ]
+        if result.matching_alternative:
+            response["matching_alternative"] = result.matching_alternative.model_dump(mode="json")
+        return response
 
     def read_evidence(self, principal: Principal, shop: str) -> dict:
         require(principal, shop, "evidence:read")

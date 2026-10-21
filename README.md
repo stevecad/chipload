@@ -10,6 +10,10 @@ The shop authoring SDK and initial runtime use Python. A documented REST API let
 additional Python libraries. The CadQuery example derives a fixture envelope
 from code and combines geometric fit with business conditions.
 
+[Alternative offers](docs/SHOP_MODEL.md#alternative-routes) group different
+capabilities or workflows under one discoverable service. Each route retains
+its technical limits, business conditions, evidence and freshness.
+
 The API and build broker can run in separate containers with locked dependencies, private persistent storage, and process limits. See [application container setup](docs/RUNTIME.md) or the [TLS gateway and Keycloak stack](docs/TLS.md) for verified HTTPS, private networks, and a shop agent identity. Listeners default to loopback; supplied-certificate deployments can explicitly configure a [public client listener](docs/TLS.md#configure-a-public-client-listener). Administration stays private. Public deployment and operational qualification remain work.
 
 API domain calls use [supervised service workers](docs/SERVICE_WORKERS.md) with CPU, memory and wall-time limits. The guide includes reproducible HTTP measurements and explains how clients recover when a write commits before its response is lost.

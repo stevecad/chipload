@@ -8,7 +8,7 @@ compiled result is data served through the shared REST API and MCP operations.
 The Python SDK and model are experimental. A local authoring/publication service
 and restricted container builds are implemented; see [AUTHORING.md](AUTHORING.md).
 REST/MCP and Keycloak token verification now expose the model; see
-[API.md](API.md). Production deployment remains to be built.
+[API.md](API.md). Production deployment qualification remains open.
 RFQ intake and processing are outside the current stage.
 
 ## Run the examples
@@ -36,6 +36,11 @@ Its `--public` option prints the public catalog.
 The [process/business library](PROCESS_EXAMPLES.md) adds 88 process projects and
 one mixed shop, with 2,147 cases. Each combines technical offers with explicit
 prototype/production acceptance conditions and contextual business policies.
+
+`uv run python -m examples.alternative_routes` exercises 24 alternative-route
+cases across machining, heat treatment, and a document review service. Each
+shop publishes one offer with separate technical and business conditions for
+small lots and contracted work.
 
 Only run source you trust in this local environment. The example runner is
 ordinary Python execution; it is not an isolated build service.
@@ -171,7 +176,7 @@ An invalid increment produces `invalid-increment`; missing values remain unknown
 Omitting this optional field preserves existing draft artifact encodings.
 
 `evaluate()` operates on compiled data. It never imports source, calls equipment,
-fetches URLs, or uses an LLM. Its request identifies a capability or workflow,
+fetches URLs, or uses an LLM. Its request identifies a capability, workflow, or offer,
 facts, initial state, purpose, and minimum evidence level.
 The caller supplies an explicit evaluation time and an observation snapshot.
 The REST/MCP service uses its own clock and stored observation snapshot for live
@@ -203,6 +208,67 @@ for one subject, such as a part or batch. It does not calculate geometry changes
 tolerance stacks, branching workpiece quantities, or a feasible shop schedule.
 Shared tooling appears as a dependency; a readiness observation does not reserve
 it or solve concurrent allocation.
+
+## Alternative routes
+
+An `Offer` names a service that can be provided through different capabilities
+or workflows. Each route is assessed independently, including its business rules,
+evidence, observations and workflow state. For example:
+
+```python
+from chipload import Choice, Offer, Route
+
+service = Offer(
+    id="service",
+    name="Shop service",
+    visibility="public",
+    alternatives=(
+        Route(target_kind="workflow", target="small-lot-route"),
+        Route(target_kind="workflow", target="contract-route"),
+    ),
+    requirements=(Choice(fact="terms-accepted", allowed=(True,)),),
+)
+# Include service in Shop(..., offers=(service,)), alongside the named workflows.
+```
+
+Use `EvaluationRequest(target_kind="offer", target="service", ...)` to evaluate
+the offer. Any supported route establishes support subject to the offer's shared
+conditions. Otherwise an explicitly conditional route takes precedence over an
+unknown route, and an unknown route takes precedence over rejection. The offer
+is unsupported only when every route rejects the inputs or a shared condition
+rejects them. Missing evidence never becomes rejection merely because another
+route is unsupported.
+
+Each alternative's outcome describes that route before the shared conditions;
+the aggregate outcome answers the complete offer query. Shared conditions are
+checked once, and overlapping route conditions still apply. Extra request facts
+remain unknown unless the route or shared conditions model them. Evidence and
+state from different alternatives are never combined to create a feasible route.
+
+Results include an `alternatives` assessment list. A supported or conditional
+offer also supplies `matching_alternative`; ties follow declaration order.
+Authorized private results contain each route's decisions and steps. Public
+results contain public route references, outcomes and simulation flags, with
+the usual safe explanations and freshness summary. Hidden alternatives, private
+workflow steps, or hidden catalog conditions make public evaluation unknown
+without evaluating the concealed conditions.
+
+Shared inputs remain available to each route's evidence checks. Unknown request
+fields produce one summary per alternative, keeping diagnostics bounded when
+many routes are evaluated; they still prevent a claim of support.
+
+A match reports evaluated support. Equipment operations still require their
+own concrete capability/workflow checks, grants and adapter bindings. An offer
+does not select an adapter, reserve capacity, or produce a schedule. An offer may
+reference up to 32 distinct capabilities/workflows; offers cannot reference
+other offers. Admission charges the sum of all alternative work and result
+sizes, including repeated workflow steps. Existing artifact encodings and public
+identities remain unchanged when no offers are present.
+
+See [alternative_routes.py](../examples/alternative_routes.py) for reusable
+Python factories, business conditions and source-project exports. This adds
+alternative composition to the compiled model; custom Python evaluation of
+queries and more general process transformations remain future work.
 
 ## Evidence and observations
 
@@ -257,6 +323,7 @@ them to agents through JSON Schema and a `limits` object:
 | Evidence references on a capability | 32 |
 | Observation requirements on a capability | 64 |
 | Workflow steps; predecessors per step | 256; 64 |
+| Alternatives in one offer | 32 |
 | Choice values or descriptive set values | 256 |
 | Text values, descriptions, and remedies | 4,000 characters |
 | Workflow state, including a reserve for request fields | 512 fields |
