@@ -177,16 +177,33 @@ def verify_live(state, values, report):
     )
 
 
-def install(state, *, certificates=None, ca_bundle=None, minimum_days=1, action="install"):
+def install(
+    state,
+    *,
+    certificates=None,
+    ca_bundle=None,
+    minimum_days=1,
+    action="install",
+    update_id=None,
+    expected_update_id=None,
+    expected_replacement=None,
+    expected_material=None,
+):
     if action not in {"install", "resume", "replace-pending"}:
         raise ValueError("unknown certificate action")
     state = state.absolute()
+    if update_id is not None:
+        stage_path(state, update_id)
+        if action != "install":
+            raise ValueError("only a new installation accepts an update identity")
     with stack.operation_lock(state):
         if any(present(state / name) for name in CONFLICTS):
             raise ValueError("finish deployment recovery, credential or identity changes first")
         marker = state / MARKER
         if action == "install":
             stack.require_ready(state)
+            if expected_material is not None and hashes(state) != expected_material:
+                raise ValueError("deployment certificates changed before installation")
         elif not present(marker):
             raise ValueError("there is no pending certificate installation")
         # Old certificates may already be expired, mismatched or untrusted.
@@ -201,7 +218,7 @@ def install(state, *, certificates=None, ca_bundle=None, minimum_days=1, action=
         identity = {key: volume[key] for key in ("Name", "CreatedAt", "Driver", "Labels")}
         stable = stable_state(state)
         if action == "install":
-            identifier = uuid.uuid4().hex
+            identifier = update_id or uuid.uuid4().hex
             journal = {
                 "version": 1,
                 "state": str(state),
@@ -215,6 +232,10 @@ def install(state, *, certificates=None, ca_bundle=None, minimum_days=1, action=
             }
         else:
             journal = read_journal(state)
+            if expected_update_id is not None and journal["update_id"] != expected_update_id:
+                raise ValueError("another certificate installation owns the journal")
+            if expected_replacement is not None and journal["replacement"] != expected_replacement:
+                raise ValueError("pending certificate candidate changed")
             if (
                 journal["stable"] != stable
                 or journal["volume"] != identity

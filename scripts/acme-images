@@ -1,0 +1,21 @@
+#!/usr/bin/env python3
+"""Pull the pinned ACME issuer, optionally including the local test CA."""
+
+import argparse
+import json
+import subprocess
+from pathlib import Path
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--tests", action="store_true")
+    args = parser.parse_args()
+    root = Path(__file__).resolve().parents[1]
+    images = json.loads((root / "deploy/acme/images.json").read_bytes())
+    for role in ("issuer", "test_ca") if args.tests else ("issuer",):
+        subprocess.run(["docker", "pull", images[role]], check=True)
+
+
+if __name__ == "__main__":
+    main()

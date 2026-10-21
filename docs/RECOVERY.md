@@ -31,6 +31,13 @@ restore first, then install a valid bundle before startup; a stopped restored
 deployment stays stopped during installation. The archived receipt is historical
 evidence, not proof that the restored listener is currently serving that certificate.
 
+The separate [ACME issuer](ACME.md) retains its own account keys, client storage,
+trust and delivery records. Those files are not part of this archive. Stop its
+timer while coordinating recovery and preserve issuer state through separately
+encrypted custody. A restored deployment at a new path needs an explicit issuer
+binding after validation; restoring deployed certificates alone does not restore
+the ACME account or enable renewal.
+
 Recovery sets include schema-9 container launch and name-reservation records, operation bindings, Python run history, execution history, and
 simulation receipts. Backups reject queued, running, or indeterminate operations.
 Stop new submissions, finish or cancel queued calls, reconcile uncertain outcomes,

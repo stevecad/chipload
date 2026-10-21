@@ -35,6 +35,7 @@ may still supply malicious or accidentally expensive source and data.
 | Operation executor | Separate trusted adapter process/container with one pinned binding and restricted network access. A live adapter obtains its own scoped OpenBao credential. It cannot infer permission from Python source alone. |
 | Keycloak / OpenBao | External identity and secret authorities. Chipload validates identity claims and enforces its own bindings. Adapter secrets are confined to the configured executor and receiver path. |
 | Recovery tools | Operator-only host commands with private deployment state and encrypted archives. They are not shop REST or MCP operations. |
+| ACME issuer | Pinned non-root client with its own private writable account storage, read-only configuration, explicit HTTPS trust and a temporary HTTP challenge listener. It has no application data or Docker socket. The separate host delivery runner has operator/Docker authority; user-systemd filesystem restrictions may be unenforced. |
 
 The shop and admission databases form one durable repository. The admission store
 separates request-accounting writes from shop writes; it is not a security boundary
@@ -54,6 +55,7 @@ a filesystem or network namespace inside the API container.
 | Outbound-request abuse or credential leakage | Untrusted containers have no network; operator-owned adapter bindings; pinned HTTPS trust/receiver path; bounded network work; no redirects, proxy inheritance or automatic dispatch retries; scoped AppRole/KV access | `test_remote_adapter.py`, real OpenBao and TLS receiver denials in `test_remote_adapter_live.py`, contained executor tests |
 | Spoofed client addresses or failed identity trust | Exact trusted gateway address, gateway-replaced single client header, disabled Uvicorn proxy rewriting, CA/hostname verification and bounded JWKS caching | `test_proxy.py`, `test_auth.py`, `test_tls_live.py`, distinct real network clients and private-port denials in `test_edge_live.py` |
 | Invalid certificate delivery or interruption leaving mixed TLS files | Offline validation before mutation, private durable candidate/journal, configuration and storage checks on retry, startup/backup interlocks, mounted-file recreation and exact live leaf-fingerprint verification | `test_certificates.py`, installer process death and CA replacement in `test_tls_live.py`; receipt preservation in `test_recovery_live.py` |
+| Renewal overwriting manual changes, losing its account or bypassing client restrictions | Explicit deployment binding and CA trust, account-key receipts, retained issuer container, actual image/mount/network/resource checks, guarded installation ownership, durable disable and recovery intent | `test_acme.py`; real challenges, CA failure, account loss, Docker policy drift, process death and a systemd timer in `test_acme_live.py` |
 | Recovery resetting authority, history or spent allowances | Paired database backups, encrypted authenticated archives, preserved identity state, fresh restore destinations, durable incomplete/rotation markers and operator locks; separate offline OpenBao recovery preserves quorum, cluster identity and policies | `test_recovery*.py`, `test_credentials*.py`, `test_secrets_recovery*.py` |
 | Database checks breaking concurrent write coordination | Metadata-only checks of existing files, serialized exclusive creation, SQLite-managed descriptors and durable transactions | `test_storage.py` probes actual locks from another process; admission and lifecycle concurrency tests |
 | Unconfirmed container cleanup releasing worker capacity | Terminal builds require confirmed worker removal or inert name reservation; failed cleanup retains running slots and report reservations; Python cleanup attempts both containers within one bounded budget | `test_container_cleanup.py`, lifecycle quota/recovery regression, actual retained-worker and delayed-removal tests |
@@ -102,6 +104,10 @@ so their trusted implementation must enforce the caller's shop/action grants.
 - Complete retention/storage policy, operator lifecycle, emergency signing-key revocation,
   monitoring, off-host restores and external-secret recovery. Agent-secret
   rotation does not revoke already-issued access tokens.
+- Qualify the [ACME issuer](ACME.md) against the selected public provider and DNS
+  route, including service-failure alerts and certificate expiry. Issuer account
+  storage has separate custody from TLS deployment archives; encrypted issuer
+  recovery, account/image/trust migration and generation retention remain work.
 
 Managed adapter identities now have exact-path policy checks, bounded token TTLs,
 journaled issuance/rotation and policy revocation. The workload live drill covers

@@ -30,7 +30,7 @@ Steve integration is planned for a later stage.
 - HTTP admission now shares deployment, connection-peer, identity, and mutation budgets across API processes. Limiter state is bounded; contention and saturation return retry details. Tests exercise two actual HTTP servers, process restart, forwarded-header spoofing, and MCP client recovery. `scripts/benchmark-requests` measures admission overhead. Network-edge controls and full deployment load qualification remain open.
 - Capacity policy and request balances use a separate durable store, keeping public admission independent of shop write locks. Resumable migration preserves existing policy history and spent allowances; tests exercise concurrent startup, interruption, store pairing, and discovery during authoring writes. Both database files belong to one backup/restore set.
 - API and broker container packaging now uses pinned images, locked wheels, non-root users, private shared storage, process limits, and graceful shutdown. The API has no Docker access; the broker has a daemon socket and no IP network. A live container test covers MCP authoring, isolated builds, REST discovery, restart, rollback, and withdrawal. See `docs/RUNTIME.md`.
-- The TLS topology adds a pinned Caddy gateway, production-mode Keycloak, private application/database networks, explicit CA trust, and one-shop agent provisioning. Its client listener defaults to loopback and accepts an explicit IPv4 bind address with supplied certificates; administration stays on loopback. Live checks exercise real tokens, verified HTTPS, certificate/CA replacement, the agent lifecycle, restart persistence, trust failures, forwarding-header spoofing, and network/port restrictions. Separate network clients verify REST/MCP discovery and distinct peer budgets through the published client port. See `docs/TLS.md`; site DNS/firewall qualification, production secrets delivery, automatic renewal, and deployment load qualification remain open.
+- The TLS topology adds a pinned Caddy gateway, production-mode Keycloak, private application/database networks, explicit CA trust, and one-shop agent provisioning. Its client listener defaults to loopback and accepts an explicit IPv4 bind address with supplied certificates; administration stays on loopback. Live checks exercise real tokens, verified HTTPS, certificate/CA replacement, the agent lifecycle, restart persistence, trust failures, forwarding-header spoofing, and network/port restrictions. Separate network clients verify REST/MCP discovery and distinct peer budgets through the published client port. The separate ACME issuer adds HTTP-01 acquisition, renewal, resumable delivery and systemd scheduling. See `docs/TLS.md` and `docs/ACME.md`; site DNS/firewall/provider qualification, production secrets delivery and deployment load qualification remain open.
 - `scripts/benchmark-deployment` measures the complete TLS path using routed client containers, real Keycloak tokens, REST/MCP technical and business queries, and concurrent Python editing/building. It verifies publication isolation and subsequent publication/rollback, reports service errors carried in HTTP 200 responses, and counts missed scheduled requests. Default-policy, invalid-token and capacity measurements belong in `docs/TLS.md`; a single compact shop on one host does not establish WAN capacity or independent tenant fairness.
 - Initial deployment runs preserved correct answers and publication/rollback while revealing occasional long-tail latency and shared-admission refusals. The 10-request/s default fixture missed three slots; invalid-token runs produced zero to three reader refusals. A capacity probe completed about 46 correct requests/s and did not sustain its offered 80 requests/s. Keep the raw reports and strict target in `docs/TLS.md` when comparing subsequent changes.
 - Service processes now recycle between calls while another ready slot can serve. Exhausted request allowances can be rejected from a read snapshot; accepted requests still recompute and debit under the write lock. Existing database files receive metadata checks without raw descriptor closes that would drop SQLite's process-wide advisory locks. Regression tests exercise blocked replacement, shutdown, policy/credit races, and actual cross-process locks; runtime and recovery checks cover the paired stores.
@@ -239,9 +239,17 @@ and verifies the exact certificates served after container recreation. An explic
 replacement can recover an expired pending candidate; stopped deployments remain
 stopped. Offline expiry reporting supplies monitoring exit codes, and encrypted
 recovery preserves certificate receipts while allowing expired historical
-material to be restored and repaired before startup. Automatic issuance, renewal
-scheduling, alert delivery and deployment-specific renewal qualification remain
-open. See `docs/TLS.md`.
+material to be restored and repaired before startup. See `docs/TLS.md`.
+
+The ACME helper now obtains and renews certificates in a pinned, restricted lego
+container, preserves account keys, binds delivery to an explicit deployment and
+generates user-systemd renewal units. Local Pebble tests perform real HTTP
+challenges through a published port, interrupt installation, resume without a
+second issuance, fire a timer and verify served certificates and unchanged real
+identity grants. Tests also cover no-op renewal, CA failure, missing account
+keys, container-policy changes and manual certificate takeover. Public-provider
+and DNS qualification, alert delivery, encrypted issuer custody, account/image/
+trust migration and generation retention remain open. See `docs/ACME.md`.
 
 Agent-secret and identity-database password rotation now have durable retry,
 old-credential rejection, unchanged-grant checks, and a recovery drill using the

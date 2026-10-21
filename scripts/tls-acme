@@ -1,0 +1,643 @@
+#!/usr/bin/env python3
+"""Obtain and renew shop TLS certificates with a contained ACME client."""
+
+import argparse
+import contextlib
+import csv
+import fcntl
+import hashlib
+import importlib.machinery
+import importlib.util
+import io
+import ipaddress
+import json
+import os
+import re
+import ssl
+import stat
+import subprocess
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+from urllib.parse import urlsplit
+
+import recovery_archive as archive
+
+ROOT = Path(__file__).resolve().parents[1]
+loader = importlib.machinery.SourceFileLoader(
+    "acme_certificates", str(ROOT / "scripts/tls-certificates")
+)
+certificates = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
+loader.exec_module(certificates)
+stack, material = certificates.stack, certificates.material
+IMAGES = json.loads((ROOT / "deploy/acme/images.json").read_bytes())
+LABEL = "org.chipload.acme-state"
+MARKER = ".run-incomplete.json"
+spec = importlib.util.spec_from_file_location("acme_delivery", ROOT / "scripts/acme_delivery.py")
+delivery = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(delivery)
+spec = importlib.util.spec_from_file_location("acme_timer", ROOT / "scripts/acme_timer.py")
+timer = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(timer)
+
+
+def configuration(values):
+    required = {
+        "version",
+        "api_host",
+        "identity_host",
+        "server",
+        "email",
+        "listen_address",
+        "http_port",
+        "network",
+        "renew_days",
+        "accept_terms",
+        "image",
+    }
+    if (
+        not isinstance(values, dict)
+        or set(values) != required
+        or type(values["version"]) is not int
+        or values["version"] != 1
+    ):
+        raise ValueError("invalid ACME configuration")
+    stack.configuration(
+        {
+            "version": 1,
+            "profile": "certificates",
+            "name": "acme",
+            "shop_id": "acme",
+            "api_host": values["api_host"],
+            "identity_host": values["identity_host"],
+            "port": 443,
+            "admin_port": 8444,
+            "subnet": "10.240.0.0/28",
+        }
+    )
+    url = urlsplit(values["server"])
+    if (
+        url.scheme != "https"
+        or not url.hostname
+        or url.username
+        or url.password
+        or url.fragment
+        or url.query
+        or not url.path.startswith("/")
+        or any(ord(c) < 33 or ord(c) > 126 for c in values["server"])
+    ):
+        raise ValueError("use an HTTPS ACME directory URL without credentials, query or fragment")
+    if url.port is not None and not 1 <= url.port <= 65535:
+        raise ValueError("invalid ACME directory port")
+    if (
+        not isinstance(values["email"], str)
+        or re.fullmatch(r"[A-Za-z0-9_.+%-]{1,64}@[A-Za-z0-9.-]{1,253}", values["email"]) is None
+    ):
+        raise ValueError("provide the account contact email")
+    if not isinstance(values["listen_address"], str):
+        raise ValueError("HTTP challenge address must be an IPv4 string")
+    address = ipaddress.IPv4Address(values["listen_address"])
+    if address.is_multicast or address.is_link_local or address.is_reserved:
+        raise ValueError("use a unicast or wildcard HTTP challenge IPv4 address")
+    if type(values["http_port"]) is not int or not 1 <= values["http_port"] <= 65535:
+        raise ValueError("HTTP challenge port must be 1–65535")
+    if (
+        not isinstance(values["network"], str)
+        or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,62}", values["network"]) is None
+        or values["network"] in {"host", "none"}
+    ):
+        raise ValueError("use a Docker bridge network for the issuer")
+    if type(values["renew_days"]) is not int or not 0 <= values["renew_days"] <= 90:
+        raise ValueError("renew-days must be 0–90; zero uses certificate lifetime and ACME advice")
+    if values["accept_terms"] is not True or values["image"] != IMAGES["issuer"]:
+        raise ValueError("explicit terms acceptance and the pinned issuer image are required")
+    return values
+
+
+def client_configuration(values):
+    return {
+        "storage": "/data",
+        "networkStack": "ipv4only",
+        "servers": {
+            "issuer": {
+                "url": values["server"],
+                "tlsSkipVerify": False,
+                "httpTimeout": 30,
+                "certTimeout": 180,
+                "overallRequestLimit": 60,
+            }
+        },
+        "accounts": {
+            "shop": {
+                "server": "issuer",
+                "email": values["email"],
+                "keyType": "EC256",
+                "acceptsTermsOfService": True,
+            }
+        },
+        "challenges": {"http": {"http": {"address": ":8080"}}},
+        "certificates": {
+            "shop": {
+                "domains": [values["api_host"], values["identity_host"]],
+                "account": "shop",
+                "challenge": "http",
+                "keyType": "EC256",
+                "renew": {
+                    "days": values["renew_days"],
+                    "disableRandomSleep": True,
+                    "ari": {"disable": False, "waitToRenewDuration": "0s"},
+                },
+            }
+        },
+        "log": {"level": "info", "format": "json"},
+    }
+
+
+def system_trust():
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.load_default_certs()
+    return "".join(
+        ssl.DER_cert_to_PEM_cert(cert) for cert in context.get_ca_certs(binary_form=True)
+    ).encode()
+
+
+def initialize(args):
+    state = args.state.absolute()
+    if certificates.present(state):
+        raise ValueError("issuer state exists; preserve its account and certificate keys")
+    values = configuration(
+        {
+            "version": 1,
+            "api_host": args.api_host,
+            "identity_host": args.identity_host,
+            "server": args.server,
+            "email": args.email,
+            "listen_address": args.listen_address,
+            "http_port": args.http_port,
+            "network": args.network,
+            "renew_days": args.renew_days,
+            "accept_terms": args.accept_terms,
+            "image": IMAGES["issuer"],
+        }
+    )
+    state.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".acme-init-", dir=state.parent) as temporary:
+        prepared = Path(temporary) / "state"
+        prepared.mkdir(mode=0o700)
+        archive.write(prepared / "issuer.json", json.dumps(values, indent=2))
+        archive.write(prepared / "client.json", json.dumps(client_configuration(values), indent=2))
+        archive.write(prepared / "identity-ca.pem", material.read(args.ca_bundle))
+        material.certificates(prepared / "identity-ca.pem")
+        directory_trust = material.read(args.directory_ca) if args.directory_ca else system_trust()
+        archive.write(prepared / "directory-ca.pem", directory_trust)
+        ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT).load_verify_locations(
+            cafile=prepared / "directory-ca.pem"
+        )
+        (prepared / "client").mkdir(mode=0o700)
+        (prepared / "bundles").mkdir(mode=0o700)
+        archive.sync_tree(prepared)
+        os.rename(prepared, state)
+        archive.sync_directory(state.parent)
+
+
+@contextlib.contextmanager
+def operation_lock(state):
+    archive.private(state, directory=True)
+    descriptor = os.open(state / ".operation.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        archive.private(state / ".operation.lock")
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        # Docker CLI children retain this lock if their invoking Python process dies.
+        yield descriptor
+    finally:
+        os.close(descriptor)
+
+
+def load(state):
+    for name in ("issuer.json", "client.json", "identity-ca.pem", "directory-ca.pem"):
+        archive.private(state / name)
+        if (state / name).stat().st_size > material.MAX_BYTES:
+            raise ValueError("issuer configuration exceeds its size limit")
+    values = configuration(json.loads((state / "issuer.json").read_bytes()))
+    if json.loads((state / "client.json").read_bytes()) != client_configuration(values):
+        raise ValueError("generated ACME client settings changed")
+    for name in ("client", "bundles"):
+        archive.private(state / name, directory=True)
+    return values
+
+
+def identity(state):
+    return hashlib.sha256((str(os.getuid()) + "\0" + str(state)).encode()).hexdigest()
+
+
+def run_command(arguments, lock_fd, *, timeout=360):
+    result = subprocess.run(
+        arguments,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=timeout,
+        pass_fds=(lock_fd,),
+    )
+    if result.returncode:
+        raise ValueError(
+            f"ACME container command failed (exit {result.returncode}); inspect its private logs"
+        )
+    if len(result.stdout) > 1024 * 1024:
+        raise ValueError("ACME container response exceeded its limit")
+    return result.stdout
+
+
+def inspect(name, lock_fd):
+    result = subprocess.run(
+        ["docker", "container", "inspect", name],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=30,
+        pass_fds=(lock_fd,),
+    )
+    if result.returncode:
+        if b"No such container" in result.stderr or b"No such object" in result.stderr:
+            return None
+        raise ValueError("cannot inspect ACME container")
+    if len(result.stdout) > 1024 * 1024:
+        raise ValueError("ACME container inspection exceeded its limit")
+    return json.loads(result.stdout)[0]
+
+
+def container(state, values, lock_fd):
+    stamp = identity(state)
+    name = "chipload-acme-" + stamp[:24]
+    driver = (
+        run_command(
+            ["docker", "network", "inspect", values["network"], "--format", "{{.Driver}}"], lock_fd
+        )
+        .decode()
+        .strip()
+    )
+    if driver != "bridge":
+        raise ValueError("the ACME network must use the local bridge driver")
+    image_id = (
+        run_command(["docker", "image", "inspect", values["image"], "--format", "{{.Id}}"], lock_fd)
+        .decode()
+        .strip()
+    )
+    config_digest = hashlib.sha256(
+        b"".join(
+            (state / item).read_bytes()
+            for item in (
+                "issuer.json",
+                "client.json",
+                "directory-ca.pem",
+                "identity-ca.pem",
+            )
+        )
+    ).hexdigest()
+    expected_mounts = {
+        "/data": (str(state / "client"), True),
+        "/config/client.json": (str(state / "client.json"), False),
+        "/config/directory-ca.pem": (str(state / "directory-ca.pem"), False),
+    }
+    record = inspect(name, lock_fd)
+    if record is None:
+        arguments = [
+            "docker",
+            "create",
+            "--name",
+            name,
+            "--pull",
+            "never",
+            "--label",
+            f"{LABEL}={stamp}",
+            "--label",
+            f"org.chipload.acme-config={config_digest}",
+            "--user",
+            f"{os.getuid()}:{os.getgid()}",
+            "--read-only",
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges",
+            "--memory",
+            "256m",
+            "--memory-swap",
+            "256m",
+            "--cpus",
+            "1",
+            "--pids-limit",
+            "64",
+            "--ulimit",
+            "core=0:0",
+            "--log-driver",
+            "local",
+            "--log-opt",
+            "max-size=5m",
+            "--log-opt",
+            "max-file=2",
+            "--tmpfs",
+            "/tmp:rw,noexec,nosuid,nodev,size=8m",
+            "--network",
+            values["network"],
+            "--publish",
+            f"{values['listen_address']}:{values['http_port']}:8080",
+            "--env",
+            "LEGO_CA_CERTIFICATES=/config/directory-ca.pem",
+            "--env",
+            "LEGO_CA_SYSTEM_CERT_POOL=false",
+        ]
+        for variable in (
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+            "ALL_PROXY",
+            "NO_PROXY",
+            "http_proxy",
+            "https_proxy",
+            "all_proxy",
+            "no_proxy",
+        ):
+            arguments.extend(("--env", variable + "="))
+        for destination, (source, writable) in expected_mounts.items():
+            fields = ["type=bind", f"source={source}", f"target={destination}"]
+            if not writable:
+                fields.append("readonly")
+            buffer = io.StringIO()
+            csv.writer(buffer, lineterminator="").writerow(fields)
+            arguments.extend(("--mount", buffer.getvalue()))
+        arguments.extend((values["image"], "--config", "/config/client.json"))
+        # Keep this named container between runs. Retrying a lost creation reply
+        # cannot create another writer, and no delayed create can reclaim its name.
+        run_command(arguments, lock_fd, timeout=60)
+        record = inspect(name, lock_fd)
+    if (
+        record is None
+        or record["Image"] != image_id
+        or record["Config"]["Labels"].get(LABEL) != stamp
+        or record["Config"]["Labels"].get("org.chipload.acme-config") != config_digest
+        or record["Config"]["User"] != f"{os.getuid()}:{os.getgid()}"
+        or record["Config"]["Entrypoint"] != ["/lego"]
+        or record["Config"]["Cmd"] != ["--config", "/config/client.json"]
+        or {
+            m["Destination"]: (m["Source"], m["RW"])
+            for m in record["Mounts"]
+            if m["Type"] == "bind"
+        }
+        != expected_mounts
+    ):
+        raise ValueError("ACME container does not match this issuer's configuration and storage")
+    policy = record["HostConfig"]
+    expected = {
+        "ReadonlyRootfs": True,
+        "Privileged": False,
+        "CapDrop": ["ALL"],
+        "SecurityOpt": ["no-new-privileges"],
+        "Memory": 256 * 1024 * 1024,
+        "MemorySwap": 256 * 1024 * 1024,
+        "NanoCpus": 1_000_000_000,
+        "PidsLimit": 64,
+        "NetworkMode": values["network"],
+        "PortBindings": {
+            "8080/tcp": [{"HostIp": values["listen_address"], "HostPort": str(values["http_port"])}]
+        },
+        "PublishAllPorts": False,
+        "LogConfig": {"Type": "local", "Config": {"max-size": "5m", "max-file": "2"}},
+        "Tmpfs": {"/tmp": "rw,noexec,nosuid,nodev,size=8m"},
+    }
+    if (
+        any(policy.get(key) != value for key, value in expected.items())
+        or any(
+            policy.get(key)
+            for key in ("CapAdd", "Devices", "DeviceRequests", "VolumesFrom", "PidMode", "UTSMode")
+        )
+        or set(record["NetworkSettings"]["Networks"]) != {values["network"]}
+        or any(m["Type"] not in {"bind", "tmpfs"} for m in record["Mounts"])
+    ):
+        raise ValueError("ACME container restrictions changed; stop and review the issuer")
+    if record["State"].get("Paused") or record["State"].get("Restarting"):
+        raise ValueError("ACME container is paused or restarting")
+    return name, record
+
+
+def private_client(state):
+    root = state / "client"
+    for path in [root, *root.rglob("*")]:
+        info = path.lstat()
+        if info.st_uid != os.getuid() or not (
+            stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)
+        ):
+            raise ValueError("unexpected ACME client storage entry")
+        path.chmod(0o700 if path.is_dir() else 0o600)
+
+
+def account_keys(state):
+    root = state / "client/accounts"
+    keys = {}
+    for path in root.rglob("*.key"):
+        archive.private(path)
+        if path.stat().st_size > 64 * 1024:
+            raise ValueError("ACME account key exceeds its limit")
+        keys[str(path.relative_to(state / "client"))] = archive.digest(path)
+    return keys
+
+
+def check_account(state, *, record=False):
+    path = state / "account.json"
+    keys = account_keys(state)
+    if certificates.present(path):
+        previous = delivery.read(path)
+        if previous.get("keys") != keys:
+            raise ValueError(
+                "ACME account key storage changed or disappeared; restore its matching state"
+            )
+    elif record:
+        if len(keys) != 1:
+            raise ValueError("expected exactly one retained ACME account key")
+        archive.replace_json(path, {"version": 1, "keys": keys})
+    elif certificates.present(state / "issued.json"):
+        raise ValueError("established issuer lost its account receipt")
+
+
+def export_bundle(state, values):
+    certificate = state / "client/certificates/shop.crt"
+    key = state / "client/certificates/shop.key"
+    fingerprint = material.certificates(certificate)[0].fingerprint(material.hashes.SHA256()).hex()
+    target = state / "bundles" / fingerprint
+    if not target.exists():
+        with tempfile.TemporaryDirectory(prefix=".bundle-", dir=state / "bundles") as temporary:
+            prepared = Path(temporary) / "bundle"
+            prepared.mkdir(mode=0o700)
+            for role in ("api", "identity"):
+                archive.write(prepared / f"certificates/{role}.crt", material.read(certificate))
+                archive.write(prepared / f"certificates/{role}.key", material.read(key))
+            archive.write(prepared / "identity-ca.pem", material.read(state / "identity-ca.pem"))
+            material.validate(prepared, values)
+            archive.sync_tree(prepared)
+            os.rename(prepared, target)
+            archive.sync_directory(target.parent)
+    certificates.private_stage(target)
+    report = material.validate(target, values)
+    if report["leaves"]["api"]["sha256"] != fingerprint:
+        raise ValueError("existing issued bundle differs from the ACME result")
+    link = state / ".current-next"
+    if certificates.present(link):
+        if not link.is_symlink():
+            raise ValueError("unexpected issuer publication path")
+        link.unlink()
+    link.symlink_to("bundles/" + fingerprint)
+    os.replace(link, state / "current")
+    archive.sync_directory(state)
+    receipt = {"version": 1, "issued_at": datetime.now(timezone.utc).isoformat(), **report}
+    archive.replace_json(state / "issued.json", receipt)
+    return target, receipt
+
+
+def issue(state):
+    state = state.absolute()
+    with operation_lock(state) as lock_fd:
+        values = load(state)
+        check_account(state)
+        delivery.preflight(state, values, certificates)
+        stack.runtime.docker_socket()
+        stack.check_public_engine(
+            {"profile": "certificates", "listen_address": values["listen_address"]}
+        )
+        name, record = container(state, values, lock_fd)
+        marker = state / MARKER
+        pending = certificates.present(marker)
+        if pending:
+            archive.private(marker)
+            journal = json.loads(marker.read_bytes())
+            if journal.get("version") != 1 or journal.get("container_id") != record["Id"]:
+                raise ValueError("pending issuance belongs to another container")
+        else:
+            journal = {
+                "version": 1,
+                "container_id": record["Id"],
+                "before": record["State"]["StartedAt"],
+            }
+            archive.replace_json(marker, journal)
+        # Reuse a completed request after interruption. If its retained leaf has
+        # since expired, a new renewal is needed to finish that same delivery.
+        leaf = state / "client/certificates/shop.crt"
+        if (
+            pending
+            and leaf.exists()
+            and not record["State"]["Running"]
+            and material.certificates(leaf)[0].not_valid_after_utc <= datetime.now(timezone.utc)
+        ):
+            journal["before"] = record["State"]["StartedAt"]
+            archive.replace_json(marker, journal)
+        if record["State"]["Running"]:
+            run_command(["docker", "wait", record["Id"]], lock_fd)
+        elif not pending or record["State"]["StartedAt"] == journal["before"]:
+            run_command(["docker", "start", record["Id"]], lock_fd)
+            run_command(["docker", "wait", record["Id"]], lock_fd)
+        record = inspect(record["Id"], lock_fd)
+        if (
+            record is None
+            or record["State"]["Running"]
+            or record["State"]["StartedAt"] == journal["before"]
+        ):
+            raise ValueError("ACME issuance has not reached a confirmed terminal state")
+        private_client(state)
+        if account_keys(state):
+            check_account(state, record=True)
+        if record["State"]["ExitCode"] != 0:
+            archive.replace_json(
+                state / "last-run.json",
+                {
+                    "version": 1,
+                    "succeeded": False,
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                    "container": name,
+                },
+            )
+            marker.unlink()
+            archive.sync_directory(state)
+            raise ValueError("ACME client failed; existing deployment certificates were preserved")
+        check_account(state, record=True)
+        bundle, receipt = export_bundle(state, values)
+        delivery.deliver(state, bundle, values, certificates)
+        archive.replace_json(
+            state / "last-run.json",
+            {
+                "version": 1,
+                "succeeded": True,
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "container": name,
+                "certificate_sha256": receipt["leaves"]["api"]["sha256"],
+            },
+        )
+        marker.unlink()
+        archive.sync_directory(state)
+        return bundle, receipt
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--state", type=Path, default=ROOT / ".local/acme")
+    commands = parser.add_subparsers(dest="action", required=True)
+    init = commands.add_parser("init")
+    for name in ("api-host", "identity-host", "server", "email"):
+        init.add_argument("--" + name, required=True)
+    init.add_argument("--accept-terms", action="store_true")
+    init.add_argument("--ca-bundle", type=Path, required=True)
+    init.add_argument("--directory-ca", type=Path)
+    init.add_argument("--listen-address", default="127.0.0.1")
+    init.add_argument("--http-port", type=int, default=80)
+    init.add_argument("--network", default="bridge")
+    init.add_argument("--renew-days", type=int, default=0)
+    commands.add_parser("run")
+    bind = commands.add_parser("bind")
+    bind.add_argument("--deployment", type=Path, required=True)
+    commands.add_parser("unbind", help="stop delivery; leave deployment recovery to its owner")
+    units = commands.add_parser("timer")
+    units.add_argument("--directory", type=Path)
+    args = parser.parse_args()
+    if os.getuid() == 0:
+        parser.error("run as the non-root deployment owner")
+    try:
+        if args.action == "init":
+            initialize(args)
+            print("Initialized private issuer state. Configure DNS/HTTP routing before run.")
+        elif args.action == "bind":
+            state = args.state.absolute()
+            with operation_lock(state):
+                delivery.bind(state, args.deployment, load(state), certificates)
+            print(
+                "Bound the issuer to the existing deployment. Run now installs renewed certificates."
+            )
+        elif args.action == "unbind":
+            state = args.state.absolute()
+            with operation_lock(state):
+                load(state)
+                delivery.unbind(state)
+            print(
+                "Disabled certificate delivery. Deployment files and recovery intent are preserved."
+            )
+        elif args.action == "timer":
+            state = args.state.absolute()
+            with operation_lock(state):
+                ready = delivery.preflight(state, load(state), certificates)
+                if ready is None:
+                    raise ValueError(
+                        "bind an established deployment before generating its renewal timer"
+                    )
+                paths = timer.write(
+                    state,
+                    args.directory or state / "systemd",
+                    "chipload-acme-" + identity(state)[:24],
+                    ROOT,
+                    ready[0],
+                )
+            print(json.dumps({"service": str(paths[0]), "timer": str(paths[1])}, indent=2))
+        else:
+            bundle, report = issue(args.state)
+            print(json.dumps({"bundle": str(bundle), **report}, indent=2))
+    except (OSError, ValueError, TypeError, KeyError, subprocess.SubprocessError):
+        parser.exit(
+            1,
+            "tls-acme: operation failed; preserve account state and inspect the issuer container's private logs before retrying.\n",
+        )
+
+
+if __name__ == "__main__":
+    main()

@@ -7,8 +7,8 @@ Client traffic defaults to host loopback and can use an explicitly configured
 IPv4 address with supplied deployment certificates. Administration always binds
 to `127.0.0.1`.
 
-This is a tested deployment building block. Site DNS/firewall routing, automatic
-certificate renewal, production OpenBao delivery, operator-account lifecycle,
+This is a tested deployment building block. Site DNS/firewall routing, certificate
+provider qualification, production OpenBao delivery, operator-account lifecycle,
 off-host disaster recovery, deployment load testing and stronger worker-host
 isolation remain deployment gates. The default configuration stays local.
 
@@ -38,7 +38,8 @@ resolve to loopback; many local resolvers already handle `.localhost`.
 
 No trust certificate is installed in the operating system. Each client must
 explicitly trust `identity-ca.pem`. Local leaf certificates expire after seven
-days and the local CA after thirty days; automatic renewal is not implemented.
+days and the local CA after thirty days; this development CA has no automatic
+renewal. Supplied-certificate deployments can use the separate [ACME issuer](ACME.md).
 The CA private key stays in `recovery/local-ca-key.pem`, outside every container
 mount. Keep this local CA scoped to development.
 
@@ -338,8 +339,9 @@ does not prove the listener is reachable or already serving these files.
 configuration drift, stopped-service repair and expiry reporting. The real TLS
 test kills the installer between file replacements and after activation/cleanup,
 then resumes through the CLI. It checks unchanged identities/grants and rejects
-clients retaining only the old CA. Automatic certificate acquisition, scheduling,
-alert delivery and deployment-specific renewal qualification remain work.
+clients retaining only the old CA. The separate [ACME issuer](ACME.md) provides
+HTTP-01 acquisition, renewal, bound delivery and generated systemd units. Alert
+delivery, issuer custody and deployment-specific provider qualification remain work.
 
 Keycloak imports a realm only when absent. Editing `realm.json` or an initial
 secret file does **not** update existing users, clients, or database passwords.
