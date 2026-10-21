@@ -215,7 +215,19 @@ audit "file" "file" {
                 )
                 await bao("PUT", "sys/unseal", {"key": initialized["keys_base64"][0]})
                 root_token = initialized["root_token"]
-                audit = await bao("GET", "sys/audit", token=root_token)
+                # Unsealing can return before the active node finishes startup.
+                # Probe this read-only endpoint before issuing any configuration
+                # writes. Authentication errors and persistent failures still fail.
+                deadline = time.monotonic() + 20
+                while True:
+                    status, audit = await asyncio.to_thread(
+                        bao_request, "GET", "sys/audit", None, root_token
+                    )
+                    if status == 200:
+                        break
+                    self.assertIn(status, (500, 503), "OpenBao audit readiness was rejected")
+                    self.assertLess(time.monotonic(), deadline, "OpenBao audit API did not become ready")
+                    await asyncio.sleep(0.2)
                 self.assertEqual(audit["data"]["file/"]["type"], "file")
                 await bao(
                     "POST",
