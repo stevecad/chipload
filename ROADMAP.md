@@ -32,11 +32,11 @@ deployment conditions or physical equipment.
 
 ## Current state
 
-The next phase is [communication between instances](docs/FEDERATION.md): direct
+[Communication between instances](docs/FEDERATION.md) now provides direct
 shop-to-shop queries, an optional cloud discovery directory and outbound relay,
 and supplier search by offering, material, location and business conditions.
-That design has its own implementation sequence and acceptance criteria;
-federation implementation is in progress.
+The portable container workflow is implemented and tested with real Keycloak
+and OpenBao; public deployment qualification remains separate.
 
 The first implementation slice adds public supplier listings with explicit
 indexing opt-in, versioned semantic input mappings and disclosed site coordinates.
@@ -58,8 +58,11 @@ credential provider. TLS protocol fixtures cover token verification, rotation,
 denials and managed reconnection. Caller-owned network jobs now connect REST and
 hosted Python to direct peers, public directory searches and relayed evaluations.
 Actual Python/SDK containers verify that mediation preserves socket, database and
-credential isolation and cannot claim connector authority. Federation container
-packaging and the combined real-identity container drill remain open.
+credential isolation and cannot claim connector authority. Separate cloud and
+connector containers and the combined real-identity drill now cover three shop
+instances, narrow OpenBao AppRoles, nearest-candidate business rejection, REST/MCP
+selection, withdrawal, lease expiry and direct dispatch during cloud outage. See
+[the reproducible container workflow](docs/FEDERATION_CONTAINERS.md).
 
 - The repository has issue-driven contributor tooling and a legacy v0.1.0 data specification.
 - Local Compose infrastructure provides Keycloak, PostgreSQL, and OpenBao, with bootstrap and access-denial tests.

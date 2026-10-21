@@ -1,0 +1,309 @@
+#!/usr/bin/env python3
+"""Prepare and run separate cloud or outbound connector containers on a Linux host."""
+
+import argparse
+import fcntl
+import hashlib
+import importlib.machinery
+import importlib.util
+import ipaddress
+import os
+import re
+import sqlite3
+import ssl
+import subprocess
+from contextlib import closing, contextmanager
+from pathlib import Path
+from urllib.parse import urlsplit
+
+from pydantic import ValidationError
+
+from chipload.artifact import canonical_json
+from chipload.connector import ConnectorSettings
+from chipload.directory import DirectoryStore
+from chipload.directory_model import CloudSettings
+from chipload.limits import bounded_json
+from chipload.remote_adapter import private_bytes
+
+ROOT = Path(__file__).resolve().parents[1]
+loader = importlib.machinery.SourceFileLoader("federation_tls", str(ROOT / "scripts/tls-stack"))
+stack = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
+loader.exec_module(stack)
+runtime = stack.runtime
+
+
+def recipe():
+    return hashlib.sha256(b"".join((ROOT / name).read_bytes() for name in (
+        "scripts/federation", "deploy/federation/compose.yaml", "deploy/federation/Caddyfile"))).hexdigest()
+
+
+def write(path, value):
+    data = value if isinstance(value, bytes) else canonical_json(value)
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "wb") as stream:
+        stream.write(data)
+        stream.flush()
+        os.fsync(stream.fileno())
+
+
+def mounted(source, target):
+    # Compose interpolates dollars even inside JSON string values.
+    return {"type": "bind", "source": str(source).replace("$", "$$"), "target": target,
+            "read_only": True, "bind": {"create_host_path": False}}
+
+
+class Inputs:
+    def __init__(self):
+        self.mounts, self.seen = [], {}
+
+    def add(self, value, *, directory=False, allowed=None):
+        source = Path(value).absolute()
+        runtime.private(source, directory=directory)
+        if directory:
+            if {path.name for path in source.iterdir()} != set(allowed):
+                raise ValueError("credential directories must contain only role-id, secret-id and their configured CA")
+            for path in source.iterdir():
+                private_bytes(path, 256 * 1024)
+        else:
+            private_bytes(source, 1024**2)
+        key = (str(source), directory)
+        if key not in self.seen:
+            target = f"/run/chipload/{'credentials' if directory else 'files'}/{len(self.mounts)}"
+            self.seen[key] = target
+            self.mounts.append({"source": str(source), "target": target, "directory": directory,
+                                "allowed": sorted(allowed) if allowed is not None else None})
+        return self.seen[key]
+
+    def policy(self, value):
+        if not value.ca_file:
+            return value
+        target = self.add(value.ca_file)
+        ssl.create_default_context(cadata=private_bytes(value.ca_file, 1024**2).decode("ascii"))
+        return value.model_copy(update={"ca_file": Path(target)})
+
+    def workload(self, value):
+        trust = value.trust
+        if trust.jwks_ca_file:
+            trust = trust.model_copy(update={"jwks_ca_file": Path(self.add(trust.jwks_ca_file))})
+        return value.model_copy(update={"trust": trust, "policy": self.policy(value.policy)})
+
+    def credentials(self, path, identity):
+        allowed = {"role-id", "secret-id"}
+        if identity.secrets.ca_file:
+            allowed.add(identity.secrets.ca_file)
+            ssl.create_default_context(cadata=private_bytes(Path(path) / identity.secrets.ca_file, 256 * 1024).decode("ascii"))
+        return Path(self.add(path, directory=True, allowed=allowed))
+
+    def connector(self, config):
+        dispatch = config.dispatch
+        if dispatch:
+            dispatch = dispatch.model_copy(update={"credentials": self.credentials(dispatch.credentials, dispatch.identity),
+                                                   "identity": self.workload(dispatch.identity)})
+        links = []
+        for link in config.clouds:
+            identity = self.workload(link.identity) if link.identity else None
+            credentials = self.credentials(link.credentials, link.identity) if link.advertise or link.relay else None
+            links.append(link.model_copy(update={"identity": identity, "credentials": credentials,
+                                                  "policy": self.policy(link.policy)}))
+        return config.model_copy(update={"source_policy": self.policy(config.source_policy),
+            "query_policy": self.policy(config.query_policy), "dispatch": dispatch, "clouds": tuple(links)})
+
+    def cloud(self, config, gateway):
+        identity = config.identity
+        if identity.jwks_ca_file:
+            identity = identity.model_copy(update={"jwks_ca_file": Path(self.add(identity.jwks_ca_file))})
+        return config.model_copy(update={"identity": identity.model_copy(update={
+            "database": Path("/data/cloud.db"), "trusted_proxy_ips": (gateway,)}), "egress": self.policy(config.egress)})
+
+
+def prepare(state, role, config_path, *, name, networks=(), certificates=None, bind="127.0.0.1", subnet=None):
+    if state.exists() or state.is_symlink():
+        raise ValueError("prepare requires fresh launcher state")
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,62}", name):
+        raise ValueError("invalid deployment name")
+    if len(set(networks)) != len(networks) or len(networks) > 4 or any(not re.fullmatch(r"[A-Za-z0-9_.-]{1,100}", n) for n in networks):
+        raise ValueError("use at most four distinct external Docker networks")
+    if role == "cloud" and networks:
+        raise ValueError("external network joins are for connectors; cloud has separate edge and egress networks")
+    config = (CloudSettings if role == "cloud" else ConnectorSettings).model_validate(
+        bounded_json(private_bytes(config_path, 1024**2), max_bytes=1024**2))
+    inputs = Inputs()
+    values = {"format": "chipload-federation-container-1", "role": role, "name": name,
+              "images": {role: runtime.image(role)}, "recipe": recipe(), "mounts": [], "networks": list(networks)}
+    if role == "cloud":
+        if certificates is None:
+            raise ValueError("cloud preparation requires supplied TLS material")
+        parsed = urlsplit(config.identity.resource_url)
+        host = parsed.hostname
+        if not re.fullmatch(r"[A-Za-z0-9.-]+", host):
+            raise ValueError("cloud gateway requires a DNS or IPv4 hostname")
+        address = ipaddress.IPv4Address(bind)
+        if address.is_multicast or address.is_link_local or address.is_reserved:
+            raise ValueError("invalid cloud client listener")
+        stack.material.verify(certificates, "api", host)
+        subnet = stack.choose_subnet(subnet)
+        base = ipaddress.ip_network(subnet)
+        gateway = str(base.network_address + 2)
+        config = inputs.cloud(config, gateway)
+        values.update(host=host, bind=str(address), port=parsed.port or 443,
+            subnet=subnet, gateway=gateway, cloud=str(base.network_address + 3),
+            certificate=inputs.add(certificates / "certificates/api.crt"), key=inputs.add(certificates / "certificates/api.key"))
+        values["images"]["gateway"] = runtime.image("gateway")
+        stack.check_tls_images({"gateway": values["images"]["gateway"]})
+    else:
+        config = inputs.connector(config)
+    runtime.check_images({role: values["images"][role]})
+    values["mounts"] = inputs.mounts
+    encoded = config.model_dump_json(indent=2).encode()
+    values["config_sha256"] = hashlib.sha256(encoded).hexdigest()
+    state.mkdir(parents=True, mode=0o700)
+    write(state / "settings.json", encoded)
+    if role == "cloud":
+        (state / "data").mkdir(mode=0o700)
+    write(state / "deployment.json", values)
+    return values
+
+
+@contextmanager
+def operation(state):
+    runtime.private(state, directory=True)
+    descriptor = os.open(state / ".operation.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        runtime.private(state / ".operation.lock")
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        yield
+    finally:
+        os.close(descriptor)
+
+
+def load(state, *, check=True):
+    values = bounded_json(private_bytes(state / "deployment.json", 256 * 1024), max_bytes=256 * 1024)
+    if values["format"] != "chipload-federation-container-1" or values["role"] not in {"cloud", "connector"}:
+        raise ValueError("launcher format or recipe differs; use the matching checkout")
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,62}", values["name"]):
+        raise ValueError("invalid deployment name")
+    roles = {"cloud", "gateway"} if values["role"] == "cloud" else {"connector"}
+    if set(values["images"]) != roles or any(not re.fullmatch(r"sha256:[0-9a-f]{64}", ref) for ref in values["images"].values()):
+        raise ValueError("deployment images must use immutable IDs")
+    if not check:
+        return values
+    if values["recipe"] != recipe():
+        raise ValueError("launcher recipe differs; use the matching checkout")
+    encoded = private_bytes(state / "settings.json", 1024**2)
+    if hashlib.sha256(encoded).hexdigest() != values["config_sha256"]:
+        raise ValueError("prepared configuration changed")
+    (CloudSettings if values["role"] == "cloud" else ConnectorSettings).model_validate(bounded_json(encoded, max_bytes=1024**2))
+    inputs = Inputs()
+    for mount in values["mounts"]:
+        inputs.add(mount["source"], directory=mount["directory"], allowed=mount["allowed"])
+    runtime.check_images({values["role"]: values["images"][values["role"]]})
+    if values["role"] == "cloud":
+        stack.check_tls_images({"gateway": values["images"]["gateway"]})
+    return values
+
+
+def compose(state, values, *arguments, capture=False):
+    role = values["role"]
+    mounts = [mounted(state / "settings.json", "/etc/chipload/settings.json"), *(
+        mounted(item["source"], item["target"]) for item in values["mounts"])]
+    services = {role: {"volumes": mounts}}
+    extras = {}
+    if role == "cloud":
+        services[role]["volumes"].append({"type": "bind", "source": str(state / "data").replace("$", "$$"),
+            "target": "/data", "bind": {"create_host_path": False}})
+        # Only the frontend receives TLS private keys. CA mounts belong to the backend.
+        tls_targets = {values["certificate"], values["key"]}
+        services[role]["volumes"] = [m for m in services[role]["volumes"] if m["target"] not in tls_targets]
+        services["gateway"] = {"volumes": [mounted(ROOT / "deploy/federation/Caddyfile", "/etc/caddy/Caddyfile"), *(
+            mounted(item["source"], "/tls/api.crt" if item["target"] == values["certificate"] else "/tls/api.key")
+            for item in values["mounts"] if item["target"] in tls_targets)]}
+    else:
+        extras = {f"external{index}": {"external": True, "name": name} for index, name in enumerate(values["networks"])}
+        services[role]["networks"] = ["egress", *extras]
+    override = state / "compose.json"
+    temporary = state / ".compose.tmp"
+    if temporary.exists():
+        temporary.unlink()
+    write(temporary, {"services": services, "networks": extras})
+    os.replace(temporary, override)
+    env = {**os.environ, "CHIPLOAD_UID": str(os.getuid()), "CHIPLOAD_GID": str(os.getgid()),
+        "CHIPLOAD_CLOUD_IMAGE": values["images"].get("cloud", values["images"][role]),
+        "CHIPLOAD_CONNECTOR_IMAGE": values["images"].get("connector", values["images"][role]),
+        "CHIPLOAD_GATEWAY_IMAGE": values["images"].get("gateway", values["images"][role]),
+        "CHIPLOAD_CLOUD_HOST": values.get("host", "unused.example"), "CHIPLOAD_CLOUD_IP": values.get("cloud", "10.255.255.3"),
+        "CHIPLOAD_FED_GATEWAY_IP": values.get("gateway", "10.255.255.2"), "CHIPLOAD_FED_SUBNET": values.get("subnet", "10.255.255.0/28"),
+        "CHIPLOAD_FED_BIND": values.get("bind", "127.0.0.1"), "CHIPLOAD_FED_PORT": str(values.get("port", 9443))}
+    return subprocess.run(["docker", "compose", "--env-file", "/dev/null", "--project-name", values["name"],
+        "--file", str(ROOT / "deploy/federation/compose.yaml"), "--file", str(override), "--profile", role, *arguments],
+        env=env, check=True, capture_output=capture, text=True, timeout=240)
+
+
+def cloud_ready(state):
+    data = state / "data"
+    for name in ("cloud.db", "cloud.db.limits", "cloud.db.limits.admission"):
+        runtime.private(data / name)
+    config = CloudSettings.model_validate(bounded_json(private_bytes(state / "settings.json", 1024**2)))
+    config = config.model_copy(update={"identity": config.identity.model_copy(update={"database": data / "cloud.db"})})
+    DirectoryStore(config)
+    # Verification must not create/migrate/reset uncertain initialization state.
+    with closing(sqlite3.connect((data / "cloud.db.limits").as_uri() + "?mode=ro", uri=True)) as main, closing(
+        sqlite3.connect((data / "cloud.db.limits.admission").as_uri() + "?mode=ro", uri=True)
+    ) as capacity:
+        if main.execute("PRAGMA user_version").fetchone()[0] != 12 or capacity.execute("PRAGMA user_version").fetchone()[0] != 1:
+            raise ValueError("cloud accounting initialization is incomplete")
+        reference = main.execute("SELECT identity,state FROM admission_store WHERE id=1").fetchone()
+        paired = capacity.execute("SELECT identity FROM admission_identity WHERE id=1").fetchone()
+        if not reference or reference[1] != "ready" or paired != (reference[0],):
+            raise ValueError("cloud accounting stores are not a ready pair")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("action", choices=("prepare", "initialize", "verify-initialization", "up", "down", "status", "logs"))
+    parser.add_argument("--state", type=Path, required=True)
+    parser.add_argument("--role", choices=("cloud", "connector"))
+    parser.add_argument("--config", type=Path)
+    parser.add_argument("--name")
+    parser.add_argument("--network", action="append", default=[])
+    parser.add_argument("--certificates", type=Path)
+    parser.add_argument("--listen-address", default="127.0.0.1")
+    args = parser.parse_args()
+    state = args.state.absolute()
+    if os.getuid() == 0:
+        parser.error("run as the non-root deployment owner")
+    try:
+        runtime.docker_socket()
+        if args.action == "prepare":
+            if args.role is None or args.config is None:
+                raise ValueError("prepare requires --role and --config")
+            prepare(state, args.role, args.config, name=args.name or "chipload-" + args.role, networks=args.network,
+                    certificates=args.certificates, bind=args.listen_address)
+        else:
+            with operation(state):
+                values = load(state, check=args.action not in {"down", "status", "logs"})
+                if args.action == "initialize":
+                    if values["role"] != "cloud" or any((state / "data").iterdir()) or (state / ".initialization-attempted").exists():
+                        raise ValueError("initialize only a fresh cloud once; verify an uncertain initialization instead")
+                    write(state / ".initialization-attempted", b"attempted\n")
+                    compose(state, values, "run", "--rm", "--no-deps", "cloud", "init", "--config", "/etc/chipload/settings.json")
+                    cloud_ready(state)
+                    (state / ".initialization-attempted").unlink()
+                elif args.action == "verify-initialization":
+                    cloud_ready(state)
+                    (state / ".initialization-attempted").unlink(missing_ok=True)
+                elif args.action == "up":
+                    if values["role"] == "cloud":
+                        if (state / ".initialization-attempted").exists():
+                            raise ValueError("verify the uncertain cloud initialization first")
+                        cloud_ready(state)
+                    compose(state, values, "up", "--detach", "--force-recreate", "--wait", "--wait-timeout", "180")
+                else:
+                    compose(state, values, {"down": "down", "status": "ps", "logs": "logs"}[args.action], *( ["--tail", "100"] if args.action == "logs" else []))
+    except ValidationError:
+        parser.exit(1, "federation: configuration validation failed\n")
+    except (OSError, ValueError, KeyError, sqlite3.Error, subprocess.SubprocessError) as error:
+        parser.exit(1, f"federation: {error}\n")
+
+
+if __name__ == "__main__":
+    main()

@@ -9,8 +9,9 @@ The shop authoring SDK and initial runtime use Python. A documented REST API let
 [Instance federation](docs/FEDERATION.md) supports direct public queries and an
 optional supplier directory and outbound relay. [REST and hosted Python](docs/NETWORK.md)
 compose supplier searches and evaluations through a scoped connector; shop code
-receives no network sockets or connector credentials. Federation container
-packaging and the combined multi-instance deployment drill remain in progress.
+receives no network sockets or connector credentials. Separate cloud and connector
+[containers and a reproducible multi-instance drill](docs/FEDERATION_CONTAINERS.md)
+use real Keycloak and OpenBao.
 
 [Pinned dependency environments](docs/DEPENDENCIES.md) let shop projects use
 additional Python libraries. The CadQuery example derives a fixture envelope

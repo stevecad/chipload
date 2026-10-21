@@ -44,11 +44,25 @@ Origin = Annotated[StrictStr, Field(max_length=2048), AfterValidator(checked_ori
 WireToken = Annotated[StrictStr, Field(pattern=r"^[A-Za-z0-9._~+/-]{1,16384}=*$", max_length=16384)]
 
 
+class PrivateRoute(Model):
+    origin: Origin
+    port: Annotated[StrictInt, Field(ge=1, le=65535)]
+
+
 class EgressPolicy(Model):
     private_origins: tuple[Origin, ...] = Field(default=(), max_length=32)
     public_ports: tuple[Annotated[StrictInt, Field(ge=1, le=65535)], ...] = Field(default=(443,), max_length=16)
     ca_file: Path | None = None
     seconds: Annotated[StrictInt, Field(ge=1, le=20)] = 10
+    routes: tuple[PrivateRoute, ...] = Field(default=(), max_length=32)
+
+    @model_validator(mode="after")
+    def private_routes(self):
+        if len({route.origin for route in self.routes}) != len(self.routes):
+            raise ValueError("private dial routes must have unique origins")
+        if any(route.origin not in self.private_origins for route in self.routes):
+            raise ValueError("dial routes require an explicit private-origin exception")
+        return self
 
 
 class WireJob(Model):
@@ -84,7 +98,8 @@ def resolved_addresses(origin, policy):
     private = origin in policy.private_origins
     if not private and port not in policy.public_ports:
         raise ValueError("destination port is not permitted")
-    answers = socket.getaddrinfo(parsed.hostname, port, type=socket.SOCK_STREAM)
+    dial_port = next((route.port for route in policy.routes if route.origin == origin), port)
+    answers = socket.getaddrinfo(parsed.hostname, dial_port, type=socket.SOCK_STREAM)
     if not answers or len(answers) > 32:
         raise ValueError("unusable DNS answer")
     result = []

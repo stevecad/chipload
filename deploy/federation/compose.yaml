@@ -1,0 +1,68 @@
+x-service: &service
+  user: ${CHIPLOAD_UID:?}:${CHIPLOAD_GID:?}
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  init: true
+  restart: unless-stopped
+  pids_limit: 128
+  cpus: 2
+  mem_limit: 1g
+  memswap_limit: 1g
+  tmpfs: ['/tmp:rw,noexec,nosuid,nodev,size=32m,mode=1777']
+  ulimits:
+    core: {soft: 0, hard: 0}
+    nofile: {soft: 1024, hard: 1024}
+  logging:
+    driver: local
+    options: {max-size: 10m, max-file: "3"}
+services:
+  cloud:
+    <<: *service
+    profiles: [cloud]
+    image: ${CHIPLOAD_CLOUD_IMAGE:?}
+    pull_policy: never
+    stop_grace_period: 15s
+    networks:
+      application:
+        ipv4_address: ${CHIPLOAD_CLOUD_IP:?}
+      egress: {}
+    healthcheck:
+      test: [CMD, python, -I, -c, "import json,urllib.request,urllib.parse; c=json.load(open('/etc/chipload/settings.json')); r=urllib.request.Request('http://127.0.0.1:8090/healthz',headers={'Host':urllib.parse.urlsplit(c['identity']['resource_url']).netloc}); urllib.request.build_opener(urllib.request.ProxyHandler({})).open(r,timeout=3).close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+  gateway:
+    <<: *service
+    profiles: [cloud]
+    image: ${CHIPLOAD_GATEWAY_IMAGE:?}
+    pull_policy: never
+    pids_limit: 64
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: 1
+    environment: {CHIPLOAD_CLOUD_HOST: '${CHIPLOAD_CLOUD_HOST:?}'}
+    ports: ['${CHIPLOAD_FED_BIND:?}:${CHIPLOAD_FED_PORT:?}:8443']
+    networks:
+      application:
+        ipv4_address: ${CHIPLOAD_FED_GATEWAY_IP:?}
+      edge:
+        aliases: ['${CHIPLOAD_CLOUD_HOST:?}']
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=4m
+      - /data:rw,noexec,nosuid,nodev,size=16m,uid=${CHIPLOAD_UID},gid=${CHIPLOAD_GID}
+      - /config:rw,noexec,nosuid,nodev,size=4m,uid=${CHIPLOAD_UID},gid=${CHIPLOAD_GID}
+    depends_on: {cloud: {condition: service_healthy}}
+  connector:
+    <<: *service
+    profiles: [connector]
+    image: ${CHIPLOAD_CONNECTOR_IMAGE:?}
+    pull_policy: never
+    stop_grace_period: 180s
+    networks: [egress]
+networks:
+  application:
+    internal: true
+    ipam: {config: [{subnet: '${CHIPLOAD_FED_SUBNET:?}'}]}
+  edge: {}
+  egress: {}

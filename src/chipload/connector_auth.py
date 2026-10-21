@@ -92,7 +92,7 @@ class KeyTransport(httpx.BaseTransport):
     """Let the shared verifier use bounded, pinned HTTPS for its fixed JWKS URL."""
 
     def __init__(self, url, policy):
-        self.url, self.policy = url, policy
+        self.url, self.policy = str(httpx.URL(url)), policy
         self.deadline = 0
 
     def handle_request(self, incoming):

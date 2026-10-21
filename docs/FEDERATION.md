@@ -1,11 +1,12 @@
 # Communication between Chipload instances
 
-Status: implementation in progress. Listings, direct public instance queries,
+Status: portable federation workflow implemented. Listings, direct public instance queries,
 the directory, geographic supplier search and the cloud relay service are
 implemented. The managed outbound connector and runtime credential provider are
 also implemented; see [CONNECTOR.md](CONNECTOR.md). Caller-scoped REST and hosted
-Python use the [network queue](NETWORK.md). Federation container packaging and the combined real-identity
-container drill remain to be implemented against the acceptance criteria below.
+Python use the [network queue](NETWORK.md). Separate cloud/connector packaging
+and the real-identity multi-instance drill are documented in
+[FEDERATION_CONTAINERS.md](FEDERATION_CONTAINERS.md).
 
 ## Implemented listing contract
 
@@ -157,8 +158,8 @@ is lost. Serving refuses missing accounting state. A private process lock enforc
 one serving process per state volume, since relay sessions are in memory. This
 checkpoint supplies the service and conventional Python client. The separate
 [connector daemon](CONNECTOR.md) handles outbound sessions and publication
-refresh. Managed cloud containers and combined enrollment provisioning are still
-pending. These commands alone do not qualify a public deployment.
+refresh. The [container launcher and disposable enrollment drill](FEDERATION_CONTAINERS.md)
+package those services separately. These commands alone do not qualify a public deployment.
 
 | Route | Contract |
 | --- | --- |
@@ -229,7 +230,9 @@ show the nearest seller rejecting a small lot, a farther relay-only advertisemen
 accepting it, equal direct/relayed evaluations, and direct queries surviving a
 cloud outage. Their outbound receiver is a test fixture; the managed connector
 has separate TLS tests in `test_connector.py` and `test_connector_auth.py`.
-The combined real-identity multi-instance container drill remains open.
+The combined real-identity multi-instance container drill is
+`test_federation_live.py`; run it with the
+[container instructions](FEDERATION_CONTAINERS.md).
 
 ## Two ways to reach the same shop
 
@@ -461,3 +464,19 @@ does not require operating or joining a cloud service.
 The phase is complete when that full workflow and its failure cases run from
 documented container commands. Public cloud deployment, provider operations and
 actual supplier qualification require their own deployment evidence.
+
+## Portable workflow checkpoint — 2026-10-21
+
+The combined real-identity drill passed all assertions: three independently
+published Python shops; TLS Keycloak/OpenBao enrollment; narrow workload ACLs
+and bootstrap-root retirement; nearest-supplier quantity rejection; equivalent
+REST/MCP selection using direct and relayed reads; private supplier topology;
+withdrawal; lease expiry; and direct dispatch after cloud outage and connector
+restart. The separate cloud packaging check verified TLS, restricted mounts and
+processes, restart identity/accounting persistence and missing-store refusal.
+
+The ordinary suite ran 713 tests successfully with 80 opt-in checks skipped.
+The runtime live test and both TLS lifecycle tests passed separately. Launcher
+checks also passed on Python 3.12. Public deployment, actual supplier
+qualification, cloud HA, cloud certificate automation and off-host cloud recovery
+remain outside this portable workflow.

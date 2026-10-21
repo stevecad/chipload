@@ -36,14 +36,14 @@ jobs:
       - run: uv sync --locked --extra server
       - name: Lint and source hygiene
         run: |
-          uv run --extra server ruff check src examples tests scripts/check-live
+          uv run --extra server ruff check src examples tests scripts/check-live scripts/federation
           git diff --check
           ./scripts/agent-work --help
       - name: Ordinary tests
         run: uv run --extra server python -m unittest discover -s tests -v
       - name: Technical and business examples
         run: |
-          for example in reference_shop heat_treatment process_shops alternative_routes python_shop erp_shop; do
+          for example in reference_shop heat_treatment process_shops alternative_routes python_shop erp_shop federation_shops; do
             uv run python -m "examples.${example}"
           done
 
@@ -55,7 +55,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        profile: [python, tls, recovery, secrets]
+        profile: [python, tls, recovery, secrets, federation]
     env:
       CI_PROFILE: ${{ matrix.profile }}
     steps:
@@ -90,7 +90,7 @@ jobs:
         if: matrix.profile != 'python'
         run: ./scripts/build-tls
       - name: Build OpenBao image
-        if: matrix.profile == 'secrets'
+        if: matrix.profile == 'secrets' || matrix.profile == 'federation'
         run: ./scripts/build-secrets
       - name: Run live profile without skipped checks
         run: uv run --extra server python scripts/check-live "$CI_PROFILE"

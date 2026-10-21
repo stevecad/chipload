@@ -91,9 +91,15 @@ Schema 12 includes private query history in paired backups; expired restored
 reads cannot be claimed again. Actual worker checks in `test_network_live.py`
 verify mediated reads, blocked sockets, absent data/credential mounts and
 unavailable dispatch RPCs. `test_network.py` and `test_network_transports.py`
-cover queue, authorization, recovery and actual HTTPS behavior. Federation
-packaging and the combined real-identity container drill in
-[the federation design](FEDERATION.md) remain to be implemented.
+cover queue, authorization, recovery and actual HTTPS behavior. The separate
+[federation containers](FEDERATION_CONTAINERS.md) pin image/configuration identity,
+separate frontend keys from backend state, and mount only configured credentials
+and CA files into the connector. Exact operator-owned private-origin port routes
+preserve logical Host/SNI/audience and address validation. The combined
+`test_federation_live.py` drill exercises real Keycloak/OpenBao, root-token
+retirement, actual workload ACL denials, private supplier relay topology, REST/MCP
+selection, withdrawal/expiry and direct dispatch after cloud outage. The launcher
+does not supply cloud HA, automatic cloud certificate renewal or off-host recovery.
 
 ## Boundaries
 

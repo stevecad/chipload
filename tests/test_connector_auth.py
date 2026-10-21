@@ -4,16 +4,24 @@ import json
 import ssl
 import tempfile
 import threading
+import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from unittest.mock import patch
 from urllib.parse import parse_qs
 
+import httpx
 from server_support import IdentityFixture
 from tls_support import stack
 
 from chipload.client import TransportError
-from chipload.connector_auth import CredentialUnavailable, WorkloadIdentity, WorkloadToken
+from chipload.connector_auth import (
+    CredentialUnavailable,
+    KeyTransport,
+    WorkloadIdentity,
+    WorkloadToken,
+)
 from chipload.federation_wire import EgressPolicy, request
 
 
@@ -171,3 +179,17 @@ class ConnectorAuthTests(unittest.TestCase):
             request(self.config.secrets.origin, "POST", "/realms/workload/protocol/openid-connect/token",
                     policy=self.config.policy, encoding="form", body={"large": "%" * 1_100_000})
         self.assertEqual(self.server.paths, [])
+
+
+class KeyTransportTests(unittest.TestCase):
+    def test_explicit_default_port_is_normalized_before_exact_jwks_comparison(self):
+        transport = KeyTransport("https://identity.example:443/certs", EgressPolicy())
+        transport.deadline = time.monotonic() + 30
+        with patch("chipload.connector_auth.request", return_value={"keys": []}) as request:
+            reply = transport.handle_request(httpx.Request("GET", "https://identity.example/certs"))
+            self.assertEqual(reply.json(), {"keys": []})
+            self.assertEqual(request.call_args.args, ("https://identity.example", "GET", "/certs"))
+        for method, url in (("POST", "https://identity.example/certs"), ("GET", "https://other.example/certs"),
+                            ("GET", "https://identity.example/other")):
+            with self.subTest(method=method, url=url), self.assertRaises(httpx.UnsupportedProtocol):
+                transport.handle_request(httpx.Request(method, url))

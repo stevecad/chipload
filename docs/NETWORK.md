@@ -180,5 +180,6 @@ cloud search without enrollment, relay evaluation and withdrawal. The opt-in
 `test_network_live.py` uses actual Python/SDK containers to verify mediated reads,
 blocked sockets, absent database/credential mounts and unavailable dispatch RPCs.
 It runs in the CI `python` profile with `CHIPLOAD_WORKER_TESTS=1` locally after
-rebuilding the worker. Federation container packaging and the combined
-multi-instance demonstration with real Keycloak/OpenBao remain separate work.
+rebuilding the worker. The [federation container drill](FEDERATION_CONTAINERS.md)
+combines real Keycloak/OpenBao with three shop instances, REST/MCP supplier
+selection, withdrawal, lease expiry and direct dispatch during cloud outage.

@@ -20,6 +20,16 @@ USER 65532:65532
 ENTRYPOINT ["python", "-I", "-B", "-m", "chipload.server"]
 CMD ["--config", "/etc/chipload/settings.json", "--bind", "0.0.0.0", "--port", "8088"]
 
+FROM api AS cloud
+LABEL org.chipload.runtime-role="cloud"
+ENTRYPOINT ["python", "-I", "-B", "-m", "chipload.cloud"]
+CMD ["serve", "--config", "/etc/chipload/settings.json", "--bind", "0.0.0.0", "--port", "8090"]
+
+FROM api AS connector
+LABEL org.chipload.runtime-role="connector"
+ENTRYPOINT ["python", "-I", "-B", "-m", "chipload.connector"]
+CMD ["--config", "/etc/chipload/settings.json"]
+
 FROM base AS broker
 COPY broker-requirements.txt /opt/requirements.txt
 RUN python -m pip install --no-cache-dir --disable-pip-version-check \

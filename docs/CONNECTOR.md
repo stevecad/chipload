@@ -5,7 +5,7 @@ up to four cloud directories, publishes selected public listings and carries
 public discovery/evaluation queries back to the shop over outbound HTTPS. It
 executes no shop Python and needs neither the shop database nor Docker access.
 Hosted Python uses the [caller-owned network queue](NETWORK.md). Federation
-container packaging remains work in the [federation plan](FEDERATION.md).
+container packaging is described in [FEDERATION_CONTAINERS.md](FEDERATION_CONTAINERS.md).
 
 ## Configuration and startup
 
@@ -161,6 +161,8 @@ relay-only publication, direct-only publication, current listing evaluation,
 withdrawal, reconnect after cloud restart, direct reads during outage and source
 identity mismatch before enrollment. These use signed fixture tokens for the
 managed loop. Hosted Python has a separate actual-container check in
-`test_network_live.py`. The full multi-instance container workflow with real
-Keycloak/OpenBao provisioning remains to be implemented; these protocol fixtures
-do not establish that deployment qualification.
+`test_network_live.py`. The combined `test_federation_live.py` drill uses real
+Keycloak and OpenBao, isolated source builds, REST/MCP supplier selection,
+withdrawal, lease expiry and direct dispatch during cloud outage. Run the
+`federation` live profile using [the container instructions](FEDERATION_CONTAINERS.md).
+Site-specific public deployment remains a separate qualification.

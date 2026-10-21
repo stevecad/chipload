@@ -23,6 +23,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         self.server.paths.append(self.path)
+        self.server.hosts.append(self.headers["Host"])
         body = self.server.body
         if self.server.echo:
             body = ('{"value":"' + self.headers["Authorization"] + '"}').encode()
@@ -50,6 +51,7 @@ class WireTests(unittest.TestCase):
         self.server.daemon_threads = True
         self.server.origin = f"https://localhost:{self.server.server_port}"
         self.server.paths = []
+        self.server.hosts = []
         self.server.status, self.server.delay = 200, 0
         self.server.body, self.server.encoding, self.server.echo = b'{"ok":true}', None, False
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -67,6 +69,18 @@ class WireTests(unittest.TestCase):
             request(self.server.origin, "GET", "/source", policy=self.policy)
         self.assertEqual(redirected.exception.status, 302)
         self.assertEqual(self.server.paths, ["/source"])
+
+    def test_private_dial_route_preserves_logical_host_and_tls_name(self):
+        logical = "https://localhost"
+        policy = EgressPolicy(private_origins=(logical,), ca_file=self.policy.ca_file, seconds=self.policy.seconds,
+            routes=({"origin": logical, "port": self.server.server_port},))
+        self.assertEqual(request(logical, "GET", "/source", policy=policy), {"ok": True})
+        self.assertEqual(self.server.hosts, ["localhost"])
+        with self.assertRaises(ValueError):
+            EgressPolicy(routes=({"origin": logical, "port": self.server.server_port},))
+        with self.assertRaises(ValueError):
+            EgressPolicy(private_origins=(logical,), routes=(
+                {"origin": logical, "port": 443}, {"origin": logical, "port": 8443}))
 
     def test_duplicate_keys_compression_oversized_output_and_credential_echo_are_rejected(self):
         cases = ((b'{"a":1,"a":2}', None, False),

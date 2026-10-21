@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build API, broker, and executor images from locked dependencies and minimal context."""
+"""Build application and federation images from locked dependencies and minimal context."""
 
 import hashlib
 import os
@@ -45,7 +45,7 @@ def main():
                 check=True,
             )
         images = {}
-        for role in ("api", "broker", "executor"):
+        for role in ("api", "broker", "executor", "cloud", "connector"):
             subprocess.run(
                 [
                     "docker",

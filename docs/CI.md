@@ -5,7 +5,7 @@ and manual dispatch. Each job uses a fresh GitHub-hosted Ubuntu 24.04 runner.
 Ordinary tests, lint and executable technical/business examples run on Python
 3.12.15 and 3.14.6 with the locked server dependencies.
 
-After both Python jobs pass, four jobs use Docker Engine 29.9.2, build the
+After both Python jobs pass, five jobs use Docker Engine 29.9.2, build the
 container images from the checkout and run disposable integration fixtures:
 
 | Profile | Coverage |
@@ -13,6 +13,7 @@ container images from the checkout and run disposable integration fixtures:
 | `python` | Source builds, hosted Python and SDK isolation, MCP authoring, REST discovery, runtime persistence, binary assets, Python constraints and assessments, ERP observations, evidence revocation, alternative offers, supplier listings, and mediated network queries without sockets or connector credentials. |
 | `tls` | Verified HTTPS and Keycloak, external client boundaries, callable operations, and direct peer identity/publication queries. |
 | `recovery` | Encrypted shop/identity recovery, agent/database credential rotation, and signing-key rotation and revocation. |
+| `federation` | Separate cloud/connector containers, real Keycloak/OpenBao enrollment, three Python shops, REST/MCP supplier selection, business-rule rejection, withdrawal/expiry and direct dispatch during cloud outage. |
 | `secrets` | TLS OpenBao bootstrap, recovery and the reviewed older-image upgrade, workload credentials, Keycloak operator identity, independent emergency quorum access, HTTPS adapters, and the contained executor. |
 
 [`scripts/check-live`](../scripts/check-live) defines the exact suites and enables
@@ -41,6 +42,7 @@ uv run --extra server python scripts/check-live python
 uv run --extra server python scripts/check-live tls
 uv run --extra server python scripts/check-live recovery
 uv run --extra server python scripts/check-live secrets
+uv run --extra server python scripts/check-live federation
 ```
 
 Keep the checkout and image fingerprints fixed during each run. These profiles
