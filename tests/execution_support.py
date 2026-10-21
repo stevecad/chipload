@@ -20,6 +20,9 @@ class CallableBuilder:
     def __init__(self, model=None):
         self.model = model or define_shop()
 
+    def remove(self, job_id):
+        pass  # This fixture never starts a container.
+
     def build(self, source, *, job_id=None):
         artifact = compile_shop(
             self.model,

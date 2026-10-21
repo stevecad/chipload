@@ -70,11 +70,12 @@ class SDKServiceTests(unittest.TestCase):
         with patch("chipload.program_sandbox.subprocess.run") as run:
             run.side_effect = [
                 subprocess.TimeoutExpired("docker", 15),
+                SimpleNamespace(returncode=1, stderr=b"daemon unavailable"),
                 SimpleNamespace(returncode=1, stderr=b"No such container"),
             ]
             with self.assertRaises(SandboxError):
                 runner.remove(identifier)
-            self.assertEqual(run.call_count, 2)
+            self.assertEqual(run.call_count, 3)
 
     def test_concurrent_removal_requires_observed_absence(self):
         runner = object.__new__(DockerProgramRunner)

@@ -161,11 +161,13 @@ an idle orphan after 60 seconds. A failed or missing SDK response interrupts the
 program and leaves its call journal entry `started`; the engine never resends
 the call. Recovery confirms removal of both the code and SDK service containers
 before releasing running capacity. A cleanup failure keeps the run unsettled.
-Concurrent removal by the original broker and recovery can require a later
-recovery attempt: confirmation that both containers are absent has a bounded
-deadline. During concurrent container tests, one recovery attempt reached that
-deadline; three isolated repetitions subsequently confirmed removal. Container
-churn remains a deployment qualification case, even when ordinary recovery passes.
+The code and SDK containers share a 20-second monotonic cleanup budget, with a
+share reserved for each. Concurrent removal or a lost Docker reply is resolved
+by inspecting for explicit absence. An inspection error or a container still
+present at the deadline keeps capacity reserved for a later recovery attempt.
+This replaces the earlier two-second competing-removal check that expired during
+concurrent container tests. Recovery's 30-second claim covers one cleanup attempt
+and its completion transaction. Cleanup never resubmits Python or an SDK call.
 
 Per deployment, shop and identity, defaults allow 20 pending runs, one running
 run, 120 admissions per hour, 1,000 retained records and 512 MiB of reserved run

@@ -2,12 +2,13 @@ import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from unittest.mock import patch
 
 from chipload.access import ACTIONS, Forbidden, Grant, Principal
 from chipload.artifact import BuildIdentity, compile_shop
 from chipload.lifecycle import BuildProcessor, Conflict, NotFound, Repository, ShopService
 from chipload.project import BuildReport, run_cases
-from chipload.sandbox import WorkerEnvironment
+from chipload.sandbox import SandboxError, WorkerEnvironment
 from examples.export_project import project
 from examples.heat_treatment import define_shop
 
@@ -249,6 +250,33 @@ class LifecycleTests(unittest.TestCase):
         self.assertNotEqual(replacement, claim)
         with self.assertRaises(Conflict):
             self.repository.finish(queued.id, claim, report)
+
+    def test_unconfirmed_build_cleanup_retains_capacity_until_recovery_without_replay(self):
+        saved = self.service.save_source(self.owner, self.project, expected_head=None)
+        first = self.service.request_build(self.owner, self.shop, saved.revision)
+        second = self.service.request_build(self.owner, self.shop, saved.revision)
+
+        def expire():
+            with self.repository.transaction() as db:
+                db.execute("UPDATE builds SET deadline='2000-01-01T00:00:00+00:00' WHERE id=?", (first.id,))
+
+        with patch.object(self.builder, "build", wraps=self.builder.build) as build:
+            with patch.object(self.builder, "remove", side_effect=SandboxError("cleanup unavailable")):
+                with self.assertRaises(SandboxError):
+                    self.processor.run_next()
+                self.assertEqual(self.service.get_build(self.owner, self.shop, first.id).state, "running")
+                self.assertIsNone(self.repository.claim_next(60))
+                expire()
+                with self.assertRaises(SandboxError):
+                    self.processor.recover_expired()
+                self.assertIsNone(self.repository.claim_next(60))
+            expire()
+            self.assertEqual(self.processor.recover_expired(), 1)
+            self.assertEqual(build.call_count, 1, "recovery replayed source")
+            self.assertEqual(self.service.get_build(self.owner, self.shop, first.id).state, "failed")
+            self.assertTrue(self.processor.run_next())
+            self.assertEqual(build.call_count, 2)
+        self.assertEqual(self.service.get_build(self.owner, self.shop, second.id).state, "succeeded")
 
     def test_storage_corruption_is_detected_before_public_discovery(self):
         first = self.build()

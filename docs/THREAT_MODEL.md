@@ -55,6 +55,7 @@ a filesystem or network namespace inside the API container.
 | Spoofed client addresses or failed identity trust | Exact trusted gateway address, gateway-replaced single client header, disabled Uvicorn proxy rewriting, CA/hostname verification and bounded JWKS caching | `test_proxy.py`, `test_auth.py`, `test_tls_live.py`, distinct real network clients and private-port denials in `test_edge_live.py` |
 | Recovery resetting authority, history or spent allowances | Paired database backups, encrypted authenticated archives, preserved identity state, fresh restore destinations, durable incomplete/rotation markers and operator locks; separate offline OpenBao recovery preserves quorum, cluster identity and policies | `test_recovery*.py`, `test_credentials*.py`, `test_secrets_recovery*.py` |
 | Database checks breaking concurrent write coordination | Metadata-only checks of existing files, serialized exclusive creation, SQLite-managed descriptors and durable transactions | `test_storage.py` probes actual locks from another process; admission and lifecycle concurrency tests |
+| Unconfirmed container cleanup releasing worker capacity | Terminal builds require confirmed removal; failed cleanup retains running slots and report reservations; Python cleanup attempts both containers within one bounded budget | `test_container_cleanup.py`, lifecycle quota/recovery regression, actual retained-worker and delayed-removal tests |
 
 These tests establish behavior for their stated fixtures and failure cases. They
 do not demonstrate resistance to every kernel, interpreter, dependency or
@@ -76,6 +77,10 @@ so their trusted implementation must enforce the caller's shop/action grants.
 - Reduce worker-host authority and strengthen isolation for hostile tenants.
   The broker's Docker socket remains a host-level trust dependency. Shop-specific
   dependency installation and custom evaluation environments need their own design.
+- Fence container creation against expired-job recovery. A broker paused before
+  creation could resume after recovery has observed absence; cleanup checks alone
+  do not prevent that later creation. Test this handoff with paused brokers and
+  delayed Docker responses before claiming complete worker-lifecycle containment.
 - Qualify production OpenBao operator enrollment, MFA and emergency access,
   audit retention and replacement-host recovery. The separate [private secrets
   service](SECRETS.md) now supplies TLS, PGP-encrypted threshold initialization,

@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pydantic import ValidationError
 
 from .artifact import BuildIdentity, compile_shop, sdk_fingerprint
+from .containers import SandboxError, remove_containers
 from .model import Shop
 from .project import (
     MAX_OUTPUT_BYTES,
@@ -52,10 +53,6 @@ class WorkerEnvironment:
         if not re.fullmatch(r"3\.\d+\.\d+", python):
             raise ValueError("worker Python version is missing")
         return cls(image, sdk, dependencies, python)
-
-
-class SandboxError(RuntimeError):
-    pass
 
 
 def exchange(command: list[str], payload: bytes, *, seconds: float) -> tuple[int, bytes, bytes]:
@@ -175,9 +172,7 @@ class DockerBuilder:
         if not re.fullmatch(r"[0-9a-f]{32}", job_id):
             raise ValueError("invalid worker job ID")
         name = f"chipload-build-{job_id}"
-        cleanup = subprocess.run(["docker", "rm", "--force", name], capture_output=True, timeout=15)
-        if cleanup.returncode != 0 and b"No such container" not in cleanup.stderr:
-            raise SandboxError(f"could not remove worker container {name}")
+        remove_containers(name)
 
     def build(self, project: SourceProject, *, job_id: str | None = None) -> BuildReport:
         # Validate unchecked model copies before passing data across a boundary.
@@ -243,17 +238,9 @@ class DockerBuilder:
             diagnostics = [Diagnostic(code="build-failed", path=(), message=str(error)[:1000])]
         finally:
             # Kill container descendants as well as the attached CLI on timeout.
-            # Removal failure is a build failure, not an unreported orphan.
-            try:
-                self.remove(job_id)
-            except (OSError, SandboxError, subprocess.SubprocessError):
-                diagnostics.append(
-                    Diagnostic(
-                        code="worker-cleanup-failed",
-                        path=(),
-                        message=f"Operator must inspect worker container {name}.",
-                    )
-                )
+            # Unconfirmed cleanup must propagate: a terminal report would
+            # release the broker's capacity while this worker could still run.
+            self.remove(job_id)
         return BuildReport(
             source_revision=project.revision,
             worker_image=self.environment.image,

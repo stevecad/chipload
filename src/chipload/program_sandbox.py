@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 from .artifact import canonical_json
+from .containers import remove_containers
 from .limits import MAX_JSON_BYTES
 from .program_model import MAX_PROGRAM_LOG, MAX_PROGRAM_RESULT
 from .project import unique_json
@@ -131,40 +132,7 @@ class DockerProgramRunner:
     def remove(self, identifier):
         if not re.fullmatch(r"[0-9a-f]{32}", identifier):
             raise ValueError("invalid Python run ID")
-        errors = []
-        for prefix in ("chipload-sdk-", "chipload-code-"):
-            try:
-                result = subprocess.run(
-                    ["docker", "rm", "--force", prefix + identifier],
-                    capture_output=True,
-                    timeout=15,
-                )
-                if result.returncode and b"No such container" not in result.stderr:
-                    # Concurrent recovery and the original broker may both
-                    # remove this name. A lost response or 'removal in progress'
-                    # is settled only by observing absence, never by replaying work.
-                    deadline = time.monotonic() + 2
-                    while time.monotonic() < deadline:
-                        inspected = subprocess.run(
-                            ["docker", "container", "inspect", prefix + identifier],
-                            capture_output=True,
-                            timeout=2,
-                        )
-                        if inspected.returncode:
-                            if (
-                                b"No such container" in inspected.stderr
-                                or b"No such object" in inspected.stderr
-                            ):
-                                break
-                            errors.append(prefix)
-                            break
-                        time.sleep(0.05)
-                    else:
-                        errors.append(prefix)
-            except (OSError, subprocess.TimeoutExpired):
-                errors.append(prefix)
-        if errors:
-            raise SandboxError("could not confirm removal of Python run containers")
+        remove_containers("chipload-sdk-" + identifier, "chipload-code-" + identifier)
 
     def service_call(self, identifier, operation, principal, request, *, deadline, keep_running):
         service = self.services.get(identifier)

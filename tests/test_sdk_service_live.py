@@ -10,6 +10,7 @@ import unittest
 import uuid
 from datetime import timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from server_support import IdentityFixture
@@ -270,6 +271,43 @@ Operations.call=interrupted
         service.child.wait(timeout=65)
         self.assertEqual(service.child.returncode, 124)
         self.assertLess(time.monotonic() - start, 65)
+
+    def test_competing_removal_waits_for_both_actual_containers_to_disappear(self):
+        identifier = uuid.uuid4().hex
+        names = ("chipload-sdk-" + identifier, "chipload-code-" + identifier)
+        self.addCleanup(self.runner.remove, identifier)
+        for name in names:
+            subprocess.run(self.runner.builder.create_command(name), capture_output=True, check=True, timeout=15)
+        original = subprocess.run
+        errors = []
+        entered = threading.Event()
+
+        def remover():
+            entered.wait(5)
+            time.sleep(3)  # Keep actual objects present beyond the old two-second check.
+            try:
+                for name in names:
+                    original(["docker", "rm", "--force", name], capture_output=True, check=True, timeout=15)
+            except Exception as error:
+                errors.append(error)
+
+        def competing(command, **kwargs):
+            if command[:3] == ["docker", "rm", "--force"] and command[-1] in names:
+                entered.set()
+                return SimpleNamespace(returncode=1, stderr=b"removal is already in progress")
+            return original(command, **kwargs)
+
+        thread = threading.Thread(target=remover)
+        thread.start()
+        self.addCleanup(thread.join, 20)
+        started = time.monotonic()
+        with patch("chipload.containers.subprocess.run", side_effect=competing):
+            self.runner.remove(identifier)
+        thread.join(5)
+        self.assertFalse(thread.is_alive())
+        self.assertFalse(errors, errors)
+        self.assertGreaterEqual(time.monotonic() - started, 3)
+        self.assert_removed(identifier)
 
     def test_wrong_or_missing_repository_mount_cannot_initialize_or_migrate_storage(self):
         from chipload.lifecycle import Repository

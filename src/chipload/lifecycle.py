@@ -718,6 +718,9 @@ class BuildProcessor:
                     ),
                 ),
             )
+        # A builder exception can include failed cleanup. Confirm removal even
+        # on that path before committing any terminal state or releasing quota.
+        self.builder.remove(build_id)
         self.repository.finish(build_id, claim, report)
 
     def recover_expired(self) -> int:

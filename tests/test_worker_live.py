@@ -12,7 +12,7 @@ from unittest.mock import patch
 from chipload.access import ACTIONS, Grant, Principal
 from chipload.lifecycle import BuildProcessor, Conflict, Repository, ShopService
 from chipload.project import SourceFile, SourceProject
-from chipload.sandbox import DockerBuilder, WorkerEnvironment
+from chipload.sandbox import DockerBuilder, SandboxError, WorkerEnvironment
 from examples.export_project import project
 
 
@@ -128,6 +128,40 @@ def define_shop():
         report = self.build(self.source("while True: pass\n"), seconds=1)
         self.assertEqual(report.status, "failed")
         self.assertIn("wall-time", report.diagnostics[0].message)
+
+    def test_failed_cleanup_keeps_a_live_worker_counted_until_recovery(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Repository(Path(directory) / "queue.db")
+            service = ShopService(repository)
+            builder = DockerBuilder(self.environment, seconds=1)
+            processor = BuildProcessor(repository, builder)
+            source = self.source("import time\nwhile True: time.sleep(1)\n")
+            owner = Principal(subject="owner", grants=(Grant(shop_id=source.shop_id, actions=ACTIONS),))
+            saved = service.save_source(owner, source, expected_head=None)
+            first = service.request_build(owner, source.shop_id, saved.revision)
+            second = service.request_build(owner, source.shop_id, saved.revision)
+            self.addCleanup(builder.remove, first.id)
+            with patch.object(builder, "remove", side_effect=SandboxError("cleanup unavailable")):
+                with self.assertRaises(SandboxError):
+                    processor.run_next()
+            running = subprocess.check_output(
+                ["docker", "inspect", "--format", "{{.State.Running}}", "chipload-build-" + first.id],
+                text=True, timeout=5,
+            ).strip()
+            self.assertEqual(running, "true")
+            self.assertEqual(service.get_build(owner, source.shop_id, first.id).state, "running")
+            self.assertEqual(repository.read_quotas()["usage"]["deployment"]["running_builds"], 1)
+            self.assertIsNone(repository.claim_next(60))
+            with repository.transaction() as db:
+                db.execute("UPDATE builds SET deadline='2000-01-01T00:00:00+00:00' WHERE id=?", (first.id,))
+            with patch.object(builder, "build", side_effect=AssertionError("source replayed")):
+                self.assertEqual(processor.recover_expired(), 1)
+            self.assertEqual(service.get_build(owner, source.shop_id, first.id).state, "failed")
+            found = subprocess.run(
+                ["docker", "inspect", "chipload-build-" + first.id], capture_output=True, timeout=5,
+            )
+            self.assertNotEqual(found.returncode, 0)
+            self.assertEqual(repository.claim_next(60)[0], second.id)
 
     def test_output_flood_is_bounded_and_removed(self):
         report = self.build(self.source("import os\nwhile True: os.write(1, b'x' * 65536)\n"))

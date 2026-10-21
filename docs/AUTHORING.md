@@ -276,6 +276,18 @@ response cannot be recalled. HTTP reads require revalidation and check withdrawa
 before returning 304; private and evaluation responses use `no-store`.
 
 Build claims have deadlines. A late worker cannot complete an expired claim.
+The broker confirms removal before recording any finished build, including a
+build that raised an exception. If cleanup cannot be confirmed, the job remains
+`running` and retains its build slot and report-storage reservation. It cannot
+publish. After its lease expires, recovery can remove the worker and record the
+interrupted build without rerunning source.
+
+Removal uses a 20-second monotonic budget. A successful Docker removal or an
+explicit missing-container response establishes absence; a lost reply or
+concurrent removal triggers bounded inspection. An unavailable daemon or an
+inspection error does not establish absence. The same cleanup implementation
+serves hosted Python runs, sharing that budget between their two containers.
+
 After a broker interruption, run:
 
 ```sh
