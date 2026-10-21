@@ -51,6 +51,16 @@ class ProgramTests(unittest.TestCase):
     def read(self, job):
         return self.service.read(self.owner, job.shop_id, job.id)
 
+    def test_connector_dispatch_operations_are_unavailable_even_to_a_shop_admin_program(self):
+        job = self.service.submit(self.owner, self.request())
+        row, _ = self.processor.claim_next()
+        for operation in ("network_claim", "network_complete"):
+            with self.subTest(operation=operation), self.assertRaises(SandboxError):
+                self.processor.dispatch(row, operation, {"shop_id": "thermal-example"})
+        self.assertEqual(self.read(job).calls, ())
+        self.service.cancel(self.owner, job.shop_id, job.id)
+        self.processor.finish(row, {"error": "cancelled"}, "interrupted")
+
     def test_competing_exact_retries_admit_once_and_conflicting_key_fails(self):
         request = self.request()
         with ThreadPoolExecutor(4) as pool:
@@ -275,4 +285,4 @@ class ProgramTests(unittest.TestCase):
         fresh = Repository(self.repository.path)
         self.assertEqual(fresh.admission.identity, self.repository.admission.identity)
         with fresh.connection() as db:
-            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 11)
+            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 12)

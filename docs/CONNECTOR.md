@@ -4,8 +4,8 @@
 up to four cloud directories, publishes selected public listings and carries
 public discovery/evaluation queries back to the shop over outbound HTTPS. It
 executes no shop Python and needs neither the shop database nor Docker access.
-Hosted Python network composition and federation container packaging remain
-work in the [federation plan](FEDERATION.md).
+Hosted Python uses the [caller-owned network queue](NETWORK.md). Federation
+container packaging remains work in the [federation plan](FEDERATION.md).
 
 ## Configuration and startup
 
@@ -14,7 +14,9 @@ ID at its configured `source_origin` before enrolling with a cloud. The source
 can be a private HTTPS listener: public inbound access is optional. Its source
 client uses only public peer queries and sends no bearer token to the shop.
 
-Each cloud needs an operator-created instance-owner binding. Provision a
+Publishing or receiving relayed queries requires an operator-created
+instance-owner binding at that cloud. Public outbound searches and relayed
+queries need no cloud credential; see [NETWORK.md](NETWORK.md). Provision a
 separate Keycloak service client with the cloud resource audience and record
 its service-account subject in that binding. Give it only the required cloud
 `advertise`/`connect` permissions; local shop grants do not confer cloud grants.
@@ -116,8 +118,10 @@ expire if refresh cannot finish. An interrupted write is reconciled by reading
 the cloud head on the next refresh, rather than resending an old advertisement.
 
 Relay-only publication waits for an outbound session so the cloud can verify the
-source catalog through it. The connector maintains one poll per configured cloud
-and at most four simultaneous public reads across all clouds. It preserves each
+source catalog through it. The connector maintains one poll per cloud with
+receiving enabled and at most four simultaneous delivered reads across clouds
+and local dispatch. Publication refreshes have their own bounded per-cloud loop.
+It preserves each
 delivery's request ID, instance, publication guards and deadline. It forwards
 only the four fixed peer actions, reports oversized replies as transport failures,
 and never replays a lost delivery. Session replacement fences replies from an
@@ -156,6 +160,7 @@ secret echo and form expansion. Managed connector checks cover automatic
 relay-only publication, direct-only publication, current listing evaluation,
 withdrawal, reconnect after cloud restart, direct reads during outage and source
 identity mismatch before enrollment. These use signed fixture tokens for the
-managed loop. The full container workflow with real Keycloak/OpenBao provisioning,
-network restrictions and hosted Python composition remains to be implemented;
-these checks do not establish those deployment properties.
+managed loop. Hosted Python has a separate actual-container check in
+`test_network_live.py`. The full multi-instance container workflow with real
+Keycloak/OpenBao provisioning remains to be implemented; these protocol fixtures
+do not establish that deployment qualification.

@@ -58,6 +58,15 @@ class AuthTests(unittest.TestCase):
             with self.subTest(changes=changes), self.assertRaises(AuthenticationError):
                 self.verifier.verify(self.identity.token(changes=changes))
 
+    def test_connector_role_cannot_inherit_authoring_or_query_permissions(self):
+        connector = self.verifier.verify(self.identity.token(roles=("shop:connect",)))
+        require(connector, "thermal-example", "network:dispatch")
+        self.assertEqual(connector.grants[0].actions, ("network:dispatch",))
+        operator = self.verifier.verify(self.identity.token(roles=("shop:operate",)))
+        require(operator, "thermal-example", "network:query")
+        with self.assertRaises(Forbidden):
+            require(operator, "thermal-example", "network:dispatch")
+
     def test_signature_algorithm_and_unknown_keys_fail_closed(self):
         wrong = jwt.encode(
             {"sub": "owner"},

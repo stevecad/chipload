@@ -12,6 +12,7 @@
       "chipload": [
         {"name": "shop:read", "description": "Read permitted shop resources"},
         {"name": "shop:operate", "description": "Invoke permitted shop operations"},
+        {"name": "shop:connect", "description": "Dispatch explicitly permitted public network queries"},
         {"name": "shop:admin", "description": "Manage permitted shop configuration"}
       ]
     }

@@ -10,7 +10,7 @@ container images from the checkout and run disposable integration fixtures:
 
 | Profile | Coverage |
 | --- | --- |
-| `python` | Source builds, hosted Python and SDK isolation, MCP authoring, REST discovery, runtime persistence, binary assets, Python constraints and assessments, ERP observations, evidence revocation, alternative offers, and supplier listings. |
+| `python` | Source builds, hosted Python and SDK isolation, MCP authoring, REST discovery, runtime persistence, binary assets, Python constraints and assessments, ERP observations, evidence revocation, alternative offers, supplier listings, and mediated network queries without sockets or connector credentials. |
 | `tls` | Verified HTTPS and Keycloak, external client boundaries, callable operations, and direct peer identity/publication queries. |
 | `recovery` | Encrypted shop/identity recovery, agent/database credential rotation, and signing-key rotation and revocation. |
 | `secrets` | TLS OpenBao bootstrap, recovery and the reviewed older-image upgrade, workload credentials, Keycloak operator identity, independent emergency quorum access, HTTPS adapters, and the contained executor. |

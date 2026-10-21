@@ -7,6 +7,8 @@ from pydantic import Field, StrictStr
 from .model import Id, Model
 
 Action = Literal[
+    "network:query",
+    "network:dispatch",
     "code:run",
     "code:read",
     "code:cancel",
@@ -27,6 +29,8 @@ Action = Literal[
     "operation:cancel",
 ]
 ACTIONS: tuple[Action, ...] = (
+    "network:query",
+    "network:dispatch",
     "code:run",
     "code:read",
     "code:cancel",

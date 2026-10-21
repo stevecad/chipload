@@ -117,6 +117,7 @@ class ProgramProcessor:
             not isinstance(operation, str)
             or operation not in self.operations.specs
             or operation.startswith("code_")
+            or operation in {"network_claim", "network_complete"}
         ):
             raise SandboxError("unsupported SDK operation")
         if not isinstance(request, dict):

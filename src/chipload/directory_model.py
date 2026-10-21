@@ -5,7 +5,7 @@ from typing import Annotated, Literal
 from pydantic import Field, StrictBool, StrictFloat, StrictInt, StrictStr, model_validator
 
 from .artifact import Digest
-from .auth import ServerSettings
+from .auth_settings import ServerSettings
 from .federation_wire import EgressPolicy, Origin
 from .listings import ListingInput
 from .model import GeoPoint, Id, Model, Name, SemanticRef, Text, Timestamp

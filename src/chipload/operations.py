@@ -16,6 +16,8 @@ from .execution_model import ExecutionRecord, ExecutionRequest, OperationInspect
 from .lifecycle import BuildRecord, Publication, ShopService, SourceRevision
 from .listings import ListingQuery
 from .model import Id, Model, Observation
+from .network import NetworkService
+from .network_model import NetworkClaim, NetworkComplete, NetworkRead, NetworkSubmit
 from .peer_model import PeerQuery, PeerResult
 from .program_model import ReadRun, RunPython, RunRecord
 from .programs import ProgramService
@@ -126,6 +128,7 @@ class Operation:
     read_only: bool = True
     output: type[Model] | None = None
     mutation_action: Action | None = None
+    charge_mutation: bool = True
 
 
 class Operations:
@@ -137,9 +140,21 @@ class Operations:
         self.executions = ExecutionService(service.repository)
         self.programs = ProgramService(service.repository)
         self.assessments = AssessmentService(service.repository, clock=self.published.clock)
+        self.network = NetworkService(service.repository)
         p = self.published
         s = self.service
         self.specs = {
+            "network_submit": Operation(NetworkSubmit, "Queue a public peer query or directory search through the trusted connector.",
+                self.network.submit, True, False, mutation_action="network:query"),
+            "network_read": Operation(NetworkRead, "Read your network query receipt and its historical result.",
+                lambda who, r: self.network.read(who, r.shop_id, r.job_id), True),
+            "network_cancel": Operation(NetworkRead, "Cancel your network query; an in-flight public read may already have run.",
+                lambda who, r: self.network.cancel(who, r.shop_id, r.job_id), True, False, mutation_action="network:query"),
+            "network_claim": Operation(NetworkClaim, "Claim a public network read; reserved for the trusted connector.",
+                lambda who, r: self.network.claim(who, r.shop_id), True, False,
+                mutation_action="network:dispatch", charge_mutation=False),
+            "network_complete": Operation(NetworkComplete, "Complete one fenced connector delivery.",
+                self.network.complete, True, False, mutation_action="network:dispatch", charge_mutation=False),
             "assessment_submit": Operation(
                 AssessShop, "Queue an assessment against an exact published revision, including isolated Python rules.",
                 self.assessments.submit, True, False, mutation_action="evaluation:run",
@@ -396,7 +411,8 @@ class Operations:
                 if isinstance(request, (ExecutionRequest, ExecutionRead))
                 else require(principal, shop, spec.mutation_action)
             )
-            self.limiter.mutation(who.subject, shop)
+            if spec.charge_mutation:
+                self.limiter.mutation(who.subject, shop)
         result = spec.handler(principal, request)
         if spec.output:
             result = spec.output.model_validate(result)

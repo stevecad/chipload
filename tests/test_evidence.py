@@ -270,7 +270,7 @@ class EvidenceTests(unittest.TestCase):
         with ThreadPoolExecutor(max_workers=4) as pool:
             list(pool.map(lambda _: Repository(self.repository.path), range(4)))
         with self.repository.connection() as db:
-            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 11)
+            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 12)
         self.service.revoke(self.owner, self.revocation)
 
     def test_recovery_preserves_revocations_and_their_effect_on_queries(self):

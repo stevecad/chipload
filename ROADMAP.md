@@ -55,8 +55,11 @@ tests show nearest-supplier business rejection, direct/relay equivalence and
 direct queries during a cloud outage. A managed connector now maintains outbound
 sessions, publication leases and withdrawal, with a separate OpenBao/Keycloak
 credential provider. TLS protocol fixtures cover token verification, rotation,
-denials and managed reconnection. Hosted network composition, federation
-container packaging and the combined real-identity container drill remain open.
+denials and managed reconnection. Caller-owned network jobs now connect REST and
+hosted Python to direct peers, public directory searches and relayed evaluations.
+Actual Python/SDK containers verify that mediation preserves socket, database and
+credential isolation and cannot claim connector authority. Federation container
+packaging and the combined real-identity container drill remain open.
 
 - The repository has issue-driven contributor tooling and a legacy v0.1.0 data specification.
 - Local Compose infrastructure provides Keycloak, PostgreSQL, and OpenBao, with bootstrap and access-denial tests.

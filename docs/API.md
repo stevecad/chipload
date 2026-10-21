@@ -134,6 +134,8 @@ versioned semantic inputs to these same evaluation services. Listing queries
 require an exact profile and public revision; unknown bindings stay unknown and
 a changed publication returns 409. Public visibility and directory indexing are
 separate choices.
+Authenticated [network reads](NETWORK.md) let conventional REST clients and
+hosted Python use the same caller-owned queue for remote supplier queries.
 Direct instance queries and the separate cloud supplier directory/relay have
 their own [federation contracts](FEDERATION.md#implemented-cloud-service).
 The cloud REST search works without an agent. Its owner grants, publication
@@ -285,8 +287,10 @@ after changing trust material.
 
 The token's `resource_access.chipload.roles` sets a permission ceiling:
 `shop:read` permits read actions, `shop:operate` permits `operation:read`,
-`operation:execute`, `operation:cancel` and the three `code:*` actions; `shop:admin` permits all current
-actions. Each action must **also** appear in the operator-owned binding for that
+`operation:execute`, `operation:cancel`, `evaluation:run`, `network:query` and the
+three `code:*` actions. `shop:connect` permits only `network:dispatch` for the
+trusted connector; `shop:admin` permits all current actions as a ceiling.
+Each action must **also** appear in the operator-owned binding for that
 subject and shop. Grants may restrict operation actions through an `operations`
 ID allowlist. `shop:operate` does not grant authoring privileges. No token
 role alone grants access to a shop, and token-supplied shop grants are ignored.

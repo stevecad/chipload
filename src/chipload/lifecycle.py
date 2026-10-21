@@ -27,6 +27,7 @@ from .launch_reservations import RESERVATION_SCHEMA
 from .launches import LAUNCH_SCHEMA, LaunchGuard, LaunchUncertain
 from .limits import bounded_json
 from .model import Id, Model, Timestamp
+from .network_model import NETWORK_SCHEMA
 from .program_model import PROGRAM_SCHEMA
 from .project import MAX_OUTPUT_BYTES, MAX_PROJECT_BYTES, BuildReport, SourceProject
 from .quotas import QUOTA_SCHEMA, QuotaPolicy, admit_build, admit_running, admit_source, quota_usage
@@ -126,9 +127,9 @@ class Repository:
         private_database(self.path, create=True)
         with self.connection() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}:
+            if version not in {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}:
                 raise ValueError("unsupported repository schema")
-            if version in {5, 6, 7, 8, 9, 10, 11}:
+            if version in {5, 6, 7, 8, 9, 10, 11, 12}:
                 reference = db.execute("SELECT * FROM admission_store WHERE id=1").fetchone()
                 if reference is None:
                     raise IntegrityError("missing admission store reference")
@@ -149,14 +150,16 @@ class Repository:
                         self._initialize_evidence()
                     if version < 11:
                         self._initialize_assessments()
+                    if version < 12:
+                        self._initialize_network()
                     return
             enable_wal(db)
             db.execute("BEGIN IMMEDIATE")
             try:
                 version = db.execute("PRAGMA user_version").fetchone()[0]
-                if version not in {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}:
+                if version not in {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}:
                     raise ValueError("unsupported repository schema")
-                if version in {5, 6, 7, 8, 9, 10, 11}:
+                if version in {5, 6, 7, 8, 9, 10, 11, 12}:
                     db.execute("COMMIT")
                     self._initialize_admission()
                     return
@@ -239,6 +242,15 @@ class Repository:
         self._initialize_reservations()
         self._initialize_evidence()
         self._initialize_assessments()
+        self._initialize_network()
+
+    def _initialize_network(self):
+        with self.transaction() as db:
+            if db.execute("PRAGMA user_version").fetchone()[0] == 11:
+                for statement in NETWORK_SCHEMA.split(";"):
+                    if statement.strip():
+                        db.execute(statement)
+                db.execute("PRAGMA user_version=12")
 
     def _initialize_assessments(self):
         with self.transaction() as db:

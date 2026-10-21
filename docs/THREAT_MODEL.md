@@ -77,8 +77,23 @@ must still be verified during provisioning. Managed reads retain request identit
 and deadlines with four global delivery slots, bounded polling and reconnection;
 withdrawal refreshes use CAS. `test_connector.py` and `test_connector_auth.py`
 exercise managed loops and credential exchange using TLS protocol fixtures.
-Hosted network composition, federation packaging and the combined real-identity
-container drill in [the federation design](FEDERATION.md) remain to be implemented.
+The [network queue](NETWORK.md) mediates outbound reads for REST and hosted Python
+without mounting a connector socket, configuration or credential in SDK/source
+containers. Verified callers need explicit `network:query` grants; receipts are
+private to their actor and shop. A separate `network:dispatch` identity claims
+bounded work over authenticated REST. That identity's role confers no authoring
+permissions, and hosted programs cannot call claim/completion operations even
+with an administrative caller. Network HTTP grants are checked before body
+parsing. Generation/revision/request identities, absolute deadlines, result
+binding, capacity reservations and cancellation fences remain authoritative.
+Receipts are historical and cannot establish a current supplier decision.
+Schema 12 includes private query history in paired backups; expired restored
+reads cannot be claimed again. Actual worker checks in `test_network_live.py`
+verify mediated reads, blocked sockets, absent data/credential mounts and
+unavailable dispatch RPCs. `test_network.py` and `test_network_transports.py`
+cover queue, authorization, recovery and actual HTTPS behavior. Federation
+packaging and the combined real-identity container drill in
+[the federation design](FEDERATION.md) remain to be implemented.
 
 ## Boundaries
 

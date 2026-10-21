@@ -3,8 +3,8 @@
 Status: implementation in progress. Listings, direct public instance queries,
 the directory, geographic supplier search and the cloud relay service are
 implemented. The managed outbound connector and runtime credential provider are
-also implemented; see [CONNECTOR.md](CONNECTOR.md). Hosted Python network
-composition, federation container packaging and the combined real-identity
+also implemented; see [CONNECTOR.md](CONNECTOR.md). Caller-scoped REST and hosted
+Python use the [network queue](NETWORK.md). Federation container packaging and the combined real-identity
 container drill remain to be implemented against the acceptance criteria below.
 
 ## Implemented listing contract
@@ -108,8 +108,8 @@ for LAN peers. Link-local metadata, multicast and unspecified addresses remain
 blocked. Redirects, proxies, encoded responses, duplicate JSON keys, oversized
 output and credential echo are rejected; HTTP attempts are not replayed.
 These process limits contain trusted transport code, not hostile tenant code.
-Hosted shop programs retain their existing network boundary; caller-scoped
-network composition through the connector remains the next step.
+Hosted shop programs retain their existing network boundary and compose remote
+reads through the [caller-owned network queue](NETWORK.md).
 
 `test_peers.py` and `test_federation_wire.py` passed 18 checks using actual TLS
 listeners, independent repositories and the supervised service process. They
@@ -216,8 +216,9 @@ Its optional token provider is used only for owner operations at the fixed cloud
 origin. Search and public relayed queries send no enrollment bearer token.
 `search(SupplierSearch(...))`, `catalog(instance_id, shop_id)` and
 `evaluate_listing(instance_id, shop_id, listing_id, query, expected_generation=...)`
-provide conventional Python access. Isolated hosted shop programs do not yet
-have these network calls; caller-scoped connector composition remains open.
+provide conventional Python access. Isolated hosted shop programs use
+`shop.network(...)` and caller-owned receipts through the trusted connector;
+they receive no sockets or enrollment credentials. See [NETWORK.md](NETWORK.md).
 
 Focused tests are `test_directory.py`, `test_relay.py`, `test_cloud.py` and
 `test_cloud_client.py`, run with the ordinary unittest command above. They cover

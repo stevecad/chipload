@@ -16,6 +16,7 @@ from .limits import (
 )
 from .listings import ListingQuery
 from .model import UNITS, Shop
+from .network_model import NetworkRecord, NetworkSubmit
 from .peer_model import PeerRequest, PeerResponse
 from .project import MAX_ASSET_BYTES, MAX_PROJECT_BYTES, SourceProject
 from .query import VariableQuery
@@ -37,6 +38,8 @@ def sdk_reference() -> dict:
             "listing_query": ListingQuery.model_json_schema(),
             "peer_request": PeerRequest.model_json_schema(),
             "peer_response": PeerResponse.model_json_schema(),
+            "network_request": NetworkSubmit.model_json_schema(),
+            "network_record": NetworkRecord.model_json_schema(),
             "assessment_request": AssessShop.model_json_schema(),
             "variable_query": VariableQuery.model_json_schema(),
             "execution_request": ExecutionRequest.model_json_schema(),
@@ -69,6 +72,7 @@ def sdk_reference() -> dict:
             ),
         },
         "rules": [
+            "Use shop.network(query, deadline=..., request_key=...) to queue public direct/relay queries or directory searches. Read or cancel caller-owned receipts through network_result/network_cancel. Credentials stay in the trusted connector; hosted Python has no network sockets. Connector claim/completion operations are unavailable to hosted programs.",
             "Shop-specific types and vocabularies belong in the source project.",
             "Listings bind versioned semantic terms to declared target inputs. Indexing is a separate opt-in; public mappings may reference only public catalog values. evaluate_listing requires the current public revision and applies the same business/evidence policy as direct evaluation.",
             "Supply explicit units and timezone-aware timestamps.",

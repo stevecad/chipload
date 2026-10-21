@@ -99,6 +99,11 @@ Public discovery needs neither a login nor code execution:
 
 ## Ordinary Python clients and REST
 
+Use the [network queue](NETWORK.md) for remote public discovery from a hosted
+program. `shop.network(...)`, `network_result(...)` and `network_cancel(...)`
+share the REST queue and caller-owned receipts. A separate trusted connector
+carries the request; source programs retain their socket and credential boundary.
+
 The same SDK works from an application or local script:
 
 ```python

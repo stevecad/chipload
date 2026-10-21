@@ -141,6 +141,8 @@ class TLSStackTests(unittest.TestCase):
         self.assertEqual(runtime["bindings"][0]["subject"], client["subject"])
         self.assertEqual(realm["users"][0]["id"], client["subject"])
         self.assertEqual(runtime["bindings"][0]["grants"][0]["shop_id"], "example")
+        self.assertIn("network:query", runtime["bindings"][0]["grants"][0]["actions"])
+        self.assertNotIn("network:dispatch", runtime["bindings"][0]["grants"][0]["actions"])
         self.assertEqual(realm["sslRequired"], "all")
         self.assertFalse(
             next(c for c in realm["clients"] if c["clientId"] == "chipload-agent")[

@@ -13,6 +13,7 @@ from tls_support import stack
 
 from chipload import BuildIdentity, compile_shop
 from chipload.access import ACTIONS, Grant, Principal
+from chipload.auth import TokenVerifier
 from chipload.federation_wire import EgressPolicy
 from chipload.lifecycle import Repository, ShopService
 from chipload.operations import Operations
@@ -24,7 +25,7 @@ from examples.federation_shops import AT, define_shop, project
 
 
 class PeerServer:
-    def __init__(self, *, profile="supplier-far", shop=None, instance_id=None, managed=False):
+    def __init__(self, *, profile="supplier-far", shop=None, instance_id=None, managed=False, bindings=None):
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
         stack.local_certificates(self.root / "tls", {"api": "localhost", "identity": "localhost"})
@@ -32,14 +33,16 @@ class PeerServer:
         self.socket.bind(("127.0.0.1", 0))
         self.origin = f"https://localhost:{self.socket.getsockname()[1]}"
         self.identity = IdentityFixture(self.root / "state", base=self.origin)
-        self.settings = self.identity.settings.model_copy(update={"mode": "production", "instance_id": instance_id or uuid.uuid4().hex})
+        self.owner = Principal(subject="owner", grants=(Grant(shop_id=profile, actions=ACTIONS),))
+        self.settings = self.identity.settings.model_copy(update={"mode": "production", "instance_id": instance_id or uuid.uuid4().hex,
+            "bindings": bindings if bindings is not None else (self.owner,)})
         self.service = ShopService(Repository(self.settings.database))
         self.published = PublishedService(self.service, clock=lambda: AT)
         self.operations = Operations(self.service, self.published)
         self.profile = profile
-        self.owner = Principal(subject="owner", grants=(Grant(shop_id=profile, actions=ACTIONS),))
         self.build(shop or define_shop(profile))
-        app = create_app(self.settings, operations=None if managed else self.operations, verifier=self.identity.verifier)
+        app = create_app(self.settings, operations=None if managed else self.operations,
+                         verifier=TokenVerifier(self.settings, client=self.identity.client))
         self.server = uvicorn.Server(uvicorn.Config(
             app, log_level="error", access_log=False, proxy_headers=False,
             ssl_certfile=str(self.root / "tls/certificates/api.crt"),

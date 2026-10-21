@@ -15,6 +15,7 @@ import time
 import unittest
 import uuid
 from contextlib import closing
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -190,6 +191,14 @@ class RecoveryLiveTests(unittest.IsolatedAsyncioTestCase):
                             break
                         await asyncio.sleep(.3)
                     self.assertEqual(assessment["state"], "succeeded", assessment)
+                    network = await client.post(shop + "/network/queries", headers=headers, json={
+                        "shop_id": "thermal-example", "request_key": "recovery-network",
+                        "deadline": (datetime.now(timezone.utc) + timedelta(seconds=30)).isoformat(),
+                        "query": {"kind": "search", "cloud": "suppliers", "directory_id": "c" * 32,
+                                  "query": {"profile": {"namespace": "recovery.example", "version": "1", "term": "service"}}},
+                    })
+                    self.assertEqual(network.status_code, 202, network.text)
+                    network_id = network.json()["id"]
                     audit = (await client.get(shop + "/audit", headers=headers)).json()
                     repository = Repository(original / "data/chipload.db")
                     policy = repository.read_quotas()["policy"]
@@ -358,6 +367,10 @@ script.backup(Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4]), archive.M
                     self.assertEqual(
                         (await client.get(shop + "/assessments/" + assessment_id, headers=headers)).json(), assessment
                     )
+                    recovered_network = await client.get(shop + "/network/queries/" + network_id, headers=headers)
+                    self.assertEqual(recovered_network.status_code, 200, recovered_network.text)
+                    self.assertEqual(recovered_network.json()["state"], "expired")
+                    self.assertEqual(recovered_network.json()["error"]["code"], "network_deadline")
                     self.assertEqual(
                         (await client.get(shop + "/source", headers=headers)).json()["revision"],
                         revision,

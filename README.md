@@ -6,6 +6,12 @@ Chipload is becoming a platform for software-defined shops. A shop defines its r
 
 The shop authoring SDK and initial runtime use Python. A documented REST API lets websites, scripts, and other clients query shop data without an agent. MCP exposes the same domain services and permission rules for agents. Public discovery exposes the capabilities a shop explicitly publishes.
 
+[Instance federation](docs/FEDERATION.md) supports direct public queries and an
+optional supplier directory and outbound relay. [REST and hosted Python](docs/NETWORK.md)
+compose supplier searches and evaluations through a scoped connector; shop code
+receives no network sockets or connector credentials. Federation container
+packaging and the combined multi-instance deployment drill remain in progress.
+
 [Pinned dependency environments](docs/DEPENDENCIES.md) let shop projects use
 additional Python libraries. The CadQuery example derives a fixture envelope
 from code and combines geometric fit with business conditions.

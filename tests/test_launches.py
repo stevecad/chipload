@@ -125,7 +125,7 @@ class LaunchTests(unittest.TestCase):
         with ThreadPoolExecutor(2) as pool:
             list(pool.map(lambda _: Repository(self.repository.path), range(2)))
         with self.repository.connection() as db:
-            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 11)
+            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 12)
             row = db.execute("SELECT name,claim,settled FROM worker_launches").fetchone()
             self.assertEqual(tuple(row), (self.name, self.claim, 0))
 

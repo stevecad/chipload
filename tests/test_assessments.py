@@ -260,7 +260,7 @@ class AssessmentTests(unittest.TestCase):
         self.assertTrue(all(r.admission.identity == self.repository.admission.identity for r in repositories))
         self.assertEqual(ProgramService(self.repository).read(self.owner, self.shop, code.id).state, "queued")
         with self.repository.connection() as db:
-            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 11)
+            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 12)
             self.assertEqual(db.execute("SELECT kind FROM python_runs WHERE id=?", (code.id,)).fetchone()[0], "program")
 
     def test_rest_and_python_share_results_and_permissions(self):

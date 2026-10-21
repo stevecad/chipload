@@ -355,7 +355,8 @@ def initialize(args):
             jwks_ca_file=Path("/etc/chipload/identity-ca.pem"),
             trusted_proxy_ips=(str(network[2]),),
             bindings=(
-                Principal(subject=subject, grants=(Grant(shop_id=args.shop, actions=ACTIONS),)),
+                Principal(subject=subject, grants=(Grant(shop_id=args.shop, actions=tuple(
+                    action for action in ACTIONS if action != "network:dispatch")),)),
             ),
         )
         write(prepared / "runtime.json", settings.model_dump_json(indent=2))

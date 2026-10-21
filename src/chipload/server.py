@@ -20,7 +20,7 @@ from pydantic import ValidationError
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse, Response
 
-from .access import Forbidden
+from .access import Forbidden, require
 from .artifact import canonical_json, digest
 from .assessment_model import AssessmentRead, AssessmentRecord, AssessShop
 from .auth import AuthenticationError, IdentityUnavailable, ServerSettings, TokenVerifier
@@ -36,6 +36,7 @@ from .lifecycle import (
     ShopService,
     SourceRevision,
 )
+from .network_model import NetworkClaim, NetworkComplete, NetworkRead, NetworkRecord, NetworkSubmit
 from .operations import (
     AuditRead,
     BuildCreate,
@@ -443,7 +444,15 @@ def create_app(
     )
     app.state.operations = operations
     app.state.mcp = mcp
-    app.add_middleware(Boundary, settings=settings, verifier=verifier, operations=operations)
+    def authorize_network(scope, principal):
+        parts = scope.get("path", "").split("/")
+        if len(parts) >= 6 and parts[1:3] == ["v1", "shops"] and parts[4] == "network":
+            if principal is None:
+                raise AuthenticationError("authentication required")
+            require(principal, parts[3], "network:dispatch" if parts[5] in {"claim", "complete"} else "network:query")
+
+    app.add_middleware(Boundary, settings=settings, verifier=verifier, operations=operations,
+                       authorize=authorize_network)
 
     async def handle_error(request, error):
         status, body = problem(error)
@@ -477,7 +486,7 @@ def create_app(
         # The service worker validates its output contract. Avoid rebuilding a
         # large artifact model a second time in the HTTP supervisor.
         if as_response:
-            status = 202 if name in {"build_request", "operation_submit", "code_run", "assessment_submit"} else 200
+            status = 202 if name in {"build_request", "operation_submit", "code_run", "assessment_submit", "network_submit"} else 200
             return JSONResponse(result, status_code=status)
         return result
 
@@ -528,6 +537,32 @@ def create_app(
     @app.get("/v1/identity")
     async def identity(request: Request):
         return await call("identity_read", request, Empty())
+
+    @app.post("/v1/shops/{shop_id}/network/queries", status_code=202, response_model=NetworkRecord)
+    async def network_submit(shop_id: str, body: NetworkSubmit, request: Request):
+        if body.shop_id != shop_id:
+            raise ValueError("body and path shop IDs must match")
+        return await call("network_submit", request, body)
+
+    @app.get("/v1/shops/{shop_id}/network/queries/{job_id}", response_model=NetworkRecord)
+    async def network_read(shop_id: str, job_id: str, request: Request):
+        return await call("network_read", request, NetworkRead(shop_id=shop_id, job_id=job_id))
+
+    @app.post("/v1/shops/{shop_id}/network/queries/{job_id}/cancel", response_model=NetworkRecord)
+    async def network_cancel(shop_id: str, job_id: str, request: Request):
+        return await call("network_cancel", request, NetworkRead(shop_id=shop_id, job_id=job_id))
+
+    @app.post("/v1/shops/{shop_id}/network/claim")
+    async def network_claim(shop_id: str, body: NetworkClaim, request: Request):
+        if body.shop_id != shop_id:
+            raise ValueError("body and path shop IDs must match")
+        return await call("network_claim", request, body)
+
+    @app.post("/v1/shops/{shop_id}/network/complete")
+    async def network_complete(shop_id: str, body: NetworkComplete, request: Request):
+        if body.shop_id != shop_id:
+            raise ValueError("body and path shop IDs must match")
+        return await call("network_complete", request, body)
 
     @app.post("/v1/shops/{shop_id}/runs", status_code=202, response_model=RunRecord)
     async def code_run(shop_id: str, body: RunPython, request: Request):

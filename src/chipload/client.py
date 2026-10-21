@@ -10,6 +10,7 @@ import http.client
 import re
 import ssl
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Callable
 from urllib.parse import urlencode, urlsplit
@@ -47,6 +48,8 @@ class TransportError(Exception):
 def json_value(value):
     if isinstance(value, Model):
         return value.model_dump(mode="json")
+    if isinstance(value, datetime):
+        return value.isoformat()
     if isinstance(value, (tuple, list)):
         return [json_value(item) for item in value]
     if isinstance(value, dict):
@@ -85,6 +88,9 @@ def route(operation, request):
         "audit_read": ("GET", "/audit"),
         "code_run": ("POST", "/runs"),
         "assessment_submit": ("POST", "/assessments"),
+        "network_submit": ("POST", "/network/queries"),
+        "network_claim": ("POST", "/network/claim"),
+        "network_complete": ("POST", "/network/complete"),
         "shop_evaluate": ("POST", "/evaluate"),
         "shop_evaluate_private": ("POST", "/private/evaluate"),
         "shop_variables": ("POST", "/variables/query"),
@@ -99,6 +105,10 @@ def route(operation, request):
     elif operation in {"evidence_revoke", "evidence_revocation_read"}:
         method = "PUT" if operation == "evidence_revoke" else "GET"
         suffix = "/evidence/" + component(request["evidence_id"]) + "/revocation"
+    elif operation in {"network_read", "network_cancel"}:
+        method, suffix = "GET", "/network/queries/" + hex_component(request["job_id"], 32)
+        if operation == "network_cancel":
+            method, suffix = "POST", suffix + "/cancel"
     elif operation in {"assessment_read", "assessment_cancel"}:
         method, suffix = "GET", "/assessments/" + hex_component(request["assessment_id"], 32)
         if operation == "assessment_cancel":
@@ -141,7 +151,7 @@ def route(operation, request):
     body = (
         request
         if method in {"PUT", "POST"}
-        and operation not in {"operation_execution_cancel", "code_cancel", "assessment_cancel"}
+        and operation not in {"operation_execution_cancel", "code_cancel", "assessment_cancel", "network_cancel"}
         else None
     )
     return method, path, body
@@ -273,6 +283,15 @@ class ShopClient:
 
     def evaluate_listing(self, listing_id, query):
         return self._call("listing_evaluate", listing_id=listing_id, query=query)
+
+    def network(self, query, *, deadline, request_key):
+        return self._call("network_submit", query=query, deadline=deadline, request_key=request_key)
+
+    def network_result(self, job_id):
+        return self._call("network_read", job_id=job_id)
+
+    def network_cancel(self, job_id):
+        return self._call("network_cancel", job_id=job_id)
 
     def run(self, code, *, request_key, files=(), inputs=None, seconds=30):
         return self._call(
@@ -433,7 +452,7 @@ def python_reference():
             "result_bytes": 262144,
             "log_bytes": 65536,
         },
-        "execution": "Ordinary Python with installed Chipload SDK and supplied helper modules. No network, host mounts, credentials, runtime package installation or recursive code runs. Each call uses current explicit grants intersected with admission grants for the selected shop. Public discovery of other shops remains available.",
+        "execution": "Ordinary Python with installed Chipload SDK and supplied helper modules. No direct network sockets, host mounts, credentials, runtime package installation or recursive code runs. Use caller-owned network jobs for mediated public peer reads. Each call uses current explicit grants intersected with admission grants for the selected shop. Public discovery of other shops remains available.",
         "example": "shop = client.shop(inputs['shop_id'])\nresult = {'catalog': shop.catalog(), 'variables': shop.variables(inputs.get('query', {}))}",
         "workflow": "Read source, construct or edit a SourceProject with ordinary Python, save with expected_head, request a build, inspect its report, publish with expected_generation. Long builds can be inspected in a subsequent run. Use stable request keys for build and operation admission. Never infer physical qualification from a passing build.",
     }
