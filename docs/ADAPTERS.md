@@ -104,7 +104,8 @@ path "auth/token/revoke-self" {
 Store the receiver bearer credential in the `token` field of the
 [KV v2](https://openbao.org/docs/secrets/kv/kv-v2/) entry
 `chipload/shops/service-example/evidence`. Provision the role ID and SecretID
-through the OpenBao operator workflow. The executor's private 0700 credential
+through the [managed workload helper](SECRETS.md#managed-adapter-credentials) or
+an independent OpenBao operator workflow. The executor's private 0700 credential
 directory must contain only `role-id`, `secret-id`, and the configured CA files,
 each a private 0600 regular file owned by the deployment user. Never put root or
 administration tokens there. The launcher rejects extra files and symlinks.
@@ -167,7 +168,8 @@ on the next call without container recreation. KV credential rotation is also
 read on the next call. Credentials and CA bytes are excluded from the routing
 fingerprint; their file names remain pinned. Coordinate receiver and OpenBao
 rotation so both accept the same bearer credential. AppRole SecretIDs expire
-and must be renewed by the operator; there is no renewal daemon.
+and must be renewed by the operator; `scripts/secrets-workload rotate` performs
+the verified cutover with interrupted-operation recovery. There is no renewal daemon.
 
 For TLS deployment settings, startup/shutdown takes the deployment operation
 lock, and startup refuses incomplete backup, restore, or credential rotation.
@@ -235,6 +237,7 @@ environment, configuration changes, and recovery startup locks.
 
 The [private OpenBao service](SECRETS.md) provides TLS and encrypted threshold
 bootstrap, plus encrypted offline backup/restore for its single-node storage.
-Production credential lifecycle, replacement-host recovery, high availability,
+Managed workload issuance, verification, rotation and revocation are available
+through `scripts/secrets-workload`. Operator authentication, replacement-host recovery, high availability,
 audit retention, certificate renewal, deployment load qualification, vendor
 bridges and coordinated external-system recovery remain work.

@@ -14,7 +14,7 @@ Steve integration is planned for a later stage.
 
 - The repository has issue-driven contributor tooling and a legacy v0.1.0 data specification.
 - Local Compose infrastructure provides Keycloak, PostgreSQL, and OpenBao, with bootstrap and access-denial tests.
-- A separate private TLS OpenBao container supports PGP-encrypted threshold initialization, explicit unsealing, audit storage, certificate reload and initialized-store checks. Live drills exercise scoped AppRole delivery, access denials, interrupted bootstrap and encrypted offline recovery after deleting the original store. See `docs/SECRETS.md`; operator/workload credential lifecycle and replacement-host qualification remain open.
+- A separate private TLS OpenBao container supports PGP-encrypted threshold initialization, explicit unsealing, audit storage, certificate reload and initialized-store checks. Operator helpers manage scoped AppRole provisioning, verification, rotation and revocation. Live drills exercise access denials, interrupted bootstrap/credential changes and encrypted offline recovery after deleting the original store. See `docs/SECRETS.md`; operator authentication and replacement-host qualification remain open.
 - The experimental Python SDK, validation, artifact codec, evaluator, contextual variable queries, and public catalog projection are implemented. A fictional shop has sixteen executable manufacturing scenarios; a heat-treatment-only example adds nine scenarios; the Swiss shop example covers shop variables and business rules. Tests also cover a document-review service with no physical resources or materials.
 - The process library adds 88 process projects and one mixed shop with 2,147 technical/business cases. Every project has prototype/production acceptance conditions, contextual business variables, and portable Python source. The mixed shop models shared equipment and explicit route compatibility. Exact quantity increments support whole-item business rules without introducing shop types into the engine. See `docs/PROCESS_EXAMPLES.md`.
 - A local application service now stores immutable source revisions, durable build jobs, exact publications, rollback/withdrawal, and audit events. It enforces shop/action grants. A restricted Docker worker and broker build Python projects; the broker validates models and acceptance results. Real-container tests cover hostile source and the publication lifecycle.
@@ -235,7 +235,14 @@ restores fresh storage, and verifies the original unseal quorum, cluster ID,
 workload permissions, revoked root token and audit history. Interrupted backups
 block startup and resume against the original intent. This is a single-node
 recovery path; replacement-host qualification, external credential reconciliation
-and managed operator/workload lifecycle remain deployment work. See `docs/SECRETS.md`.
+and managed operator authentication remain deployment work. See `docs/SECRETS.md`.
+
+Managed workload provisioning now creates exact-path policies and bounded AppRole
+credentials. Rotation persists its replacement before issuance, verifies and
+installs it before retiring the old credential, and resumes lost responses.
+Revocation denies the policy and removes the role, including access by existing
+tokens. A live drill verifies the actual contained secret client, rotation after
+bootstrap-root retirement, restored workload receipts and access denials.
 
 Realm signing rotation now preserves an explicitly timed verification overlap,
 records the exact replacement provider, and supports interrupted activation and

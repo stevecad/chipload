@@ -70,7 +70,7 @@ so their trusted implementation must enforce the caller's shop/action grants.
 - Reduce worker-host authority and strengthen isolation for hostile tenants.
   The broker's Docker socket remains a host-level trust dependency. Shop-specific
   dependency installation and custom evaluation environments need their own design.
-- Complete production OpenBao operator/workload identity lifecycle,
+- Complete production OpenBao operator authentication,
   audit retention and replacement-host recovery. The separate [private secrets
   service](SECRETS.md) now supplies TLS, PGP-encrypted threshold initialization,
   explicit unsealing, audit storage and certificate reload. Its tests verify
@@ -79,12 +79,20 @@ so their trusted implementation must enforce the caller's shop/action grants.
   revoked root-token and workload-policy preservation. This covers fresh storage
   on the same host; replacement-host and custody arrangements need qualification.
   The HTTP development stack retains local recovery material.
+
 - Qualify actual vendor receivers and external systems, including ambiguous
   effects, receiver persistence and recovery. The test receiver and simulator are
   evidence of protocol behavior, not qualification of a shop or machine.
 - Complete retention/storage policy, operator lifecycle, emergency signing-key revocation,
   monitoring, off-host restores and external-secret recovery. Agent-secret
   rotation does not revoke already-issued access tokens.
+
+Managed adapter identities now have exact-path policy checks, bounded token TTLs,
+journaled issuance/rotation and policy revocation. The workload live drill covers
+lost remote responses, the actual contained client, independent operator-token
+use after root retirement, restored receipts and denial for already-issued
+tokens. Operator login provisioning, renewal scheduling and coordinated receiver
+credential changes still require deployment-specific procedures.
 
 The supplied deployment supports managed RS256 signing-key rotation with a
 recorded overlap and separate retirement, including cache clearing and encrypted

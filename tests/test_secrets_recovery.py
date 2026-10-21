@@ -258,3 +258,16 @@ class SecretsRecoveryTests(unittest.TestCase):
                 original = script.load("secrets_recovery_scan", "scripts/secrets-recovery")
                 with self.assertRaisesRegex(ValueError, "another container"):
                     original.storage_users(self.state)
+
+    def test_mount_scan_confirms_removed_container_and_refuses_live_inspection_failure(self):
+        original = script.load("secrets_recovery_scan_race", "scripts/secrets-recovery")
+        failure = subprocess.CalledProcessError(1, ["docker", "inspect", "foreign"])
+        with patch.object(
+            original.subprocess, "check_output", side_effect=["foreign\n", failure, ""]
+        ):
+            original.storage_users(self.state)
+        with patch.object(
+            original.subprocess, "check_output", side_effect=["foreign\n", failure, "foreign\n"]
+        ):
+            with self.assertRaises(subprocess.CalledProcessError):
+                original.storage_users(self.state)

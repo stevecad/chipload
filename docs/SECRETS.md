@@ -8,7 +8,7 @@ settings, Docker socket, or PGP private keys.
 
 This single-node deployment includes encrypted offline backup and fresh-directory
 restore. Replacement-host qualification, automatic certificate delivery,
-workload-identity rotation, root-token retirement, and high availability remain
+operator authentication, automatic root-token retirement, and high availability remain
 deployment work. The [shop/Keycloak recovery archive](RECOVERY.md) does not contain
 this separate service.
 
@@ -103,8 +103,110 @@ as described in [ADAPTERS.md](ADAPTERS.md#configure-a-receiver-and-its-secret).
 Verify the workload's permitted read and denied cross-shop reads, writes, lists
 and administration. Then revoke the bootstrap root token through OpenBao
 administration. Do not retain it in an executor credential directory or grant
-operator access to shop code. Automated provisioning/rotation and root-token
-retirement are further work; successful unsealing alone does not complete setup.
+operator access to shop code. The workload helper below provisions and rotates
+adapter identities. Operator authentication and root-token retirement still need
+an independent administrative procedure. OpenBao
+[revokes descendant tokens with their parent](https://openbao.org/docs/internals/token/);
+verify that the replacement operator login survives root retirement.
+
+## Managed adapter credentials
+
+`scripts/secrets-workload` manages one AppRole and policy per adapter, with the
+policy name from its operator-owned [adapter configuration](ADAPTERS.md#configure-a-receiver-and-its-secret).
+It creates missing AppRole/KV v2 mounts, an exact-path read policy, and the initial
+receiver secret. Existing policies, roles or secret paths are not adopted or
+overwritten. Supply a fresh workload name and secret path when provisioning.
+The helper verifies the service's pinned cluster identity and TLS trust before
+using an operator token read from a private file outside service/credential state.
+
+Create the adapter's private credential directory and copy only its public CA
+bundles there. The OpenBao CA must match the managed service; its configured
+origin must be `https://HOST:8200`. Keep the directory and its private parent on
+the same filesystem for atomic credential replacement. In this example the
+adapter config uses `receiver-ca.pem`, `bao-ca.pem` and policy `evidence-adapter`:
+
+```sh
+install -d -m 700 /secure/evidence-credentials
+install -m 600 /secure/receiver-ca.pem /secure/evidence-credentials/receiver-ca.pem
+install -m 600 .local/secrets/certificates/ca.pem /secure/evidence-credentials/bao-ca.pem
+uv run --extra server python scripts/secrets-workload \
+  --state .local/secrets --operator-token /secure/operator-token provision \
+  --adapter .local/evidence-adapter.json --credentials /secure/evidence-credentials \
+  --receiver-secret /secure/evidence-bearer --secret-id-ttl 86400
+```
+
+The receiver secret file contains its current bearer credential; provisioning
+does not change the receiver. The operator token and input secret file must be
+0600 inside owner-only directories. Commands print receipts, expiry and status,
+never credentials. Executors receive only `role-id`, `secret-id` and their CA
+files. Neither shop Python nor MCP receives secret-management authority.
+
+Workload tokens have one policy, no default policy, and a hard 60-second maximum
+lifetime. The helper reads the configured secret, checks capabilities for the
+permitted path and forbidden operations, exercises actual read/list/admin denials,
+and revokes its verification token. Policy or role drift stops verification and
+rotation. SecretIDs default to one day, with a configurable lifetime from five
+minutes to seven days. Arrange renewal before the reported expiry; there is no
+renewal daemon or automatic operator login.
+
+```sh
+uv run --extra server python scripts/secrets-workload \
+  --state .local/secrets --operator-token /secure/operator-token verify --workload evidence-adapter
+uv run --extra server python scripts/secrets-workload \
+  --state .local/secrets --operator-token /secure/operator-token rotate --workload evidence-adapter
+```
+
+Rotation persists a random replacement before calling OpenBao's
+[custom SecretID endpoint](https://openbao.org/docs/api/auth/approle/).
+A retry looks up that same value and operation ID; a lost response does not issue
+another credential. It verifies the replacement, atomically installs it, destroys
+the previous SecretID and verifies that the previous login fails. Running
+executors read the new file on the next call. Already-issued workload tokens
+retain their scope until their normal expiry or policy revocation.
+
+If a command fails, keep `.workload-incomplete.json` and run:
+
+```sh
+uv run --extra server python scripts/secrets-workload \
+  --state .local/secrets --operator-token /secure/operator-token resume
+```
+
+The journal contains sensitive pending credentials and stays private outside the
+container's mounts. Backup refuses unfinished workload changes. The service can
+restart, be unsealed and resume the same operation. An expired/removed pending
+credential is not recreated after confirmed issuance; revoke that workload and
+provision a new identity. A host/process failure can leave private
+`.chipload-workload-*` files beside the credential directory; clean them only
+after confirming that no credential operation is running.
+
+To retire an identity, settle operations first when possible, then run:
+
+```sh
+uv run --extra server python scripts/secrets-workload \
+  --state .local/secrets --operator-token /secure/operator-token revoke --workload evidence-adapter
+```
+
+Revocation replaces the managed policy with a deny policy and deletes the AppRole.
+This blocks new logins and removes that policy's access from already-issued
+tokens. It can supersede an interrupted change for the same workload, even when
+local credential files are missing or its policy was broadened. Retired policy
+names remain reserved; they are not reused. Local credential files remain private
+but no longer authenticate. Revocation cannot undo a receiver action or resolve
+an uncertain operation.
+
+Nonsecret receipts under `workloads/` record generation, cluster, adapter config,
+credential directory, SecretID hash/accessor and expiry. They are included in the
+encrypted offline archive; the external credential directory is not. Restore
+that directory from its own protected copy or reconcile its state before
+rotation. A mismatched receipt/file pair is refused. The live drill restores an
+active workload and verifies it through the actual contained secret client.
+
+Provisioning needs administrative rights to the selected mounts, policy, role
+and KV path. Rotation needs policy/role reads, the role's SecretID lookup/create/
+destroy endpoints, and `sys/capabilities` verification. Revocation additionally
+needs policy update and role deletion. These are operator permissions: a token
+allowed to edit ACL policies is powerful. Use independently managed operator
+authentication; keeping a bootstrap root token for routine rotation is unnecessary.
 
 ## Storage, TLS and audit operation
 
@@ -227,6 +329,7 @@ replacement-host recovery need operator drills.
 ./scripts/build-runtime
 CHIPLOAD_SECRETS_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_secrets_stack_live.py' -v
 CHIPLOAD_SECRETS_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_secrets_recovery_live.py' -v
+CHIPLOAD_SECRETS_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_secrets_workload_live.py' -v
 ```
 
 The live test creates temporary TLS/PGP material and a fresh private network. It
@@ -243,3 +346,11 @@ original deployment, restores fresh storage, and unseals with the original
 quorum. It checks the original cluster ID, stored receiver secret, AppRole
 permissions, preserved root-token revocation, audit history and a second backup
 of the restored deployment.
+
+The workload drill provisions an exact-path identity, checks real client access,
+and injects lost responses after issuance, credential installation and retirement.
+It verifies rotation with a non-root administrative token after bootstrap-root
+retirement, restores an active workload, and revokes both new logins and an
+already-issued token's read access. Ordinary tests cover drift, private paths,
+failed installation, expired pending credentials, missing local files and safe
+diagnostics.
