@@ -1,7 +1,9 @@
 import unittest
+from unittest.mock import patch
 
 from pydantic import ValidationError
 
+from chipload.artifact import canonical_json, sdk_fingerprint
 from chipload.project import SourceFile, SourceProject, unique_json
 from chipload.reference import sdk_reference
 from chipload.sandbox import DockerBuilder, WorkerEnvironment
@@ -81,6 +83,26 @@ class ProjectTests(unittest.TestCase):
         environment = WorkerEnvironment("sha256:" + "a" * 64, "b" * 64, "c" * 64, "3.12.15")
         with self.assertRaisesRegex(ValueError, "SDKs differ"):
             DockerBuilder(environment)
+
+    def test_dependency_pin_preserves_old_revisions_and_refuses_a_different_environment(self):
+        source = self.project()
+        old = source.model_dump(mode="json")
+        self.assertNotIn("dependencies_sha256", old)
+        self.assertEqual(source.to_json(), canonical_json(old))
+        pinned = self.project(dependencies_sha256="d" * 64)
+        self.assertNotEqual(source.revision, pinned.revision)
+        self.assertEqual(SourceProject.model_validate_json(pinned.to_json()), pinned)
+        environment = WorkerEnvironment(
+            "sha256:" + "a" * 64, sdk_fingerprint(), "c" * 64, "3.12.15"
+        )
+        with patch("chipload.sandbox.subprocess.run") as run:
+            report = DockerBuilder(environment).build(pinned)
+        run.assert_not_called()
+        self.assertEqual(report.status, "failed")
+        self.assertEqual(report.diagnostics[0].code, "dependency-mismatch")
+        self.assertEqual(report.diagnostics[0].path, ("dependencies_sha256",))
+        with self.assertRaises(ValidationError):
+            self.project(dependencies_sha256="latest")
 
 
 if __name__ == "__main__":

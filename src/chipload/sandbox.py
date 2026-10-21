@@ -166,7 +166,7 @@ class DockerBuilder:
             "--workdir",
             "/tmp",
             "--entrypoint",
-            "python",
+            "/opt/chipload-shop/bin/python",
             "-i",
             self.environment.image,
             "-I",
@@ -187,6 +187,16 @@ class DockerBuilder:
         job_id = job_id or uuid.uuid4().hex
         if not re.fullmatch(r"[0-9a-f]{32}", job_id):
             raise ValueError("invalid worker job ID")
+        if project.dependencies_sha256 not in (None, self.environment.dependencies_sha256):
+            return BuildReport(
+                source_revision=project.revision,
+                worker_image=self.environment.image,
+                status="failed",
+                diagnostics=(Diagnostic(
+                    code="dependency-mismatch", path=("dependencies_sha256",),
+                    message="Project dependency pin differs from the configured worker environment.",
+                ),),
+            )
         name = f"chipload-build-{job_id}"
         diagnostics = []
         artifact = None

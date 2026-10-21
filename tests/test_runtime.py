@@ -111,6 +111,14 @@ class RuntimeTests(unittest.TestCase):
 
         with patch.object(script.subprocess, "run", side_effect=inspect):
             script.check_images({role: role for role in labels})
+            with patch.dict(labels["worker"], {
+                "org.chipload.core-dependencies-sha256": common["org.chipload.dependencies-sha256"],
+                "org.chipload.dependencies-sha256": "c" * 64,
+            }):
+                script.check_images({role: role for role in labels})
+                with patch.dict(labels["worker"], {"org.chipload.core-dependencies-sha256": "d" * 64}):
+                    with self.assertRaises(ValueError):
+                        script.check_images({role: role for role in labels})
             for role, key, invalid in (
                 ("api", "org.chipload.runtime-role", "broker"),
                 ("broker", "org.chipload.sdk-sha256", "old-sdk"),

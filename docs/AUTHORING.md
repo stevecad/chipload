@@ -93,16 +93,18 @@ time, observations, expected outcome, and optional required reason codes.
 Passing these cases establishes conformance to the shop's assertions, not
 independent physical qualification.
 
-Source identity includes files, entrypoint, shop ID, and acceptance cases.
+Source identity includes files, entrypoint, shop ID, acceptance cases, and any
+explicit dependency pin.
 File ordering does not affect it. Build identity additionally records the SDK,
 dependency lock, Python version, and immutable worker image. The broker rejects
 a worker whose SDK fingerprint differs from its own; rebuild the image after
 SDK or broker source changes.
 
-The initial environment contains the standard library and locked SDK
+The default environment contains the standard library and locked SDK
 dependencies. Builds never install project-supplied requirements or download
-dependencies. Operator-provisioned environments for additional pinned libraries
-and custom executable evaluation remain to be implemented.
+dependencies. Operators can add hash-pinned libraries through
+[dependency environments](DEPENDENCIES.md), including the CadQuery example.
+Custom executable evaluation remains to be implemented.
 
 Source may fabricate output or modify its own Python process. The broker treats
 all worker output as untrusted: it validates the returned model and references,

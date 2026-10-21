@@ -58,7 +58,10 @@ Create a new shop using `chipload.project.SourceProject` and `SourceFile`, then
 business/technical acceptance cases in Python; [the authoring guide](AUTHORING.md)
 and [process examples](PROCESS_EXAMPLES.md) document those contracts. Helper
 modules for the automation itself go in `files` as `{path, content}` records.
-The installed environment includes Chipload and its locked dependencies.
+The installed environment includes Chipload and its locked dependencies, plus
+any [operator-provisioned shop libraries](DEPENDENCIES.md). Source projects can
+pin that environment with `dependencies_sha256`. The database-backed SDK service
+uses the core interpreter and never loads shop libraries or their startup hooks.
 
 Public discovery needs neither a login nor code execution:
 

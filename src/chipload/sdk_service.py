@@ -56,6 +56,8 @@ class SDKService:
 
     def command(self):
         command = self.builder.create_command(self.name)
+        # Shop dependencies and their startup hooks never enter this process.
+        command[command.index("--entrypoint") + 1] = "/usr/local/bin/python"
         command[command.index("--user") + 1] = f"{os.getuid()}:{os.getgid()}"
         command[command.index("--ulimit") + 1] = "nofile=64:64"
         # All existing source-worker restrictions remain. This trusted worker

@@ -35,7 +35,7 @@ Steve integration is planned for a later stage.
 - Initial deployment runs preserved correct answers and publication/rollback while revealing occasional long-tail latency and shared-admission refusals. The 10-request/s default fixture missed three slots; invalid-token runs produced zero to three reader refusals. A capacity probe completed about 46 correct requests/s and did not sustain its offered 80 requests/s. Keep the raw reports and strict target in `docs/TLS.md` when comparing subsequent changes.
 - Service processes now recycle between calls while another ready slot can serve. Exhausted request allowances can be rejected from a read snapshot; accepted requests still recompute and debit under the write lock. Existing database files receive metadata checks without raw descriptor closes that would drop SQLite's process-wide advisory locks. Regression tests exercise blocked replacement, shutdown, policy/credit races, and actual cross-process locks; runtime and recovery checks cover the paired stores.
 - Revised deployment measurements met the 10-request/s default and invalid-token fixture targets, including concurrent Python authoring and publication/rollback. The default run served all 1,500 scheduled queries with a 56 ms p95 and 158 ms maximum. The capacity probe still delivered about 46 correct results/s against an offered 80, with 39 worker refusals and 2,009 missed slots. See `docs/TLS.md` for raw evidence and qualification limits.
-- A contained executor now supports offline simulators and the bounded `chipload-receiver-1` HTTPS protocol with scoped OpenBao AppRole credentials. Configuration fingerprints pin receiver routes; uncertain work queries durable receipts without repeating commands. See `docs/ADAPTERS.md`. Production OpenBao lifecycle, qualified vendor bridges, additional dependency environments, custom executable evaluation, and hardened internet deployment remain work.
+- A contained executor now supports offline simulators and the bounded `chipload-receiver-1` HTTPS protocol with scoped OpenBao AppRole credentials. Configuration fingerprints pin receiver routes; uncertain work queries durable receipts without repeating commands. See `docs/ADAPTERS.md`. Qualified vendor bridges, custom executable evaluation, and internet deployment qualification remain work. Operator-provisioned pinned libraries are described in `docs/DEPENDENCIES.md`.
 - Encrypted recovery now snapshots both shop databases, Keycloak, grants, and TLS/secrets state together. Restore targets fresh state, retains spent request capacity, blocks application startup during interruption, and resumes the same recovery attempt. A live drill checks real identity/signing keys, publication and observation history, REST/MCP discovery, and interruption before backup completion and after identity restore commits. See `docs/RECOVERY.md`; external secrets and off-host disaster recovery remain operational work.
 - Operator credential rotation now journals agent-secret and identity-database password changes, retries the same pending credential, verifies old-credential rejection, and preserves subjects and grants. Realm RS256 rotation records its provider/key IDs, verifies new tokens, preserves the old key during a timed overlap, and retires it through a separate command that clears the API key cache. Signing receipts and keys belong to encrypted recovery. Startup and backups reject unfinished rotations. See `docs/CREDENTIALS.md`; operator-account lifecycle, emergency key revocation, and production OpenBao delivery/rotation remain work.
 - No open GitHub issues existed when this plan was written. The milestones below are a local implementation backlog; they have not been published as issues.
@@ -55,8 +55,12 @@ Failed or interrupted programs never automatically rerun; committed calls remain
 committed. REST remains independently usable. See `docs/PYTHON_API.md` for the
 execution contract, deployment migration, examples and current bounds.
 
-Additional dependency environments, stronger isolation and public deployment
-qualification remain open. Keep future shop features available through Python
+Operator-provisioned dependency environments now support hash-pinned Python
+libraries and optional source pins. The CadQuery example combines computed
+geometry with business conditions; shop dependencies execute only in source/code
+containers, separate from the core SDK interpreter with database authority.
+See `docs/DEPENDENCIES.md`. Environment selection is currently per deployment.
+Stronger isolation and public deployment qualification remain open. Keep future shop features available through Python
 without multiplying MCP tools.
 
 ## Design commitments
@@ -151,7 +155,7 @@ Preserve the useful v0.1 invariants: permanent IDs, explicit units and timestamp
 
 ### 3. Implement the authoring and publication lifecycle
 
-**Status:** The local service, operator CLI, SDK schema reference, revision/publication guards, container broker, diagnostics, acceptance cases, rollback, withdrawal, and expired-job recovery are implemented and tested. REST/MCP and verified remote identities now expose the lifecycle; the queue process supervises local jobs. See `docs/AUTHORING.md` and `docs/API.md`. Additional pinned dependency environments, binary project assets, custom executable evaluation, and production supervision remain; this milestone is not yet complete.
+**Status:** The local service, operator CLI, SDK schema reference, revision/publication guards, container broker, diagnostics, acceptance cases, rollback, withdrawal, and expired-job recovery are implemented and tested. REST/MCP and verified remote identities now expose the lifecycle; the queue process supervises local jobs. See `docs/AUTHORING.md` and `docs/API.md`. Operator-built hash-pinned libraries, source dependency pins, and separate shop/core interpreters now support additional Python dependencies. The CadQuery fixture example includes technical and business acceptance cases; see `docs/DEPENDENCIES.md`. Binary project assets, custom executable evaluation, and production supervision remain; this milestone is not yet complete.
 
 Implement source storage and revision guards; SDK reference access; isolated, bounded build jobs; build diagnostics; model inspection; shop tests; immutable artifacts; and atomic publication of an exact revision. Include update, withdrawal, and rollback behavior. Keep publication authorization independent from source editing.
 

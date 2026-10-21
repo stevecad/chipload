@@ -44,15 +44,20 @@ def check_images(images):
             timeout=15,
         )
         labels = json.loads(result.stdout) or {}
+        core_dependencies = labels.get("org.chipload.dependencies-sha256")
+        if role == "worker":
+            core_dependencies = labels.get("org.chipload.core-dependencies-sha256", core_dependencies)
         if (
             labels.get("org.chipload.sdk-sha256") != expected
-            or labels.get("org.chipload.dependencies-sha256") != lock
+            or core_dependencies != lock
         ):
             raise ValueError(
                 f"{role} image differs from the checkout; rebuild worker and runtime images"
             )
         if role == "worker":
-            if labels.get("org.chipload.worker-protocol") != "1":
+            if (labels.get("org.chipload.worker-protocol") != "1" or not re.fullmatch(
+                r"[0-9a-f]{64}", labels.get("org.chipload.dependencies-sha256", "")
+            )):
                 raise ValueError("invalid worker image")
         elif (
             labels.get("org.chipload.runtime-role") != role

@@ -1,56 +1,110 @@
 #!/usr/bin/env python3
 """Build the trusted SDK environment from a minimal, credential-free context."""
 
+import argparse
 import hashlib
 import os
-from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
+from pathlib import Path
+
+from worker_dependencies import MAX_LOCK_BYTES, fingerprint, requirements
 
 
 def main():
     root = Path(__file__).resolve().parents[1]
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--graphics",
+        action="store_true",
+        help="include pinned Linux GL/X11 libraries for geometry packages",
+    )
+    parser.add_argument(
+        "--requirements", type=Path, help="reviewed, hash-pinned shop dependency lock"
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=root / ".local/worker-image",
+        help="immutable image ID file; defaults to .local/worker-image",
+    )
+    args = parser.parse_args()
+    extensions = b""
+    if args.requirements:
+        with args.requirements.open("rb") as stream:
+            extensions = requirements(stream.read(MAX_LOCK_BYTES + 1))
     source = root / "src/chipload"
     snapshot = {p.name: p.read_bytes() for p in sorted(source.glob("*.py"))}
     sdk_hash = hashlib.sha256(
         b"".join(name.encode() + b"\0" + content + b"\0" for name, content in snapshot.items())
     ).hexdigest()
     lock = (root / "uv.lock").read_bytes()
-    dependencies_hash = hashlib.sha256(lock).hexdigest()
+    core_hash = hashlib.sha256(lock).hexdigest()
+    recipe = (root / "deploy/worker/Dockerfile").read_bytes()
+    dependencies_hash = fingerprint(lock, extensions, recipe if args.graphics else b"")
     with tempfile.TemporaryDirectory(prefix="chipload-worker-image-") as directory:
         context = Path(directory)
         (context / "chipload").mkdir()
         for name, content in snapshot.items():
             (context / "chipload" / name).write_bytes(content)
         (context / "uv.lock").write_bytes(lock)
+        (context / "shop-requirements.txt").write_bytes(extensions)
         shutil.copyfile(root / "pyproject.toml", context / "pyproject.toml")
-        shutil.copyfile(root / "deploy/worker/Dockerfile", context / "Dockerfile")
+        (context / "Dockerfile").write_bytes(recipe)
         shutil.copyfile(root / "LICENSE", context / "LICENSE")
         subprocess.run(
-            ["uv", "export", "--locked", "--no-dev", "--no-emit-project",
-             "--format", "requirements-txt", "--output-file", str(context / "requirements.txt")],
-            cwd=context, stdout=subprocess.DEVNULL, check=True,
+            [
+                "uv",
+                "export",
+                "--locked",
+                "--no-dev",
+                "--no-emit-project",
+                "--format",
+                "requirements-txt",
+                "--output-file",
+                str(context / "requirements.txt"),
+            ],
+            cwd=context,
+            stdout=subprocess.DEVNULL,
+            check=True,
         )
         print("Building the locked Chipload worker image.", flush=True)
         subprocess.run(
-            ["docker", "build", "--build-arg", f"SDK_SHA256={sdk_hash}",
-             "--build-arg", f"DEPENDENCIES_SHA256={dependencies_hash}",
-             "--iidfile", str(context / "image-id"), str(context)],
+            [
+                "docker",
+                "build",
+                "--build-arg",
+                "WORKER_BASE=" + ("graphics" if args.graphics else "minimal"),
+                "--build-arg",
+                f"SDK_SHA256={sdk_hash}",
+                "--build-arg",
+                f"DEPENDENCIES_SHA256={dependencies_hash}",
+                "--build-arg",
+                f"CORE_DEPENDENCIES_SHA256={core_hash}",
+                "--iidfile",
+                str(context / "image-id"),
+                str(context),
+            ],
             check=True,
         )
         image = (context / "image-id").read_text().strip()
-        local = root / ".local"
+        if not re.fullmatch(r"sha256:[0-9a-f]{64}", image):
+            raise ValueError("Docker did not return an immutable image ID")
+        local = args.output.absolute().parent
         local.mkdir(mode=0o700, exist_ok=True)
         fd, temporary = tempfile.mkstemp(prefix="worker-image-", dir=local)
         try:
             with os.fdopen(fd, "w") as output:
                 output.write(image + "\n")
-            os.replace(temporary, local / "worker-image")
+            os.replace(temporary, args.output.absolute())
         finally:
             if os.path.exists(temporary):
                 os.unlink(temporary)
-        print(f"Worker image: {image}\nSaved .local/worker-image; no mutable tag is used.")
+        print(
+            f"Worker image: {image}\nDependencies: {dependencies_hash}\nSaved {args.output}; no mutable tag is used."
+        )
 
 
 if __name__ == "__main__":

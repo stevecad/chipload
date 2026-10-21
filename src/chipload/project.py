@@ -58,6 +58,8 @@ class SourceProject(Model):
     ]
     files: Annotated[tuple[SourceFile, ...], Field(min_length=1, max_length=128)]
     tests: Annotated[tuple[AcceptanceCase, ...], Field(max_length=100)] = ()
+    # Omit an absent pin to preserve existing source bytes and revision IDs.
+    dependencies_sha256: Digest | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def bounded_unique_project(self) -> Self:

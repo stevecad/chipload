@@ -111,6 +111,12 @@ consistent backup; schema migration is not a rolling-upgrade protocol.
 | Python SDK service | Only paired repository storage, mounted separately for each Python run; no network, settings or Docker socket | Repository owner's non-root UID/GID, read-only image, 1 CPU, 256 MiB memory/address space, 64 file descriptors, CPU/wall deadlines |
 | Source worker | Stdin source bundle, bounded temporary storage; no host mounts or network | Existing worker boundary: non-root, 1 CPU, 256 MiB, 64 processes, execution/output deadlines |
 
+The selected worker may include [pinned shop libraries](DEPENDENCIES.md).
+Source and Python code use the shop interpreter; the SDK service explicitly uses
+the core interpreter. Runtime admission verifies the SDK and core dependency
+fingerprints while permitting the separately identified shop dependency set.
+Public API, broker and executor images keep their own core environments.
+
 API and broker `/tmp` mounts are limited to 32 MiB with `noexec`, `nosuid`, and
 `nodev`. Core dumps are disabled. Container logs rotate with a 10 MiB size and
 three-file limit. The API image contains no Docker client. Equipment secrets
