@@ -20,6 +20,7 @@ from chipload.lifecycle import BuildProcessor, Repository, ShopService
 from chipload.operations import Operations
 from chipload.program_runner import ProgramProcessor
 from chipload.program_sandbox import DockerProgramRunner
+from chipload.quotas import QuotaPolicy
 from chipload.sandbox import DockerBuilder, WorkerEnvironment
 from chipload.server import create_app
 from examples import python_shop
@@ -76,6 +77,15 @@ class AssessmentLiveTests(unittest.TestCase):
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode, 0)
 
     def test_all_python_examples_through_rest_and_actual_mcp_hosted_python(self):
+        # This checks domain parity across a batch, independently of container
+        # speed. Admission limits have their own deliberately small fixtures.
+        quota = self.repository.read_quotas()
+        for scope in ("peer", "identity", "mutation_identity", "mutation_shop"):
+            quota["policy"]["requests"][scope]["burst"] = 100
+        self.repository.set_quotas(
+            QuotaPolicy.model_validate(quota["policy"]),
+            expected_generation=quota["generation"],
+        )
         verifier = TokenVerifier(self.settings, client=self.identity.client)
         app = create_app(self.settings, operations=self.operations, verifier=verifier)
         headers = {"Authorization": "Bearer " + self.identity.token()}

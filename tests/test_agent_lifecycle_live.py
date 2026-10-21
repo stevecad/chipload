@@ -78,7 +78,10 @@ class AgentLifecycleLiveTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(completed.returncode, 0, completed.stderr)
 
                 async with httpx2.AsyncClient(
-                    headers={"Authorization": "Bearer " + identity.token()}, trust_env=False
+                    headers={"Authorization": "Bearer " + identity.token()}, trust_env=False,
+                    # Broker work pauses between HTTP calls. Retire pooled
+                    # connections before the server's five-second idle limit.
+                    limits=httpx2.Limits(keepalive_expiry=1),
                 ) as transport:
                     async with Client(
                         streamable_http_client(base + "/mcp", http_client=transport)
