@@ -5,6 +5,7 @@ Chipload is becoming a platform for software-defined shops. Read [ROADMAP.md](RO
 ## Repository map
 
 - `ROADMAP.md`: product direction, implementation order, and completion criteria. Update milestone status with evidence as work lands.
+- `docs/FEDERATION.md`: instance communication design, implemented listing contracts and remaining direct/directory/relay work. `listings.py`, `listing_validation.py` and `examples/federation_shops.py` define exact semantic mappings and business cases; listing tests cover REST/MCP parity and isolated source builds.
 - `SPEC.md`: the normative specification for the original data format, including examples and ground rules. The spec release is `0.1.0`; the shop document's `chipload` field is the string `"0.1"`. Its file-format scope does not limit the product roadmap.
 - `README.md`: project introduction and contributor setup.
 - `.github/workflows/checks.yml`, `scripts/check-live`, `docs/CI.md`: automatic ordinary and selected container checks. Live profiles fail on missing or skipped suites; feature-specific checks outside CI remain required for relevant changes.

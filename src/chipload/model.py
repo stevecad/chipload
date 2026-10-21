@@ -155,8 +155,35 @@ class Entity(Model):
     visibility: Visibility = "private"
 
 
+class SemanticRef(Model):
+    """An exact, versioned term owned by a vocabulary namespace; never fetched."""
+
+    namespace: Annotated[StrictStr, Field(pattern=r"^[a-z][a-z0-9.-]{0,127}$", max_length=128)]
+    version: Annotated[StrictStr, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$", max_length=32)]
+    term: Id
+
+
+class GeoPoint(Model):
+    """An explicitly disclosed WGS84 location, in decimal degrees."""
+
+    latitude: Annotated[StrictStr, Field(pattern=r"^-?(?:0|[1-9][0-9]{0,2})(?:\.[0-9]{1,7})?$", max_length=12)]
+    longitude: Annotated[StrictStr, Field(pattern=r"^-?(?:0|[1-9][0-9]{0,2})(?:\.[0-9]{1,7})?$", max_length=12)]
+    accuracy_m: Annotated[StrictInt, Field(ge=0, le=1_000_000)]
+
+    @field_validator("latitude", "longitude")
+    @classmethod
+    def coordinate(cls, value, info):
+        limit = 90 if info.field_name == "latitude" else 180
+        number = Decimal(value)
+        if abs(number) > limit:
+            raise ValueError("coordinate is outside its geographic range")
+        value = value.rstrip("0").rstrip(".") if "." in value else value
+        return "0" if number == 0 else value
+
+
 class Site(Entity):
     time_zone: Annotated[StrictStr, Field(max_length=100)] | None = None
+    public_location: GeoPoint | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @field_validator("time_zone")
     @classmethod
@@ -453,6 +480,47 @@ class ShopOperation(Entity):
     timeout_seconds: Annotated[StrictInt, Field(ge=1, le=300)] = 30
 
 
+class ListingChoice(Model):
+    term: SemanticRef
+    value: Value
+
+
+class ListingField(Model):
+    """Bind a shared input meaning to the target's ordinary facts or initial state."""
+
+    term: SemanticRef
+    fact: Id
+    context: Literal["facts", "initial_state"] = "facts"
+    choices: tuple[ListingChoice, ...] = Field(default=(), max_length=100)
+
+    @model_validator(mode="after")
+    def unique_choices(self):
+        if len({choice.term for choice in self.choices}) != len(self.choices):
+            raise ValueError("listing choice terms must be unique")
+        return self
+
+
+class Listing(Entity):
+    """A searchable offering; its profile supplies meaning without engine taxonomy."""
+
+    profile: SemanticRef
+    target_kind: Literal["capability", "workflow", "offer"]
+    target: Id
+    site: Id | None = None
+    indexed: StrictBool = False
+    fields: tuple[ListingField, ...] = Field(default=(), max_length=64)
+
+    @model_validator(mode="after")
+    def unique_bindings(self):
+        if len({field.term for field in self.fields}) != len(self.fields):
+            raise ValueError("listing input terms must be unique")
+        if len({(field.context, field.fact) for field in self.fields}) != len(self.fields):
+            raise ValueError("listing inputs must bind distinct target facts")
+        if self.indexed and self.visibility != "public":
+            raise ValueError("only a public listing can opt into indexing")
+        return self
+
+
 class Shop(Entity):
     schema_version: Literal["0.2-draft"] = "0.2-draft"
     sites: tuple[Site, ...] = Field(default=(), max_length=1000)
@@ -465,6 +533,7 @@ class Shop(Entity):
     evidence: tuple[Evidence, ...] = Field(default=(), max_length=1000)
     variables: tuple[ShopVariable, ...] = Field(default=(), max_length=1000)
     operations: tuple[ShopOperation, ...] = Field(default=(), max_length=1000)
+    listings: tuple[Listing, ...] = Field(default=(), max_length=1000, exclude_if=lambda value: not value)
 
     @model_serializer(mode="wrap")
     def preserve_existing_artifacts(self, handler):

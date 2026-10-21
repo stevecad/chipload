@@ -76,10 +76,11 @@ documents the launcher; the settings example contains no identities or grants.
 | `GET /v1/shops/{shop}/{collection}` | `shop.page() / discover_shop: page` |
 | `GET /v1/shops/{shop}/{collection}/{id}` | `shop.inspect() / discover_shop: inspect` |
 | `POST /v1/shops/{shop}/evaluate` | `shop.evaluate() / discover_shop: evaluate` |
+| `POST /v1/shops/{shop}/listings/{listing}/evaluate` | `shop.evaluate_listing() / discover_shop: listing_evaluate` |
 | `POST /v1/shops/{shop}/variables/query` | `shop.variables() / discover_shop: variables` |
 
 Collections are `sites`, `resources`, `catalogs`, `processes`, `capabilities`,
-`workflows`, `offers`, `variables`, and `operations`. Only explicitly public records appear. Private and
+`workflows`, `offers`, `listings`, `variables`, and `operations`. Only explicitly public records appear. Private and
 missing IDs both return 404. Page sizes are 1–100; `query` filters names and IDs.
 Follow the returned `next_cursor` with the same collection and filter. Cursors
 are tied to the public revision; a changed revision returns 409 so the client
@@ -122,6 +123,11 @@ of a capability opts into disclosure of that capability's outcome and relevant
 freshness summaries. Private equipment IDs, evidence IDs, observation IDs,
 values, internal paths, model/build digests, and step traces are excluded.
 Public capability contracts include input/output states and declared requirements.
+Published [supplier listings](FEDERATION.md#implemented-listing-contract) bind
+versioned semantic inputs to these same evaluation services. Listing queries
+require an exact profile and public revision; unknown bindings stay unknown and
+a changed publication returns 409. Public visibility and directory indexing are
+separate choices.
 An offer response also includes the public `alternatives` assessments and,
 when supported or conditional, a `matching_alternative`. These references are
 assessment results; callable operations retain their separate authorization.

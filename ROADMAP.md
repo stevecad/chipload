@@ -32,6 +32,19 @@ deployment conditions or physical equipment.
 
 ## Current state
 
+The next phase is [communication between instances](docs/FEDERATION.md): direct
+shop-to-shop queries, an optional cloud discovery directory and outbound relay,
+and supplier search by offering, material, location and business conditions.
+That design has its own implementation sequence and acceptance criteria;
+federation services are not yet implemented.
+
+The first implementation slice adds public supplier listings with explicit
+indexing opt-in, versioned semantic input mappings and disclosed site coordinates.
+REST, Python and the existing MCP discovery tool evaluate those listings through
+the same technical/business engine with publication guards. Five example projects
+cover material supply, milling, heat treatment and document review. Cross-instance
+identity, geographic search and relay transport remain the next steps.
+
 - The repository has issue-driven contributor tooling and a legacy v0.1.0 data specification.
 - Local Compose infrastructure provides Keycloak, PostgreSQL, and OpenBao, with bootstrap and access-denial tests.
 - A separate private TLS OpenBao container supports PGP-encrypted threshold initialization, explicit unsealing, audit storage, certificate reload and initialized-store checks. Operator helpers manage scoped AppRole provisioning, verification, rotation and revocation, with subject-bound Keycloak device login and explicit signing-key synchronization. Live drills exercise access denials, interrupted bootstrap/credential/identity changes and encrypted offline recovery after deleting the original store. See `docs/SECRETS.md`; operational custody and replacement-host qualification remain open.

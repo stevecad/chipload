@@ -92,6 +92,8 @@ def route(operation, request):
     }
     if operation in plain:
         method, suffix = plain[operation]
+    elif operation == "listing_evaluate":
+        method, suffix = "POST", "/listings/" + component(request["listing_id"]) + "/evaluate"
     elif operation == "build_inspect":
         method, suffix = "GET", "/builds/" + hex_component(request["build_id"], 32)
     elif operation in {"evidence_revoke", "evidence_revocation_read"}:
@@ -268,6 +270,9 @@ class ShopClient:
 
     def _call(self, operation, **arguments):
         return self.client.call(operation, {**arguments, "shop_id": self.id})
+
+    def evaluate_listing(self, listing_id, query):
+        return self._call("listing_evaluate", listing_id=listing_id, query=query)
 
     def run(self, code, *, request_key, files=(), inputs=None, seconds=30):
         return self._call(

@@ -14,6 +14,7 @@ from .limits import (
     MAX_RESULT_WEIGHT,
     MAX_WORKFLOW_STATE,
 )
+from .listings import ListingQuery
 from .model import UNITS, Shop
 from .project import MAX_ASSET_BYTES, MAX_PROJECT_BYTES, SourceProject
 from .query import VariableQuery
@@ -32,6 +33,7 @@ def sdk_reference() -> dict:
             "shop": Shop.model_json_schema(),
             "source_project": SourceProject.model_json_schema(),
             "evaluation_request": EvaluationRequest.model_json_schema(),
+            "listing_query": ListingQuery.model_json_schema(),
             "assessment_request": AssessShop.model_json_schema(),
             "variable_query": VariableQuery.model_json_schema(),
             "execution_request": ExecutionRequest.model_json_schema(),
@@ -65,6 +67,7 @@ def sdk_reference() -> dict:
         },
         "rules": [
             "Shop-specific types and vocabularies belong in the source project.",
+            "Listings bind versioned semantic terms to declared target inputs. Indexing is a separate opt-in; public mappings may reference only public catalog values. evaluate_listing requires the current public revision and applies the same business/evidence policy as direct evaluation.",
             "Supply explicit units and timezone-aware timestamps.",
             "Objects are private by default; only public projections may be shared.",
             "Missing knowledge must remain unknown; simulation must remain explicit.",

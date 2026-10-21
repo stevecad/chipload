@@ -12,7 +12,7 @@ PROFILES = {
     "python": (
         ("WORKER", "RUNTIME"),
         ("worker", "program", "sdk_service", "agent_lifecycle", "runtime", "project_assets",
-         "python_checks", "assessments", "erp_interop", "evidence_worker", "offer_worker"),
+         "python_checks", "assessments", "erp_interop", "evidence_worker", "offer_worker", "listing_worker"),
     ),
     "tls": (
         ("TLS", "OPERATION"),

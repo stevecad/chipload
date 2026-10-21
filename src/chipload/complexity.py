@@ -109,6 +109,11 @@ def complexity_errors(shop: Shop):
                 ),
             )
     budgets = target_budgets(shop)
+    for listing in shop.listings:
+        work, weight = budgets[listing.target_kind, listing.target]
+        mapping_work = sum(32 + 32 * len(field.choices) for field in listing.fields)
+        if work + mapping_work > MAX_EVALUATION_WORK or weight > MAX_RESULT_WEIGHT:
+            yield ("listings", listing.id), "Listing mapping and target exceed the evaluation budget."
     for operation in shop.operations:
         work = sum(budgets[check.target_kind, check.target][0] for check in operation.checks)
         weight = sum(budgets[check.target_kind, check.target][1] for check in operation.checks)

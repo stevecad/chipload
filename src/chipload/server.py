@@ -45,6 +45,7 @@ from .operations import (
     EvaluationInput,
     ExecutionRead,
     ItemInput,
+    ListingEvaluationInput,
     ObservationsWrite,
     Operation,
     OperationInput,
@@ -63,7 +64,7 @@ from .published import Collection, ObservationSnapshot
 from .query import VariableResult
 from .quotas import QuotaExceeded
 from .request_limits import RateLimited, RequestCapacity, request_peer
-from .responses import CatalogView, ItemView, PageView, PublicEvaluation
+from .responses import CatalogView, ItemView, ListingEvaluation, PageView, PublicEvaluation
 from .service_errors import problem as service_problem
 from .service_pool import ServiceFailure
 
@@ -542,6 +543,12 @@ def create_app(
         if body.shop_id != shop_id:
             raise ValueError("body and path shop IDs must match")
         return await call("shop_variables", request, body)
+
+    @app.post("/v1/shops/{shop_id}/listings/{listing_id}/evaluate", response_model=ListingEvaluation)
+    async def listing_evaluation(shop_id: str, listing_id: str, body: ListingEvaluationInput, request: Request):
+        if body.shop_id != shop_id or body.listing_id != listing_id:
+            raise ValueError("body and path identities must match")
+        return await call("listing_evaluate", request, body)
 
     @app.post("/v1/shops/{shop_id}/private/evaluate")
     async def private_evaluation(shop_id: str, body: EvaluationInput, request: Request):

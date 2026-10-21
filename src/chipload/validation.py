@@ -10,6 +10,7 @@ from pydantic import Field, StrictStr
 from .complexity import complexity_errors
 from .graph import DependencyCycle, ordered_nodes
 from .limits import MAX_DIAGNOSTICS
+from .listing_validation import listing_errors
 from .model import Choice, Fact, Id, Model, Rule, Shop
 
 
@@ -78,6 +79,7 @@ def validate_shop(shop: Shop) -> None:
         "evidence",
         "variables",
         "operations",
+        "listings",
     )
     indexes = {}
     for collection in collections:
@@ -229,6 +231,10 @@ def validate_shop(shop: Shop) -> None:
                 ("operations", operation.id, "resources"),
                 "Operation resources must include every resource used by its checks.",
             )
+    if errors:
+        raise ShopValidationError(errors)
+    for code, path, message in listing_errors(shop):
+        error(code, path, message)
     if errors:
         raise ShopValidationError(errors)
     for path, message in complexity_errors(shop):

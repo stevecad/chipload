@@ -24,6 +24,7 @@ PUBLIC = {
     "shop_inspect": "inspect",
     "shop_evaluate": "evaluate",
     "shop_variables": "variables",
+    "listing_evaluate": "listing_evaluate",
 }
 SCRIPT = """from chipload.client import ServiceError
 try:

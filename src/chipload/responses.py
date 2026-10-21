@@ -22,6 +22,7 @@ class CatalogView(Model):
     variables: tuple[dict, ...]
     operations: tuple[dict, ...] = ()
     offers: tuple[dict, ...] = Field(default=(), exclude_if=lambda value: not value)
+    listings: tuple[dict, ...] = Field(default=(), exclude_if=lambda value: not value)
 
 
 class PageView(Model):
@@ -63,3 +64,7 @@ class PublicEvaluation(Model):
     freshness: tuple[Freshness, ...]
     alternatives: tuple[PublicAlternative, ...] = Field(default=(), max_length=32, exclude_if=lambda value: not value)
     matching_alternative: Route | None = Field(default=None, exclude_if=lambda value: value is None)
+
+
+class ListingEvaluation(PublicEvaluation):
+    listing_id: Id

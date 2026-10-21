@@ -14,6 +14,7 @@ from .evidence import EvidenceReference, EvidenceRevocation, EvidenceService, Re
 from .execution import ExecutionService
 from .execution_model import ExecutionRecord, ExecutionRequest, OperationInspection
 from .lifecycle import BuildRecord, Publication, ShopService, SourceRevision
+from .listings import ListingQuery
 from .model import Id, Model, Observation
 from .program_model import ReadRun, RunPython, RunRecord
 from .programs import ProgramService
@@ -22,7 +23,7 @@ from .published import Collection, ObservationSnapshot, PublishedService
 from .query import VariableQuery, VariableResult
 from .reference import sdk_reference
 from .request_limits import RequestLimiter
-from .responses import CatalogView, ItemView, PageView, PublicEvaluation
+from .responses import CatalogView, ItemView, ListingEvaluation, PageView, PublicEvaluation
 
 
 class Empty(Model):
@@ -34,7 +35,7 @@ class ShopInput(Model):
 
 
 class DiscoverShop(ShopInput):
-    action: Literal["catalog", "page", "inspect", "evaluate", "variables"] = "catalog"
+    action: Literal["catalog", "page", "inspect", "evaluate", "variables", "listing_evaluate"] = "catalog"
     arguments: dict[str, JsonValue] = Field(default_factory=dict, max_length=100)
 
 
@@ -52,6 +53,11 @@ class ItemInput(ShopInput):
 
 class EvaluationInput(ShopInput):
     query: EvaluationRequest
+
+
+class ListingEvaluationInput(ShopInput):
+    listing_id: Id
+    query: ListingQuery
 
 
 class VariablesInput(ShopInput):
@@ -212,6 +218,11 @@ class Operations:
                 "Evaluate a published capability, workflow, or alternative offer at the service's current time.",
                 lambda who, r: p.evaluation(r.shop_id, r.query),
             ),
+            "listing_evaluate": Operation(
+                ListingEvaluationInput,
+                "Evaluate a published listing using exact semantic inputs and a public revision guard.",
+                lambda who, r: p.listing_evaluation(r.shop_id, r.listing_id, r.query),
+            ),
             "shop_variables": Operation(
                 VariablesInput,
                 "Query public shop variables and their applicability in context.",
@@ -328,6 +339,7 @@ class Operations:
             "shop_list": PageView,
             "shop_inspect": ItemView,
             "shop_evaluate": PublicEvaluation,
+            "listing_evaluate": ListingEvaluation,
             "shop_variables": VariableResult,
             "shop_variables_private": VariableResult,
             "source_read": SourceRevision,
@@ -358,7 +370,8 @@ class Operations:
     def discover(self, request):
         request = DiscoverShop.model_validate(request)
         operation = {"catalog": "shop_catalog", "page": "shop_list", "inspect": "shop_inspect",
-                     "evaluate": "shop_evaluate", "variables": "shop_variables"}[request.action]
+                     "evaluate": "shop_evaluate", "variables": "shop_variables",
+                     "listing_evaluate": "listing_evaluate"}[request.action]
         return self.call(operation, None, {**request.arguments, "shop_id": request.shop_id})
 
     def call(self, name, principal, request) -> dict:

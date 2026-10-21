@@ -14,12 +14,13 @@ from .evaluate import EvaluationRequest, evaluate
 from .evidence import RevocationSnapshot
 from .evidence import snapshot as evidence_snapshot
 from .lifecycle import Conflict, NotFound, ShopService, now
+from .listings import ListingQuery, translate
 from .model import Model, Observation, Timestamp
 from .project import unique_json
 from .query import VariableQuery, query_variables
 
 Collection = Literal[
-    "sites", "resources", "catalogs", "processes", "capabilities", "workflows", "offers", "variables", "operations"
+    "sites", "resources", "catalogs", "processes", "capabilities", "workflows", "offers", "variables", "operations", "listings"
 ]
 
 
@@ -178,6 +179,33 @@ class PublishedService:
         artifact, observations, revocations = self._snapshot(shop)
         return self.evaluate_snapshot(artifact, observations, revocations, query,
                                       at=self.clock(), private=private)
+
+    def listing_evaluation(self, shop: str, listing_id: str, query: ListingQuery) -> dict:
+        query = ListingQuery.model_validate(query)
+        artifact, observations, revocations = self._snapshot(shop)
+        try:
+            catalog = self.repository.public_catalog(artifact)
+        except KeyError:
+            raise NotFound("published listing not found") from None
+        listing = next((item for item in artifact.shop.listings
+                        if item.id == listing_id and item.visibility == "public"), None)
+        if listing is None:
+            raise NotFound("published listing not found")
+        if catalog["public_sha256"] != query.expected_revision:
+            raise Conflict("published revision changed; refresh the listing")
+        at = self.clock()
+        translated = translate(listing, query)
+        if translated is None:
+            return {
+                "listing_id": listing.id, "target_kind": listing.target_kind,
+                "target": listing.target, "revision": catalog["public_sha256"],
+                "evaluated_at": at.isoformat(), "outcome": "unknown", "simulated": False,
+                "freshness": [], "reasons": [{"code": "unmapped-listing-input",
+                    "message": "The listing does not define every requested semantic binding."}],
+            }
+        return {"listing_id": listing.id, **self.evaluate_snapshot(
+            artifact, observations, revocations, translated, at=at,
+        )}
 
     def evaluate_snapshot(self, artifact, observations, revocations, query, *, at,
                           private=False, python_evaluation=None):

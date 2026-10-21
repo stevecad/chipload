@@ -33,6 +33,17 @@ verified identity. Treat both client input and shop-authored Python as untrusted
 including data produced by successfully executed code. A legitimate shop agent
 may still supply malicious or accidentally expensive source and data.
 
+Published supplier listings disclose explicit semantic input mappings and may
+reference a site's deliberately supplied public coordinates. Public catalog
+visibility and directory indexing are separate opt-ins. Validation rejects
+public mappings to hidden catalog items and private target/site references.
+Listing queries require a public revision and use the same publication,
+observations, evidence and private-condition policy as ordinary evaluation.
+Unknown bindings are not ignored. `test_listings.py`, `test_listing_transports.py`
+and `test_listing_worker_live.py` exercise these boundaries. The network directory
+and relay in [the federation design](FEDERATION.md) remain unimplemented at this
+checkpoint; listing support grants no new outbound network authority.
+
 ## Boundaries
 
 | Component | Authority and boundary |

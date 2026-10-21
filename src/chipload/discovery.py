@@ -49,7 +49,10 @@ def public_catalog(artifact: Artifact) -> dict:
         "schema_version": shop.schema_version,
         "shop": summary(shop),
         "sites": [
-            {**summary(s), "time_zone": s.time_zone} for s in shop.sites if s.id in public_sites
+            {**summary(s), "time_zone": s.time_zone,
+             **({"public_location": s.public_location.model_dump(mode="json")}
+                if s.public_location is not None else {})}
+            for s in shop.sites if s.id in public_sites
         ],
         "resources": [
             {
@@ -160,5 +163,9 @@ def public_catalog(artifact: Artifact) -> dict:
         # Private offers must not change public cache identities.
         if not catalog["offers"]:
             del catalog["offers"]
+    listings = [listing.model_dump(mode="json", exclude={"visibility"})
+                for listing in shop.listings if listing.visibility == "public"]
+    if listings:
+        catalog["listings"] = listings
     # Public cache identities must not fingerprint private equipment details.
     return {"public_sha256": digest(canonical_json(catalog)), **catalog}
