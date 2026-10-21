@@ -19,6 +19,7 @@ from chipload.program_model import RunPython
 from chipload.program_runner import ProgramProcessor
 from chipload.program_sandbox import DockerProgramRunner
 from chipload.project import MAX_ASSET_BYTES, SourceAsset, SourceProject
+from chipload.quotas import QuotaPolicy
 from chipload.sandbox import DockerBuilder, WorkerEnvironment
 from chipload.server import create_app
 from examples import asset_shop
@@ -38,6 +39,14 @@ class ProjectAssetLiveTests(unittest.TestCase):
             outsider = Principal(subject="outsider", grants=(Grant(shop_id="another-shop", actions=ACTIONS),))
             settings = identity.settings.model_copy(update={"bindings": (owner, outsider)})
             repository = Repository(settings.database)
+            # Admit the complete lifecycle batch without relying on refill time.
+            quota = repository.read_quotas()
+            for scope in ("peer", "identity", "mutation_identity", "mutation_shop"):
+                quota["policy"]["requests"][scope]["burst"] = 100
+            repository.set_quotas(
+                QuotaPolicy.model_validate(quota["policy"]),
+                expected_generation=quota["generation"],
+            )
             service = ShopService(repository)
             operations = Operations(service)
             builder = BuildProcessor(repository, DockerBuilder(self.environment))

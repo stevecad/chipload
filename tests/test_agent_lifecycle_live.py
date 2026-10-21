@@ -20,6 +20,7 @@ from server_support import IdentityFixture
 
 from chipload.lifecycle import Repository, ShopService
 from chipload.operations import Operations
+from chipload.quotas import QuotaPolicy
 from chipload.server import create_app
 from examples.export_project import project
 
@@ -35,6 +36,16 @@ class AgentLifecycleLiveTests(unittest.IsolatedAsyncioTestCase):
             base = f"http://127.0.0.1:{sock.getsockname()[1]}"
             identity = IdentityFixture(Path(directory) / "data", base=base)
             operations = Operations(ShopService(Repository(identity.settings.database)))
+            # This lifecycle checks authorization and publication at any runner
+            # speed; request-rate enforcement has separate fixtures.
+            repository = operations.service.repository
+            quota = repository.read_quotas()
+            for scope in ("peer", "identity", "mutation_identity", "mutation_shop"):
+                quota["policy"]["requests"][scope]["burst"] = 100
+            repository.set_quotas(
+                QuotaPolicy.model_validate(quota["policy"]),
+                expected_generation=quota["generation"],
+            )
             app = create_app(identity.settings, operations=operations, verifier=identity.verifier)
             server = uvicorn.Server(
                 uvicorn.Config(app, access_log=False, log_level="warning", proxy_headers=False)
