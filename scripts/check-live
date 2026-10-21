@@ -24,7 +24,7 @@ PROFILES = {
     ),
     "secrets": (
         ("SECRETS", "ADAPTER"),
-        ("secrets_stack", "secrets_recovery", "secrets_workload", "secrets_identity",
+        ("secrets_stack", "secrets_recovery", "secrets_workload", "secrets_identity", "secrets_emergency",
          "remote_adapter", "executor"),
     ),
 }

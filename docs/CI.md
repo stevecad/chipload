@@ -13,7 +13,7 @@ container images from the checkout and run disposable integration fixtures:
 | `python` | Source builds, hosted Python and SDK isolation, MCP authoring, REST discovery, runtime persistence, binary assets, Python constraints and assessments, ERP observations, evidence revocation, and alternative offers. |
 | `tls` | Verified HTTPS and Keycloak, external client boundaries, and callable operations. |
 | `recovery` | Encrypted shop/identity recovery, agent/database credential rotation, and signing-key rotation and revocation. |
-| `secrets` | TLS OpenBao bootstrap, recovery, workload credentials, Keycloak operator identity, HTTPS adapters, and the contained executor. |
+| `secrets` | TLS OpenBao bootstrap, recovery, workload credentials, Keycloak operator identity, independent emergency quorum access, HTTPS adapters, and the contained executor. |
 
 [`scripts/check-live`](../scripts/check-live) defines the exact suites and enables
 their prerequisite flags before importing tests. Missing suites, skipped checks,

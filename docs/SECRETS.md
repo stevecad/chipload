@@ -230,7 +230,13 @@ the bootstrap root token, and run `bao token revoke -self`. Confirm that root
 authentication fails and a fresh Keycloak operator login still works. Remove
 temporary plaintext root material under your custody procedure. The encrypted
 bootstrap packet remains a record of a revoked token; decrypting it does not
-restore access. Keep an independently tested quorum-based emergency procedure.
+restore access. Provision and rehearse the independent
+[emergency login and quorum procedure](SECRETS_EMERGENCY.md) before retiring root.
+OpenBao 2.7 requires an authenticated caller before accepting shares for root
+generation; unseal shares alone do not replace the lost Keycloak login. The
+supplied emergency policy permits only the ceremony and self-token inspection
+and revocation, with a five-minute session lifetime. Its password and the PGP
+private key remain under independent custody outside service state.
 
 For a second operator who should rotate only an existing workload, use:
 
@@ -535,6 +541,7 @@ CHIPLOAD_SECRETS_TESTS=1 uv run --extra server python -m unittest discover -s te
 CHIPLOAD_SECRETS_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_secrets_recovery_live.py' -v
 CHIPLOAD_SECRETS_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_secrets_workload_live.py' -v
 CHIPLOAD_SECRETS_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_secrets_identity_live.py' -v
+CHIPLOAD_SECRETS_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_secrets_emergency_live.py' -v
 ```
 
 The live test creates temporary TLS/PGP material and a fresh private network. It
@@ -559,6 +566,14 @@ lost committed response, resumes with an MFA-authenticated administrator, and
 verifies access after key rotation and encrypted OpenBao recovery. Its seeded
 test authenticators do not qualify human enrollment or authenticator recovery
 procedures.
+
+The [emergency drill](SECRETS_EMERGENCY.md) uses the native OpenBao CLI with no
+Keycloak service. It verifies a narrowly scoped independent login, encrypted
+quorum root generation, bootstrap/generated-root revocation, password rotation,
+audit redaction and the same access after deleting and restoring original
+storage. It also proves that canceling a completed attempt does not revoke the
+issued token. Independent custody and replacement-host execution remain
+deployment responsibilities.
 
 The workload drill provisions an exact-path identity, checks real client access,
 and injects lost responses after issuance, credential installation and retirement.

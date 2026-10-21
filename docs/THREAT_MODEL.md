@@ -185,6 +185,15 @@ establish reachability from a shop caller.
   enrolled authenticator and password/OTP login, with OTP evidence enforced by
   OpenBao. Version-1 receipts require the explicit `enable-mfa` upgrade; this does
   not qualify identity proofing, master-realm administration or phishing resistance.
+  The [independent emergency procedure](SECRETS_EMERGENCY.md) uses a separate
+  protected password for a five-minute login limited to root-generation ceremony
+  endpoints and self-token inspection/revocation. Generating root still requires
+  the unseal quorum and encrypts the result to the agreed PGP recipient. The live
+  drill has no Keycloak instance and verifies fresh login after cold restore.
+  The password can disrupt ceremonies if compromised; root tokens do not expire
+  automatically. An absent completed attempt or cancellation does not establish
+  token revocation. Independent custody and incident reconciliation remain
+  operational requirements.
   Encrypted offline backup/restore is
   tested after deleting the original store, including quorum, cluster identity,
   revoked root-token and workload-policy preservation. This covers fresh storage
