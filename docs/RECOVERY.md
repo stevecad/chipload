@@ -23,7 +23,10 @@ external receiver-state recovery remains integration work. The separate
 [executor launcher](ADAPTERS.md) honors the TLS deployment operation lock and
 incomplete-state markers, but the stack helpers do not stop its Compose project.
 Its adapter configuration, AppRole credential directory, OpenBao state, and
-receiver ledger need their own coordinated protection and recovery.
+receiver ledger need their own coordinated protection and recovery. Use the
+[OpenBao offline recovery helper](SECRETS.md#encrypted-offline-backup-and-restore)
+for the private secrets deployment during the same maintenance window. It
+preserves that service's storage and custody separately from this archive.
 
 This workflow covers the [single-host TLS stack](TLS.md). It does not back up
 OpenBao, ERP systems, equipment controllers, external evidence stores, Docker

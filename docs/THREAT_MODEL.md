@@ -52,7 +52,7 @@ a filesystem or network namespace inside the API container.
 | Replayed mutations, lost responses or ambiguous external effects | Expected revisions/generations, durable request keys and call journals, claim fencing, no automatic code/service replay, retained uncertain operation locks, receiver reconciliation | `test_lifecycle.py`, `test_programs.py`, `test_service_pool.py`, `test_execution*.py`, adapter fault tests |
 | Outbound-request abuse or credential leakage | Untrusted containers have no network; operator-owned adapter bindings; pinned HTTPS trust/receiver path; bounded network work; no redirects, proxy inheritance or automatic dispatch retries; scoped AppRole/KV access | `test_remote_adapter.py`, real OpenBao and TLS receiver denials in `test_remote_adapter_live.py`, contained executor tests |
 | Spoofed client addresses or failed identity trust | Exact trusted gateway address, gateway-replaced single client header, disabled Uvicorn proxy rewriting, CA/hostname verification and bounded JWKS caching | `test_proxy.py`, `test_auth.py`, `test_tls_live.py` |
-| Recovery resetting authority, history or spent allowances | Paired database backups, encrypted authenticated archives, preserved identity state, fresh restore destinations, durable incomplete/rotation markers and operator locks | `test_recovery*.py`, `test_credentials*.py` |
+| Recovery resetting authority, history or spent allowances | Paired database backups, encrypted authenticated archives, preserved identity state, fresh restore destinations, durable incomplete/rotation markers and operator locks; separate offline OpenBao recovery preserves quorum, cluster identity and policies | `test_recovery*.py`, `test_credentials*.py`, `test_secrets_recovery*.py` |
 
 These tests establish behavior for their stated fixtures and failure cases. They
 do not demonstrate resistance to every kernel, interpreter, dependency or
@@ -70,12 +70,15 @@ so their trusted implementation must enforce the caller's shop/action grants.
 - Reduce worker-host authority and strengthen isolation for hostile tenants.
   The broker's Docker socket remains a host-level trust dependency. Shop-specific
   dependency installation and custom evaluation environments need their own design.
-- Complete production OpenBao operator/workload identity lifecycle, Raft recovery,
+- Complete production OpenBao operator/workload identity lifecycle,
   audit retention and replacement-host recovery. The separate [private secrets
   service](SECRETS.md) now supplies TLS, PGP-encrypted threshold initialization,
   explicit unsealing, audit storage and certificate reload. Its tests verify
-  actual AppRole denials and sealed restart; they do not qualify disaster recovery
-  or custody arrangements. The HTTP development stack retains local recovery material.
+  actual AppRole denials and sealed restart. Encrypted offline backup/restore is
+  tested after deleting the original store, including quorum, cluster identity,
+  revoked root-token and workload-policy preservation. This covers fresh storage
+  on the same host; replacement-host and custody arrangements need qualification.
+  The HTTP development stack retains local recovery material.
 - Qualify actual vendor receivers and external systems, including ambiguous
   effects, receiver persistence and recovery. The test receiver and simulator are
   evidence of protocol behavior, not qualification of a shop or machine.

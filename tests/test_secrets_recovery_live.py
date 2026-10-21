@@ -1,0 +1,196 @@
+"""Recover a real OpenBao store after original storage loss, without a root token."""
+
+import base64
+import json
+import os
+import secrets
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+import uuid
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+
+from secrets_support import ROOT, archive, fixture_args, script
+
+recovery = script.load("secrets_recovery_live", "scripts/secrets-recovery")
+
+
+@unittest.skipUnless(os.environ.get("CHIPLOAD_SECRETS_TESTS") == "1", "requires Docker and OpenBao")
+class SecretsRecoveryLiveTests(unittest.TestCase):
+    def test_storage_loss_restore_original_quorum_policies_and_revoked_root(self):
+        with tempfile.TemporaryDirectory(prefix="chipload-secrets-dr-") as temporary:
+            root = Path(temporary)
+            name = "chipload-secrets-dr-" + uuid.uuid4().hex[:10]
+            network = name + "-net"
+            gpg, setup = fixture_args(root, name=name, network=network)
+            state = setup.state
+
+            def invoke(action, **kwargs):
+                return script.operate(SimpleNamespace(state=state, action=action, **kwargs))
+
+            def run(*command, expected=0):
+                result = subprocess.run(command, capture_output=True, text=True, timeout=180)
+                self.assertEqual(result.returncode, expected, result.stderr)
+                return result.stdout
+
+            def bao(method, path, data=None, token=None):
+                value, _, _, container = script.deployment(state)
+                return script.request(state, value, container, method, path, data, token)
+
+            run("docker", "network", "create", "--internal", network)
+            try:
+                script.configure(setup)
+                invoke("up")
+                invoke("initialize")
+                bootstrap = script.read_json(state / "bootstrap.json")
+
+                def decrypt(value):
+                    return (
+                        subprocess.check_output(
+                            [*gpg, "--decrypt"],
+                            input=base64.b64decode(value),
+                            stderr=subprocess.DEVNULL,
+                        )
+                        .decode()
+                        .strip()
+                    )
+
+                shares = []
+                for index, packet in enumerate(bootstrap["keys_base64"]):
+                    path = root / f"share-{index}"
+                    archive.write(path, decrypt(packet))
+                    shares.append(path)
+                root_token = decrypt(bootstrap["root_token"])
+                invoke("unseal", share_file=shares[0])
+                invoke("unseal", share_file=shares[1])
+                cluster = script.read_json(state / "initialized.json")["cluster_id"]
+                bao(
+                    "POST",
+                    "sys/mounts/chipload",
+                    {"type": "kv", "options": {"version": "2"}},
+                    root_token,
+                )
+                bao("POST", "sys/auth/approle", {"type": "approle"}, root_token)
+                secret = secrets.token_urlsafe(32)
+                bao(
+                    "POST",
+                    "chipload/data/shops/example/receiver",
+                    {"data": {"token": secret}},
+                    root_token,
+                )
+                bao(
+                    "PUT",
+                    "sys/policies/acl/receiver",
+                    {
+                        "policy": 'path "chipload/data/shops/example/receiver" { capabilities = ["read"] }'
+                    },
+                    root_token,
+                )
+                bao(
+                    "POST",
+                    "auth/approle/role/receiver",
+                    {
+                        "token_policies": ["receiver"],
+                        "token_no_default_policy": True,
+                        "token_ttl": "60s",
+                        "token_max_ttl": "60s",
+                        "secret_id_ttl": "1h",
+                    },
+                    root_token,
+                )
+                role = bao("GET", "auth/approle/role/receiver/role-id", token=root_token)[1][
+                    "data"
+                ]["role_id"]
+                credential = bao("POST", "auth/approle/role/receiver/secret-id", {}, root_token)[1][
+                    "data"
+                ]["secret_id"]
+                bao("POST", "auth/token/revoke-self", token=root_token)
+                with self.assertRaisesRegex(ValueError, "HTTP 403"):
+                    bao("GET", "sys/mounts", token=root_token)
+                key, output = root / "key", root / "backup.gpg"
+                archive.generate_key(key)
+                args = SimpleNamespace(state=state, key=key, archive=output)
+                # First fail after actual removal, then fail after archive publication.
+                with patch.object(recovery, "pack", side_effect=OSError("injected disk failure")):
+                    with self.assertRaises(OSError):
+                        recovery.backup(args)
+                self.assertIsNone(script.deployment(state)[3])
+                with self.assertRaisesRegex(ValueError, "incomplete backup"):
+                    invoke("up")
+                with patch.object(
+                    recovery, "finish_backup", side_effect=OSError("lost completion")
+                ):
+                    with self.assertRaises(OSError):
+                        recovery.backup(args)
+                self.assertTrue(output.exists())
+                recovery.backup(args)
+                original_bootstrap = (state / "bootstrap.json").read_bytes()
+                original_audit = (state / "audit/audit.jsonl").read_bytes()
+                # Delete the complete original deployment, not just its container.
+                shutil.rmtree(state)
+                state = root / "replacement"
+                args.state = state
+                cli = [
+                    sys.executable,
+                    str(ROOT / "scripts/secrets-recovery"),
+                    "--state",
+                    str(state),
+                ]
+                result = json.loads(
+                    run(*cli, "restore", "--key", str(key), "--archive", str(output))
+                )
+                self.assertEqual(result["cluster_id"], cluster)
+                self.assertEqual((state / "bootstrap.json").read_bytes(), original_bootstrap)
+                self.assertEqual((state / "audit/audit.jsonl").read_bytes(), original_audit)
+                self.assertEqual(invoke("up"), {"initialized": True, "sealed": True})
+                self.assertEqual(
+                    bao("GET", "chipload/data/shops/example/receiver", token=root_token)[0], 503
+                )
+                self.assertTrue(invoke("unseal", share_file=shares[0])["sealed"])
+                self.assertTrue(invoke("unseal", share_file=shares[0])["sealed"])
+                self.assertFalse(invoke("unseal", share_file=shares[2])["sealed"])
+                self.assertEqual(
+                    script.read_json(state / "initialized.json")["cluster_id"], cluster
+                )
+                with self.assertRaisesRegex(ValueError, "HTTP 403"):
+                    bao("GET", "sys/mounts", token=root_token)
+                token = bao(
+                    "POST", "auth/approle/login", {"role_id": role, "secret_id": credential}
+                )[1]["auth"]["client_token"]
+                self.assertEqual(
+                    bao("GET", "chipload/data/shops/example/receiver", token=token)[1]["data"][
+                        "data"
+                    ]["token"],
+                    secret,
+                )
+                for method, path, body in (
+                    ("GET", "chipload/data/shops/other/receiver", None),
+                    ("GET", "sys/mounts", None),
+                    ("LIST", "chipload/metadata/shops", None),
+                    ("POST", "chipload/data/shops/example/receiver", {"data": {"token": "denied"}}),
+                ):
+                    with self.assertRaisesRegex(ValueError, "HTTP 403"):
+                        bao(method, path, body, token)
+                for sensitive in (secret, root_token, credential):
+                    self.assertNotIn(sensitive.encode(), (state / "audit/audit.jsonl").read_bytes())
+                # A second cold backup captures the installed receipt and remains restorable.
+                args.archive = root / "second.gpg"
+                recovery.backup(args)
+                args.state = root / "second-replacement"
+                recovery.restore(args)
+                state = args.state
+                invoke("up")
+                invoke("unseal", share_file=shares[1])
+                self.assertFalse(invoke("unseal", share_file=shares[2])["sealed"])
+            finally:
+                if state.exists():
+                    invoke("down")
+                run("docker", "network", "rm", network)
+                subprocess.run(
+                    ["gpgconf", "--homedir", str(root / "gnupg"), "--kill", "gpg-agent"],
+                    capture_output=True,
+                )

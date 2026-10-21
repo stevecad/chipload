@@ -6,11 +6,11 @@ file audit logging, PGP-encrypted initialization material, and explicit threshol
 unsealing. It publishes no host ports and mounts no shop databases, application
 settings, Docker socket, or PGP private keys.
 
-This is a single-node deployment building block. It does not yet provide Raft
-backup/restore automation, replacement-host recovery, automatic certificate
-delivery, workload-identity rotation, root-token retirement, or high availability.
-The [shop/Keycloak recovery archive](RECOVERY.md) does not contain this separate
-service. Complete its recovery and credential lifecycle before production use.
+This single-node deployment includes encrypted offline backup and fresh-directory
+restore. Replacement-host qualification, automatic certificate delivery,
+workload-identity rotation, root-token retirement, and high availability remain
+deployment work. The [shop/Keycloak recovery archive](RECOVERY.md) does not contain
+this separate service.
 
 ## Configure and start
 
@@ -118,8 +118,7 @@ uv run --extra server python scripts/secrets-stack --state .local/secrets up
 server and requires the threshold again. Sealed/unavailable OpenBao prevents
 the adapter from sending a new receiver command; an earlier uncertain operation
 remains uncertain. Never copy a live Raft directory as if it were a consistent
-backup. Use a verified OpenBao recovery procedure and preserve unseal custody;
-this helper's restart test does not demonstrate disaster recovery.
+backup. Use the offline recovery procedure below and preserve unseal custody.
 
 For renewed certificates, replace `certificates/server.crt`, `server.key` and
 `ca.pem` while preserving mode 0600, then run `secrets-stack reload`. It sends
@@ -146,11 +145,88 @@ The launcher rejects API/broker/source-worker membership; Docker administrators
 must maintain that separation after startup. This topology supplies neither
 arbitrary external egress nor multi-host high availability.
 
+## Encrypted offline backup and restore
+
+`scripts/secrets-recovery` stops and removes the owned container before reading
+its complete storage. This follows OpenBao's preference for
+[offline backups](https://openbao.org/docs/concepts/storage/). It is specific to
+this single-node deployment, preserving its Raft node ID, project name, hostname
+and network name. Use OpenBao's cluster recovery procedures for a topology with
+additional peers. The helper uses no operator token or decrypted unseal share,
+and keeps the normal service's request limits intact.
+
+Arrange a maintenance window, settle operations, and stop separate executors
+before backup. The helper removes only its OpenBao container; it cannot establish
+the outcome of a receiver action. Keep a coordinated shop/Keycloak backup and
+external-system recovery records separately. The OpenBao archive contains Raft
+storage, audit files, TLS material, configuration, cluster identity, and the
+encrypted bootstrap packets. It excludes PGP private keys, decrypted shares,
+external workload credential files, and container diagnostic logs.
+
+Create private backup/key directories outside deployment state. Store a copy of
+the encryption key separately from the archives and retain the original PGP
+custody. The outer archive key does not replace the unseal quorum.
+
+```sh
+install -d -m 700 /secure/chipload-backups /secure/chipload-recovery-keys
+uv run --extra server python scripts/secrets-recovery keygen \
+  --key /secure/chipload-recovery-keys/openbao.key
+uv run --extra server python scripts/secrets-recovery --state .local/secrets backup \
+  --key /secure/chipload-recovery-keys/openbao.key \
+  --archive /secure/chipload-backups/openbao-checkpoint.gpg
+```
+
+Use a new archive filename for each backup. A successful backup leaves OpenBao
+stopped. Start it with `secrets-stack up` and submit the original threshold shares
+when maintenance is complete. If backup fails, its durable marker blocks startup
+and unsealing. Repeat the same backup command with the same key and archive path;
+an already-published archive is authenticated before completing the interrupted
+backup. Do not remove the marker to bypass an unfinished copy. A token revoked
+before backup remains revoked in the restored store.
+
+Restore requires an absent destination directory and no container from the
+original Compose project. If the original host still exists, fence its service
+before bringing up a replacement; local checks cannot detect another Docker
+host. On a replacement host, recreate the same internal network and use the
+backed-up pinned image and Compose contract. The helper refuses an existing
+destination, conflicting project, shared storage mounts, changed deployment
+contract, unauthenticated archive, links, unexpected paths, or altered contents.
+
+```sh
+uv run --extra server python scripts/secrets-recovery --state .local/secrets-restored restore \
+  --key /secure/chipload-recovery-keys/openbao.key \
+  --archive /secure/chipload-backups/openbao-checkpoint.gpg
+uv run --extra server python scripts/secrets-stack --state .local/secrets-restored up
+uv run --extra server python scripts/secrets-stack --state .local/secrets-restored unseal \
+  --share-file /secure/custodian-share
+```
+
+Each custodian submits a distinct original share. OpenBao starts sealed and its
+cluster identity is checked after unsealing. Verify a permitted workload read,
+denied cross-shop access, and the receiver's current credential before resuming
+executors. Review rotations and revocations made after the backup: recovery
+returns secrets and policies to the backup time, while receiver credentials,
+external actions and wall-clock expiry remain independent. Do not use a restored
+store as a second active copy of the same authority.
+
+Restore authenticates and validates a private staged copy, then atomically
+installs the complete offline directory. Failure before installation leaves the
+destination absent and can be retried. If completion output is lost after
+installation, inspect `recovery.json` and the service's status; restore never
+overwrites that directory. Backups allow up to 10,000 entries and a 64 GiB archive.
+Allow approximately three archive sizes of working space for backup and two for
+restore. GnuPG protects the archive; temporary plaintext needs protected host
+storage. An abrupt host/process failure can leave private `.secrets-backup-*`
+or `.secrets-restore-*` staging directories; remove those only after confirming
+no recovery command is active. Off-host retention, key custody, free space and
+replacement-host recovery need operator drills.
+
 ## Verify
 
 ```sh
 ./scripts/build-runtime
 CHIPLOAD_SECRETS_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_secrets_stack_live.py' -v
+CHIPLOAD_SECRETS_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_secrets_recovery_live.py' -v
 ```
 
 The live test creates temporary TLS/PGP material and a fresh private network. It
@@ -161,4 +237,9 @@ client in a restricted container. It replaces CA/leaf certificates, rejects old
 trust, verifies sealed restart and secret persistence, and refuses missing or
 mismatched initialized storage. Test-owned containers, network and temporary
 files are removed. Custody, production certificates, off-host recovery and
-operational monitoring need deployment-specific verification.
+operational monitoring need deployment-specific verification. The recovery drill
+interrupts backup before copying and after archive publication, deletes the
+original deployment, restores fresh storage, and unseals with the original
+quorum. It checks the original cluster ID, stored receiver secret, AppRole
+permissions, preserved root-token revocation, audit history and a second backup
+of the restored deployment.

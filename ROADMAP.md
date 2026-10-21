@@ -14,7 +14,7 @@ Steve integration is planned for a later stage.
 
 - The repository has issue-driven contributor tooling and a legacy v0.1.0 data specification.
 - Local Compose infrastructure provides Keycloak, PostgreSQL, and OpenBao, with bootstrap and access-denial tests.
-- A separate private TLS OpenBao container now supports PGP-encrypted threshold initialization, explicit unsealing, audit storage, certificate reload and initialized-store checks. A live drill exercises scoped AppRole delivery through the actual Chipload client, denial of excess access, sealed restart and encrypted material recovery after interrupted local completion. See `docs/SECRETS.md`; Raft disaster recovery, operator/workload credential lifecycle and production qualification remain open.
+- A separate private TLS OpenBao container supports PGP-encrypted threshold initialization, explicit unsealing, audit storage, certificate reload and initialized-store checks. Live drills exercise scoped AppRole delivery, access denials, interrupted bootstrap and encrypted offline recovery after deleting the original store. See `docs/SECRETS.md`; operator/workload credential lifecycle and replacement-host qualification remain open.
 - The experimental Python SDK, validation, artifact codec, evaluator, contextual variable queries, and public catalog projection are implemented. A fictional shop has sixteen executable manufacturing scenarios; a heat-treatment-only example adds nine scenarios; the Swiss shop example covers shop variables and business rules. Tests also cover a document-review service with no physical resources or materials.
 - The process library adds 88 process projects and one mixed shop with 2,147 technical/business cases. Every project has prototype/production acceptance conditions, contextual business variables, and portable Python source. The mixed shop models shared equipment and explicit route compatibility. Exact quantity increments support whole-item business rules without introducing shop types into the engine. See `docs/PROCESS_EXAMPLES.md`.
 - A local application service now stores immutable source revisions, durable build jobs, exact publications, rollback/withdrawal, and audit events. It enforces shop/action grants. A restricted Docker worker and broker build Python projects; the broker validates models and acceptance results. Real-container tests cover hostile source and the publication lifecycle.
@@ -226,9 +226,16 @@ external systems, or a qualified recovery onto a replacement host.
 Agent-secret and identity-database password rotation now have durable retry,
 old-credential rejection, unchanged-grant checks, and a recovery drill using the
 rotated credentials. Already-issued JWTs retain their normal expiry. Managed
-operator lifecycle, emergency key revocation, and production OpenBao provisioning
-and recovery remain separate work. Per-adapter HTTPS secret delivery is
+operator lifecycle and emergency key revocation remain separate work. Per-adapter HTTPS secret delivery is
 implemented and exercises actual KV and AppRole rotation in the live test.
+
+The separate TLS OpenBao deployment provides encrypted quorum bootstrap and
+offline encrypted backup/restore. Its recovery drill deletes the original store,
+restores fresh storage, and verifies the original unseal quorum, cluster ID,
+workload permissions, revoked root token and audit history. Interrupted backups
+block startup and resume against the original intent. This is a single-node
+recovery path; replacement-host qualification, external credential reconciliation
+and managed operator/workload lifecycle remain deployment work. See `docs/SECRETS.md`.
 
 Realm signing rotation now preserves an explicitly timed verification overlap,
 records the exact replacement provider, and supports interrupted activation and

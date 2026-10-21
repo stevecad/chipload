@@ -234,6 +234,7 @@ TLS, broad token policies, malformed/oversized replies, redirects, ignored proxy
 environment, configuration changes, and recovery startup locks.
 
 The [private OpenBao service](SECRETS.md) provides TLS and encrypted threshold
-bootstrap. Production credential lifecycle, Raft recovery, high availability,
+bootstrap, plus encrypted offline backup/restore for its single-node storage.
+Production credential lifecycle, replacement-host recovery, high availability,
 audit retention, certificate renewal, deployment load qualification, vendor
 bridges and coordinated external-system recovery remain work.
