@@ -30,6 +30,11 @@ The separate [private OpenBao service](docs/SECRETS.md) runs on the adapter netw
 
 Chipload is not an ERP. Order management, purchasing, inventory management, production planning, accounting, and invoicing are out of scope. Chipload will work with ERP systems through adapters and APIs. Shop capabilities, business rules, and callable operations belong in Chipload; ERP systems remain the source of truth for their business records.
 
+The [ERP integration example](docs/ERP_INTEGRATION.md) reads an external stock
+fact through a scoped operation and maps it to a timestamped readiness
+observation. Python preserves the source reference, merges concurrent updates
+and applies the shop's business rules. The example uses simulated data.
+
 The repository contains an experimental Python shop model and evaluator, REST/MCP discovery and authoring, Keycloak token verification with explicit shop grants, a separate container build broker, executable examples, and local identity/secrets infrastructure. [Callable operations](docs/OPERATIONS.md) add typed contracts, business and capability checks, durable execution records, and a separate adapter executor. A [contained HTTPS adapter](docs/ADAPTERS.md)
 uses scoped OpenBao credentials, fixed receiver contracts, and durable
 reconciliation; the offline simulator remains available. Production deployment and real equipment integration remain work.

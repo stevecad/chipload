@@ -193,9 +193,17 @@ Expose discovery, evaluation, and the authoring/publication lifecycle through bo
 
 ### 6. Make authorized shop operations callable
 
-**Progress:** Python operation contracts, explicit simulation/live intent, operator-owned adapter bindings, operation-level grants, shared REST/MCP submission/inspection/cancellation, quotas, resource exclusion, audit events, and a separate simulated executor are implemented. Tests cover retries, changing preconditions, cancellation races, claim fencing, uncertain outcomes, reconciliation, migration, and recovery snapshots. The callable shop example covers machine, human-review, inspection, and external-service contracts with business conditions. See `docs/OPERATIONS.md`. The HTTPS receiver protocol, exact-path OpenBao delivery, executor containment, child termination, and supervised restart are implemented; see `docs/ADAPTERS.md`. Vendor bridges, physical qualification, durable orchestration between operations, external-state recovery, and the ERP integration contract remain unfinished.
+**Progress:** Python operation contracts, explicit simulation/live intent, operator-owned adapter bindings, operation-level grants, shared REST/MCP submission/inspection/cancellation, quotas, resource exclusion, audit events, and a separate simulated executor are implemented. Tests cover retries, changing preconditions, cancellation races, claim fencing, uncertain outcomes, reconciliation, migration, and recovery snapshots. The callable shop example covers machine, human-review, inspection, and external-service contracts with business conditions. See `docs/OPERATIONS.md`. The HTTPS receiver protocol, exact-path OpenBao delivery, executor containment, child termination, and supervised restart are implemented; see `docs/ADAPTERS.md`. Vendor bridges, physical qualification, durable orchestration between operations and external-state recovery remain unfinished.
 
-The live TLS/Keycloak check authors and builds the actual example through MCP,
+The [ERP integration contract](docs/ERP_INTEGRATION.md) and Python example preserve
+external record identity, version and observation time. A scoped read operation
+feeds readiness through revision-guarded snapshot merges. Ten example cases
+cover capability, stock freshness and business rules. Tests exercise retries,
+concurrent writers, lost responses, public filtering, and actual source builds
+and MCP Python with a separate simulated external record. No vendor ERP
+connector is qualified by these checks.
+
+The live TLS/Keycloak check authors and builds the callable shop example through MCP,
 then exercises all four simulated calls through REST/MCP and a separate executor.
 A process-crash test exits after committing an effect receipt and confirms that
 reconciliation recovers the result without repeating the effect.

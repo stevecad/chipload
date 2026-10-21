@@ -82,6 +82,11 @@ grants, cancellation and receipt freshness. `shop.evaluate(query)` stays data-on
 and reports unknown when a required function answer is absent. See
 [Python constraints](SHOP_MODEL.md#python-constraints) for the contract and limits.
 
+The [ERP integration example](ERP_INTEGRATION.md) composes `shop.execute`,
+`shop.execution`, `shop.observations` and `shop.set_observations` to read an
+external fact and update readiness while retaining its source time. It uses the
+same four MCP tools and can also run through the ordinary Python client.
+
 Public discovery needs neither a login nor code execution:
 
 ```json

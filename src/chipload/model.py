@@ -474,6 +474,20 @@ class Shop(Entity):
         return result
 
 
+class ExternalReference(Model):
+    """Opaque source identity; never a URL to fetch or an ERP record owned here."""
+
+    system: Id
+    record: Annotated[StrictStr, Field(min_length=1, max_length=512)]
+    revision: Annotated[StrictStr, Field(min_length=1, max_length=200)] | None = None
+
+    @model_validator(mode="after")
+    def nonempty_reference(self) -> Self:
+        if not self.record.strip() or (self.revision is not None and not self.revision.strip()):
+            raise ValueError("External record references must not be blank")
+        return self
+
+
 class Observation(Model):
     id: Id
     resource: Id
@@ -482,6 +496,7 @@ class Observation(Model):
     time: Timestamp
     max_age_seconds: Annotated[StrictInt, Field(gt=0, le=31536000)]
     source: Source
+    external: ExternalReference | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @property
     def expires_at(self) -> datetime:

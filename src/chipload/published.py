@@ -300,6 +300,8 @@ class PublishedService:
         payload = canonical_json(
             {"observations": [o.model_dump(mode="json") for o in snapshot.observations]}
         )
+        # A serialized snapshot must fit the same limits used when it is read.
+        unique_json(payload)
         with self.repository.transaction() as db:
             row = db.execute(
                 "SELECT builds.* FROM shops JOIN builds ON shops.published_build=builds.id "

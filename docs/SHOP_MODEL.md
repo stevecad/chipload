@@ -155,9 +155,9 @@ list does not qualify every grade or condition. A typical quote turnaround does
 not create a deadline. The model does not turn these statements into RFQ,
 contract, ordering, or inventory-management actions.
 
-ERP functionality is out of scope for Chipload. ERP integration will provide
-timestamped observations and external record references through adapters and
-APIs. The ERP remains authoritative for orders, purchasing, inventory management,
+ERP functionality is out of scope for Chipload. The [ERP integration contract](ERP_INTEGRATION.md)
+uses timestamped observations and external record references through adapters
+and APIs. The ERP remains authoritative for orders, purchasing, inventory management,
 production planning, accounting, and invoicing. Chipload uses relevant observations
 to evaluate capability and business rules; its model does not manage those records.
 
@@ -390,6 +390,12 @@ Observations carry resource/property identity, value, time, maximum age, and
 source. Missing, mismatched, future, expired, or unknown values cannot establish
 current support. Expiry is exclusive: an observation is stale at its expiry
 instant.
+
+An optional `external` reference identifies the source system, opaque record and
+optional revision. It remains private in observation snapshots and is excluded
+from public evaluations. It does not trigger a fetch or establish trusted
+provenance. The [ERP example](ERP_INTEGRATION.md) preserves the source timestamp
+when deriving readiness from an external fact.
 
 Capability and readiness queries have distinct meanings. A busy mill can still
 support a manufacturing capability. A readiness query additionally checks

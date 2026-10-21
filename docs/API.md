@@ -180,6 +180,12 @@ Observation writes replace the complete snapshot using `expected_revision`.
 IDs must be unique and resources must exist in the published shop. The
 observation's source, timestamp, and freshness are preserved; future, stale, or
 simulated observations do not silently establish current physical support.
+An optional `external` object carries `system` (ID), `record` (nonblank, at most
+512 characters), and `revision` (null or nonblank, at most 200 characters).
+These opaque references are returned only with authorized observation snapshots;
+public catalog/evaluation projections omit them. Complete serialized snapshots
+must fit the shared JSON limits. See the [ERP integration contract](ERP_INTEGRATION.md)
+for preserving source time and merging updates after revision conflicts.
 Required permissions are `observations:write`, `observations:read`,
 `evidence:read`, and `evaluation:read` for the corresponding private operations.
 Evidence revocation requires the separate `evidence:revoke` action and the
