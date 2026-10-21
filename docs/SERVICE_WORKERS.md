@@ -104,6 +104,9 @@ These measurements include HTTP, shared request accounting, SQLite, projection
 and service processing. They exclude TLS, JWT verification, the gateway,
 external network latency, simultaneous authoring, hosted Python execution and
 equipment adapters. They do not establish internet deployment capacity.
+The [deployment benchmark](TLS.md#measure-the-deployed-path) adds the TLS gateway,
+real Keycloak tokens, routed clients and concurrent hosted Python authoring,
+with separate accounting for successful work, refusal and missed request slots.
 
 On 2026-10-20, the four container commands above produced the following results
 on a shared Linux x86-64 development host with 16 logical CPUs. The API image

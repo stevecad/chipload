@@ -1,0 +1,453 @@
+#!/usr/bin/env python3
+"""Measure a disposable TLS deployment with external clients and concurrent authoring."""
+
+import argparse
+import hashlib
+import ipaddress
+import json
+import os
+import platform
+import runpy
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
+from pathlib import Path
+
+from deployment_load import summary
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def run(*args, input=None, timeout=300):
+    result = subprocess.run(args, input=input, text=True, capture_output=True, timeout=timeout)
+    if result.returncode:
+        # Avoid printing client input, token responses or deployment credentials.
+        try:
+            failure = json.loads(result.stdout)
+            if isinstance(failure, dict) and "failure" in failure:
+                raise RuntimeError(
+                    f"client failed: {failure['failure']}, line {failure.get('line')}; {failure.get('diagnostic')}"
+                )
+        except (json.JSONDecodeError, TypeError):
+            pass
+        raise RuntimeError(f"{Path(args[0]).name} failed with exit code {result.returncode}")
+    return result.stdout.strip()
+
+
+def workload(project):
+    base = f"/v1/shops/{project.shop_id}"
+    cases = [
+        {
+            "id": "catalog",
+            "action": "catalog",
+            "arguments": {},
+            "method": "GET",
+            "path": base + "/catalog",
+        },
+        {
+            "id": "capabilities",
+            "action": "page",
+            "arguments": {"collection": "capabilities"},
+            "method": "GET",
+            "path": base + "/capabilities",
+        },
+    ]
+    for case in project.tests:
+        if case.id not in {
+            "production-accepted",
+            "production-below-minimum",
+            "incoming-paperwork-needed",
+            "customer-requirements-unreviewed",
+        }:
+            continue
+        query = case.request.model_dump(mode="json")
+        cases.append(
+            {
+                "id": case.id,
+                "action": "evaluate",
+                "arguments": {"query": query},
+                "method": "POST",
+                "path": base + "/evaluate",
+                "body": {"shop_id": project.shop_id, "query": query},
+                "expected": case.expected,
+                "reason": case.reason_codes[0],
+            }
+        )
+    query = {
+        "ids": ["minimum-production-lot"],
+        "context": [{"name": "engagement", "value": "prototype"}],
+    }
+    cases.append(
+        {
+            "id": "prototype-terms",
+            "action": "variables",
+            "arguments": {"query": query},
+            "method": "POST",
+            "path": base + "/variables/query",
+            "body": {"shop_id": project.shop_id, "query": query},
+        }
+    )
+    return cases
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--seconds", type=int, default=60)
+    parser.add_argument("--readers", type=int, default=2)
+    parser.add_argument("--rate", type=int, default=5, help="scheduled requests/second per reader")
+    parser.add_argument("--policy", choices=("defaults", "capacity"), default="defaults")
+    parser.add_argument(
+        "--noise-rate",
+        type=int,
+        default=0,
+        help="invalid-token requests/second from one separate peer",
+    )
+    parser.add_argument(
+        "--require-success",
+        action="store_true",
+        help="fail if any reader request is refused, fails, or misses its scheduled slot",
+    )
+    args = parser.parse_args()
+    if not (
+        15 <= args.seconds <= 300
+        and 2 <= args.readers <= 8
+        and 1 <= args.rate <= 50
+        and 0 <= args.noise_rate <= 100
+    ):
+        parser.error("seconds: 15–300; readers: 2–8; rate: 1–50; noise-rate: 0–100")
+    if os.getuid() == 0:
+        parser.error("run as a non-root account with Docker access")
+    # The fixture is repository source, separate from the installed SDK package.
+    sys.path.insert(0, str(ROOT))
+    from mcp.types import LATEST_PROTOCOL_VERSION
+
+    from chipload.client import Client, route
+    from chipload.lifecycle import Repository
+    from chipload.quotas import QuotaPolicy
+    from examples.process_shops.export import project
+    from examples.process_shops.library import BY_ID
+
+    helpers = runpy.run_path(str(ROOT / "scripts/tls-credentials"))
+    stack = helpers["stack"]
+    source_project = project("milling-3axis")
+    shop_id = source_project.shop_id
+    name = "chipload-load-" + uuid.uuid4().hex[:12]
+    network_name = name + "-clients"
+    client_names = []
+    report = None
+    with tempfile.TemporaryDirectory(prefix=name + "-") as temporary:
+        root = Path(temporary)
+        state = root / "state"
+        cli = [sys.executable, str(ROOT / "scripts/tls-stack"), "--state", str(state)]
+        network = ipaddress.ip_network(stack.choose_subnet())
+        address = str(network[1])
+        print("Starting isolated TLS, Keycloak and shop services...", file=sys.stderr, flush=True)
+        run(
+            "docker",
+            "network",
+            "create",
+            "--subnet",
+            str(network),
+            "--opt",
+            "com.docker.network.bridge.gateway_mode_ipv4=routed",
+            network_name,
+        )
+        try:
+            hosts = {"api": "shop.example.test", "identity": "identity.example.test"}
+            stack.local_certificates(root / "certs", hosts)
+            # Reserve both on all local IPv4 interfaces to choose distinct ports.
+            sockets = [socket.socket(), socket.socket()]
+            try:
+                for listener in sockets:
+                    listener.bind(("0.0.0.0", 0))
+                port, admin_port = (s.getsockname()[1] for s in sockets)
+            finally:
+                for listener in sockets:
+                    listener.close()
+            run(
+                *cli,
+                "init",
+                "--api-host",
+                hosts["api"],
+                "--identity-host",
+                hosts["identity"],
+                "--port",
+                str(port),
+                "--admin-port",
+                str(admin_port),
+                "--listen-address",
+                address,
+                "--name",
+                name,
+                "--shop",
+                shop_id,
+                "--certificates",
+                str(root / "certs/certificates"),
+                "--ca-bundle",
+                str(root / "certs/identity-ca.pem"),
+            )
+            run(*cli, "up")
+            values = stack.configuration(json.loads((state / "deployment.json").read_bytes()))
+            secret = (state / "secrets/agent-secret").read_text()
+            status, auth = helpers["agent_token"](state, values, secret)
+            if status != 200:
+                raise RuntimeError("fixture authentication failed")
+
+            def call(operation, request):
+                method, path, data = route(operation, request)
+                status, value = helpers["request"](
+                    state,
+                    values,
+                    path,
+                    method=method,
+                    data=data,
+                    api=True,
+                    token=auth["access_token"],
+                )
+                if status not in (200, 202):
+                    raise RuntimeError(f"fixture {operation} returned {status}")
+                return value
+
+            shop = Client(call).shop(shop_id)
+            saved = shop.save(source_project, expected_head=None)
+            build = shop.build(saved["revision"], request_key="load-initial")
+            deadline = time.monotonic() + 90
+            while time.monotonic() < deadline:
+                build = shop.build_result(build["id"])
+                if build["state"] in {"succeeded", "failed"}:
+                    break
+                time.sleep(0.5)
+            if build["state"] != "succeeded":
+                raise RuntimeError("fixture build failed")
+            shop.publish(build["id"], expected_generation=0)
+            observations = [
+                o.model_copy(update={"time": datetime.now(timezone.utc)})
+                for o in BY_ID["milling-3axis"].observations()
+            ]
+            shop.set_observations(observations, expected_revision=None)
+            catalog = shop.catalog()
+            repository = Repository(state / "data/chipload.db")
+            if args.policy == "capacity":
+                quotas = repository.read_quotas()
+                for scope in ("deployment", "peer", "identity"):
+                    quotas["policy"]["requests"][scope] = {"per_minute": 60000, "burst": 10000}
+                repository.set_quotas(
+                    QuotaPolicy.model_validate(quotas["policy"]),
+                    expected_generation=quotas["generation"],
+                )
+            policy = repository.read_quotas()["policy"]["requests"]
+            ids = run(
+                "docker", "ps", "-q", "--filter", "label=com.docker.compose.project=" + name
+            ).split()
+            before = json.loads(run("docker", "inspect", *ids))
+            images = {
+                role: stack.runtime.image(role)
+                for role in ("api", "broker", "worker", "gateway", "keycloak")
+            }
+            client_code = (ROOT / "scripts/deployment_load.py").read_text()
+            start = time.time() + 8
+            common = {
+                "address": address,
+                "api_host": hosts["api"],
+                "identity_host": hosts["identity"],
+                "port": port,
+                "ca": (state / "identity-ca.pem").read_text(),
+                "shop": shop_id,
+                "name": catalog["shop"]["name"],
+                "revision": catalog["public_sha256"],
+                "capabilities": [c["id"] for c in catalog["capabilities"]],
+                "protocol": LATEST_PROTOCOL_VERSION,
+                "cases": workload(source_project),
+                "start": start,
+                "seconds": args.seconds,
+            }
+
+            def client(index, options):
+                return json.loads(
+                    run(
+                        "docker",
+                        "run",
+                        "--rm",
+                        "--interactive",
+                        "--init",
+                        "--name",
+                        client_names[index],
+                        "--network",
+                        network_name,
+                        "--ip",
+                        str(network[index + 2]),
+                        "--user",
+                        f"{os.getuid()}:{os.getgid()}",
+                        "--read-only",
+                        "--cap-drop=ALL",
+                        "--security-opt=no-new-privileges:true",
+                        "--memory=256m",
+                        "--memory-swap=256m",
+                        "--cpus=1",
+                        "--pids-limit=32",
+                        "--ulimit",
+                        "core=0:0",
+                        "--entrypoint=python",
+                        images["api"],
+                        "-I",
+                        "-B",
+                        "-c",
+                        client_code,
+                        input=json.dumps({**common, **options}),
+                        timeout=args.seconds + 160,
+                    )
+                )
+
+            configs = [
+                {
+                    "role": "reader",
+                    "rate": args.rate,
+                    "phase": i / (args.readers * args.rate),
+                    **({"secret": secret} if i % 2 else {}),
+                }
+                for i in range(args.readers)
+            ]
+            configs.append({"role": "author", "secret": secret})
+            if args.noise_rate:
+                configs.append({"role": "noise", "rate": args.noise_rate, "phase": 0})
+            client_names.extend(name + "-client-" + str(i) for i in range(len(configs)))
+            print(
+                f"Measuring {args.seconds}s with {args.readers} readers, authoring and {args.noise_rate}/s invalid-token traffic...",
+                file=sys.stderr,
+                flush=True,
+            )
+            with ThreadPoolExecutor(len(configs)) as pool:
+                pending = [pool.submit(client, i, options) for i, options in enumerate(configs)]
+                results = [future.result() for future in pending]
+            readers = [r for r in results if r["role"] == "reader"]
+            author = next(r for r in results if r["role"] == "author")
+            # Refresh host credentials before post-load verification, even in long runs.
+            status, auth = helpers["agent_token"](state, values, secret)
+            if status != 200:
+                raise RuntimeError("post-load authentication failed")
+            if shop.catalog() != catalog:
+                raise RuntimeError("unpublished draft changed discovery")
+            authored = author["state"] == "succeeded"
+            if authored:
+                publication = shop.publication()
+                changed = shop.publish(
+                    author["build_id"], expected_generation=publication["generation"]
+                )
+                if shop.catalog()["shop"]["name"] != "Unpublished load draft":
+                    raise RuntimeError("post-load publication failed")
+                shop.rollback(build["id"], expected_generation=changed["generation"])
+                if shop.catalog() != catalog:
+                    raise RuntimeError("post-load rollback failed")
+            after = json.loads(run("docker", "inspect", *ids))
+            services = {}
+            for initial, final in zip(before, after, strict=True):
+                role = final["Config"]["Labels"]["com.docker.compose.service"]
+                if (
+                    final["State"]["OOMKilled"]
+                    or not final["State"]["Running"]
+                    or initial["RestartCount"] != final["RestartCount"]
+                ):
+                    raise RuntimeError(f"{role} stopped, restarted or exhausted memory")
+                services[role] = {
+                    "image": final["Image"],
+                    "memory_bytes": final["HostConfig"]["Memory"],
+                    "nano_cpus": final["HostConfig"]["NanoCpus"],
+                    "pids": final["HostConfig"]["PidsLimit"],
+                    "restarts": final["RestartCount"],
+                    "oom_killed": final["State"]["OOMKilled"],
+                }
+            all_samples = [s for r in readers for s in r["samples"]]
+            aggregate = summary(all_samples, args.seconds)
+            missed = sum(r["missed_slots"] for r in readers)
+            report = {
+                "version": 1,
+                "date": datetime.now(timezone.utc).isoformat(),
+                "checkout": run("git", "-C", str(ROOT), "rev-parse", "HEAD"),
+                "worktree_dirty": bool(run("git", "-C", str(ROOT), "status", "--porcelain")),
+                "client_sha256": hashlib.sha256(client_code.encode()).hexdigest(),
+                "host": platform.platform(),
+                "logical_cpus": os.cpu_count(),
+                "docker": run("docker", "version", "--format", "{{.Server.Version}}"),
+                "configuration": vars(args),
+                "request_policy": policy,
+                "services": services,
+                "worker_image": images["worker"],
+                "fixture": {
+                    "shop": shop_id,
+                    "source_bytes": len(source_project.to_json()),
+                    "acceptance_cases": len(source_project.tests),
+                },
+                "readers": [
+                    {
+                        **summary(r["samples"], args.seconds),
+                        "authenticated": r["authenticated"],
+                        "missed_slots": r["missed_slots"],
+                        "token_requests": r["tokens"],
+                    }
+                    for r in readers
+                ],
+                "aggregate": {**aggregate, "missed_slots": missed},
+                "author": author,
+                "author_completed_during_load": authored
+                and author["finished_offset_seconds"] <= args.seconds,
+                "noise": [
+                    {**summary(r["samples"], args.seconds), "missed_slots": r["missed_slots"]}
+                    for r in results
+                    if r["role"] == "noise"
+                ],
+                "post_load": {
+                    "unpublished_draft_stayed_private": True,
+                    "publication_and_rollback_verified": authored,
+                    "services_running_without_restart_or_oom": True,
+                },
+                "scope": "Single-host routed IPv4 clients, TLS, real Keycloak tokens, REST/MCP business and capability queries, contained Python editing/building. No WAN, equipment, multi-tenant fairness or certificate renewal.",
+            }
+            failure = (
+                not authored
+                or aggregate["unexpected"]
+                or any(n["unexpected"] for n in report["noise"])
+            )
+            if args.require_success:
+                failure = (
+                    failure
+                    or missed
+                    or aggregate["successes"] != len(all_samples)
+                    or not report["author_completed_during_load"]
+                )
+            report["passed"] = not bool(failure)
+        finally:
+            print(
+                "Removing benchmark containers, deployment and private test storage...",
+                file=sys.stderr,
+                flush=True,
+            )
+            for client_name in client_names:
+                subprocess.run(
+                    ["docker", "rm", "--force", client_name], capture_output=True, timeout=30
+                )
+            try:
+                if (state / "deployment.json").exists():
+                    run(*cli, "down")
+                volumes = run(
+                    "docker",
+                    "volume",
+                    "ls",
+                    "-q",
+                    "--filter",
+                    "label=com.docker.compose.project=" + name,
+                ).split()
+                if volumes:
+                    run("docker", "volume", "rm", *volumes)
+            finally:
+                run("docker", "network", "rm", network_name)
+    print(json.dumps(report, indent=2))
+    return 0 if report["passed"] else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

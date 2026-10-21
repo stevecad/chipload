@@ -66,8 +66,12 @@ so their trusted implementation must enforce the caller's shop/action grants.
 ## Remaining deployment work
 
 - Qualify a public edge: exposure, TLS renewal, traffic policy, sustained/adversarial
-  load, tenant fairness, operational latency targets and alerting. Loopback HTTP
-  component measurements exclude TLS/JWT and external networks.
+  load, tenant fairness, operational latency targets and alerting. The
+  [deployment benchmark](TLS.md#measure-the-deployed-path) adds routed clients,
+  TLS/JWT, business queries and simultaneous Python authoring to the component
+  measurements. It counts actual correct results, refusals and missed scheduled
+  requests. Its compact, single-shop fixture does not establish WAN capacity or
+  independent tenant fairness.
 - Reduce worker-host authority and strengthen isolation for hostile tenants.
   The broker's Docker socket remains a host-level trust dependency. Shop-specific
   dependency installation and custom evaluation environments need their own design.

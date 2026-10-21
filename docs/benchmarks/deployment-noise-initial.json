@@ -1,0 +1,412 @@
+{
+  "version": 1,
+  "date": "2026-10-21T03:58:34.384165+00:00",
+  "checkout": "202971697e0909e9299cb38f10e344b446d6333b",
+  "worktree_dirty": true,
+  "client_sha256": "793280a9f051590800fa526a68400107389167da2065c7c92af7e0117eb9adfc",
+  "host": "Linux-6.17.0-35-generic-x86_64-with-glibc2.39",
+  "logical_cpus": 16,
+  "docker": "29.8.1",
+  "configuration": {
+    "seconds": 60,
+    "readers": 2,
+    "rate": 5,
+    "policy": "defaults",
+    "noise_rate": 60,
+    "require_success": true
+  },
+  "request_policy": {
+    "deployment": {
+      "per_minute": 6000,
+      "burst": 200
+    },
+    "peer": {
+      "per_minute": 1200,
+      "burst": 40
+    },
+    "identity": {
+      "per_minute": 1200,
+      "burst": 40
+    },
+    "mutation_identity": {
+      "per_minute": 60,
+      "burst": 10
+    },
+    "mutation_shop": {
+      "per_minute": 120,
+      "burst": 20
+    },
+    "max_buckets": 4096
+  },
+  "services": {
+    "api": {
+      "image": "sha256:1706e606f494760593926ffa415dde4a76c680eb5e3ae0203531de19377c7a12",
+      "memory_bytes": 1073741824,
+      "nano_cpus": 1000000000,
+      "pids": 128,
+      "restarts": 0,
+      "oom_killed": false
+    },
+    "keycloak": {
+      "image": "sha256:c53a7e1d64b1ed2c09dad1a14dd2611f97e9b1d4aa75f3fc3d5db202a8c4b3c3",
+      "memory_bytes": 1073741824,
+      "nano_cpus": 2000000000,
+      "pids": 256,
+      "restarts": 0,
+      "oom_killed": false
+    },
+    "gateway": {
+      "image": "sha256:5d342488803ebad7f85b6e8512854d42802dd2e83bf27444bfffb65dc8ce21c6",
+      "memory_bytes": 268435456,
+      "nano_cpus": 1000000000,
+      "pids": 64,
+      "restarts": 0,
+      "oom_killed": false
+    },
+    "keycloak-db": {
+      "image": "sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24",
+      "memory_bytes": 536870912,
+      "nano_cpus": 2000000000,
+      "pids": 256,
+      "restarts": 0,
+      "oom_killed": false
+    },
+    "broker": {
+      "image": "sha256:576aaf0c8371e4b869a97b88cc88128b47c7dde8874e15d59b242c71aa8fc729",
+      "memory_bytes": 536870912,
+      "nano_cpus": 1000000000,
+      "pids": 128,
+      "restarts": 0,
+      "oom_killed": false
+    }
+  },
+  "worker_image": "sha256:e5f73f4228f856de1383845184cdfc332812df2660a6fae8c8fba69833a6cc49",
+  "fixture": {
+    "shop": "demo-milling-3axis",
+    "source_bytes": 134630,
+    "acceptance_cases": 24
+  },
+  "readers": [
+    {
+      "requests": 300,
+      "http_statuses": {
+        "200": 299,
+        "503": 1
+      },
+      "service_statuses": {
+        "200": 299,
+        "503": 1
+      },
+      "errors": {
+        "request_capacity": 1
+      },
+      "by_operation": {
+        "rest:catalog": 22,
+        "rest:capabilities": 22,
+        "rest:production-accepted": 22,
+        "rest:production-below-minimum": 22,
+        "rest:incoming-paperwork-needed": 22,
+        "rest:customer-requirements-unreviewed": 22,
+        "mcp:prototype-terms": 21,
+        "mcp:catalog": 21,
+        "mcp:capabilities": 21,
+        "mcp:production-accepted": 21,
+        "mcp:production-below-minimum": 21,
+        "mcp:incoming-paperwork-needed": 21,
+        "mcp:customer-requirements-unreviewed": 21,
+        "rest:prototype-terms": 21
+      },
+      "successes": 299,
+      "successful_per_second": 4.983,
+      "success_ratio": 0.996667,
+      "successful_median_ms": 59.146,
+      "successful_p95_ms": 75.321,
+      "slowest": [
+        {
+          "operation": "mcp:prototype-terms",
+          "ms": 125.02953596413136,
+          "http": 200,
+          "status": 200,
+          "error": null
+        },
+        {
+          "operation": "rest:catalog",
+          "ms": 100.79743387177587,
+          "http": 200,
+          "status": 200,
+          "error": null
+        },
+        {
+          "operation": "mcp:catalog",
+          "ms": 88.2538459263742,
+          "http": 200,
+          "status": 200,
+          "error": null
+        },
+        {
+          "operation": "rest:incoming-paperwork-needed",
+          "ms": 85.9619090333581,
+          "http": 200,
+          "status": 200,
+          "error": null
+        },
+        {
+          "operation": "mcp:production-accepted",
+          "ms": 85.22036438807845,
+          "http": 200,
+          "status": 200,
+          "error": null
+        }
+      ],
+      "unexpected": 0,
+      "authenticated": false,
+      "missed_slots": 0,
+      "token_requests": []
+    },
+    {
+      "requests": 300,
+      "http_statuses": {
+        "200": 298,
+        "503": 2
+      },
+      "service_statuses": {
+        "200": 298,
+        "503": 2
+      },
+      "errors": {
+        "request_capacity": 1,
+        "http_error": 1
+      },
+      "by_operation": {
+        "rest:catalog": 22,
+        "rest:capabilities": 22,
+        "rest:production-accepted": 22,
+        "rest:production-below-minimum": 22,
+        "rest:incoming-paperwork-needed": 22,
+        "rest:customer-requirements-unreviewed": 22,
+        "mcp:prototype-terms": 21,
+        "mcp:catalog": 21,
+        "mcp:capabilities": 21,
+        "mcp:production-accepted": 21,
+        "mcp:production-below-minimum": 21,
+        "mcp:incoming-paperwork-needed": 21,
+        "mcp:customer-requirements-unreviewed": 21,
+        "rest:prototype-terms": 21
+      },
+      "successes": 298,
+      "successful_per_second": 4.967,
+      "success_ratio": 0.993333,
+      "successful_median_ms": 58.672,
+      "successful_p95_ms": 77.295,
+      "slowest": [
+        {
+          "operation": "rest:catalog",
+          "ms": 178.42207802459598,
+          "http": 200,
+          "status": 200,
+          "error": null
+        },
+        {
+          "operation": "mcp:customer-requirements-unreviewed",
+          "ms": 110.78608501702547,
+          "http": 200,
+          "status": 200,
+          "error": null
+        },
+        {
+          "operation": "mcp:customer-requirements-unreviewed",
+          "ms": 99.52930733561516,
+          "http": 200,
+          "status": 200,
+          "error": null
+        },
+        {
+          "operation": "mcp:catalog",
+          "ms": 84.41775105893612,
+          "http": 200,
+          "status": 200,
+          "error": null
+        },
+        {
+          "operation": "mcp:catalog",
+          "ms": 83.85250996798277,
+          "http": 200,
+          "status": 200,
+          "error": null
+        }
+      ],
+      "unexpected": 0,
+      "authenticated": true,
+      "missed_slots": 0,
+      "token_requests": [
+        {
+          "status": 200,
+          "ms": 82.6697270385921
+        }
+      ]
+    }
+  ],
+  "aggregate": {
+    "requests": 600,
+    "http_statuses": {
+      "200": 597,
+      "503": 3
+    },
+    "service_statuses": {
+      "200": 597,
+      "503": 3
+    },
+    "errors": {
+      "request_capacity": 2,
+      "http_error": 1
+    },
+    "by_operation": {
+      "rest:catalog": 44,
+      "rest:capabilities": 44,
+      "rest:production-accepted": 44,
+      "rest:production-below-minimum": 44,
+      "rest:incoming-paperwork-needed": 44,
+      "rest:customer-requirements-unreviewed": 44,
+      "mcp:prototype-terms": 42,
+      "mcp:catalog": 42,
+      "mcp:capabilities": 42,
+      "mcp:production-accepted": 42,
+      "mcp:production-below-minimum": 42,
+      "mcp:incoming-paperwork-needed": 42,
+      "mcp:customer-requirements-unreviewed": 42,
+      "rest:prototype-terms": 42
+    },
+    "successes": 597,
+    "successful_per_second": 9.95,
+    "success_ratio": 0.995,
+    "successful_median_ms": 58.737,
+    "successful_p95_ms": 76.109,
+    "slowest": [
+      {
+        "operation": "rest:catalog",
+        "ms": 178.42207802459598,
+        "http": 200,
+        "status": 200,
+        "error": null
+      },
+      {
+        "operation": "mcp:prototype-terms",
+        "ms": 125.02953596413136,
+        "http": 200,
+        "status": 200,
+        "error": null
+      },
+      {
+        "operation": "mcp:customer-requirements-unreviewed",
+        "ms": 110.78608501702547,
+        "http": 200,
+        "status": 200,
+        "error": null
+      },
+      {
+        "operation": "rest:catalog",
+        "ms": 100.79743387177587,
+        "http": 200,
+        "status": 200,
+        "error": null
+      },
+      {
+        "operation": "mcp:customer-requirements-unreviewed",
+        "ms": 99.52930733561516,
+        "http": 200,
+        "status": 200,
+        "error": null
+      }
+    ],
+    "unexpected": 0,
+    "missed_slots": 0
+  },
+  "author": {
+    "role": "author",
+    "state": "succeeded",
+    "build_id": "4a3b89e0d1374432abcae590b4af2172",
+    "started_offset_seconds": 1.0,
+    "finished_offset_seconds": 11.975,
+    "tokens": [
+      {
+        "status": 200,
+        "ms": 91.70580469071865
+      }
+    ]
+  },
+  "author_completed_during_load": true,
+  "noise": [
+    {
+      "requests": 2781,
+      "http_statuses": {
+        "401": 1242,
+        "429": 1537,
+        "503": 2
+      },
+      "service_statuses": {
+        "401": 1242,
+        "429": 1537,
+        "503": 2
+      },
+      "errors": {
+        "authentication_required": 1242,
+        "rate_limited": 1537,
+        "request_capacity": 2
+      },
+      "by_operation": {
+        "invalid_token_with_forged_peer": 2781
+      },
+      "successes": 0,
+      "successful_per_second": 0.0,
+      "success_ratio": 0.0,
+      "successful_median_ms": null,
+      "successful_p95_ms": null,
+      "slowest": [
+        {
+          "operation": "invalid_token_with_forged_peer",
+          "ms": 83.74646073207259,
+          "http": 401,
+          "status": 401,
+          "error": "authentication_required"
+        },
+        {
+          "operation": "invalid_token_with_forged_peer",
+          "ms": 80.21333999931812,
+          "http": 401,
+          "status": 401,
+          "error": "authentication_required"
+        },
+        {
+          "operation": "invalid_token_with_forged_peer",
+          "ms": 74.82565799728036,
+          "http": 401,
+          "status": 401,
+          "error": "authentication_required"
+        },
+        {
+          "operation": "invalid_token_with_forged_peer",
+          "ms": 71.22734235599637,
+          "http": 401,
+          "status": 401,
+          "error": "authentication_required"
+        },
+        {
+          "operation": "invalid_token_with_forged_peer",
+          "ms": 66.00929098203778,
+          "http": 401,
+          "status": 401,
+          "error": "authentication_required"
+        }
+      ],
+      "unexpected": 0,
+      "missed_slots": 819
+    }
+  ],
+  "post_load": {
+    "unpublished_draft_stayed_private": true,
+    "publication_and_rollback_verified": true,
+    "services_running_without_restart_or_oom": true
+  },
+  "scope": "Single-host routed IPv4 clients, TLS, real Keycloak tokens, REST/MCP business and capability queries, contained Python editing/building. No WAN, equipment, multi-tenant fairness or certificate renewal.",
+  "passed": false
+}

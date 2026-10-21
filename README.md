@@ -10,6 +10,8 @@ The API and build broker can run in separate containers with locked dependencies
 
 API domain calls use [supervised service workers](docs/SERVICE_WORKERS.md) with CPU, memory and wall-time limits. The guide includes reproducible HTTP measurements and explains how clients recover when a write commits before its response is lost.
 
+The [deployment benchmark](docs/TLS.md#measure-the-deployed-path) measures TLS, real identity checks, REST/MCP discovery and concurrent Python authoring in a disposable container stack.
+
 The TLS deployment has [encrypted backup and restore tooling](docs/RECOVERY.md) for shop data, identity data, grants, and TLS state. Recovery preserves request allowances and keeps a restored service offline until startup.
 
 The [credential rotation helper](docs/CREDENTIALS.md) changes the provisioned agent secret and Keycloak database password with interrupted-cutover recovery and verification that the previous credentials no longer authenticate. It also rotates realm signing keys with a verification overlap and explicit retirement.

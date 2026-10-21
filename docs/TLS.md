@@ -292,3 +292,128 @@ TLS fails authenticated requests while existing public discovery stays usable.
 The supplied-certificate profile is exercised with new CA/certificate delivery
 through `reload`, followed by fresh authenticated requests. Only resources
 belonging to each test are removed.
+
+## Measure the deployed path
+
+Build the worker, runtime and TLS images, then run:
+
+```sh
+uv run --extra server python scripts/benchmark-deployment --seconds 150 --require-success
+uv run --extra server python scripts/benchmark-deployment --seconds 60 --noise-rate 60 --require-success
+uv run --extra server python scripts/benchmark-deployment --seconds 60 --readers 4 --rate 20 --policy capacity
+```
+
+Each command creates its own five-service TLS deployment, supplied test
+certificates, identity database, shop storage and routed client network. It binds
+only the temporary bridge's host address. Separate client containers preserve
+their actual source addresses and verify the gateway's certificate and hostname.
+The script has no option to target an existing deployment. It removes only its
+own containers, network, volume and temporary state. Run it as a non-root account
+with Docker access; Docker Engine 28 or later is required.
+
+The fixture is the exported three-axis milling Python project, including its
+technical and business acceptance cases. The script saves, builds and publishes
+it through the actual API and broker, then installs fresh simulated observations.
+Readers alternate REST and MCP across catalog and capability pages, all four
+evaluation outcomes, and prototype business conditions. Every successful result
+must identify the expected public revision and satisfy its known fixture facts.
+The fixture's private equipment address must stay absent. This is simulated shop
+data, not qualification of a manufacturing process.
+
+Half the readers authenticate with real Keycloak service-account tokens. Each
+authenticated client acquires its own token through HTTPS and refreshes it during
+longer runs; all those clients share one subject's allowance. Token-acquisition
+latency is recorded separately and also contributes to any request that needs
+it. The other readers remain anonymous. Persistent HTTP/1.1 connections include
+their initial TLS handshake; the workload does not open a fresh connection for
+every request or measure HTTP/2 performance.
+
+During discovery traffic, another client uses MCP `run_python` to read and edit
+the project and request a build. Its draft changes the shop name. Discovery must
+keep returning the original publication. After load stops, the controller
+publishes the completed draft, checks its new name, rolls back, and checks the
+original catalog. It also checks that service containers remain running without
+an OOM kill or restart. The report states whether authoring completed during the
+measurement window; a short window cannot establish that by assumption.
+
+`--rate` is the scheduled request rate per reader. A client has at most one
+request in flight and skips missed slots instead of creating a growing queue or
+catch-up burst. Missed slots are reported separately from attempted requests;
+successful throughput uses the entire measurement window. This bounds client
+load and makes failure to sustain the offered schedule visible. Each request has
+an eight-second socket timeout; no failed mutation is automatically replayed.
+Only inspections of the existing author run/build are polled again after a
+retryable refusal. The admission call itself is never silently resubmitted.
+
+`--policy defaults` retains shipped request and mutation limits. `capacity`
+raises deployment, peer and identity HTTP allowances **only in the disposable
+fixture**, leaving mutation, source, build, Python and container limits intact.
+`--noise-rate` adds a distinct anonymous peer sending invalid bearer tokens and
+changing forged forwarding headers. Its authentication denials and throttling
+are reported separately from useful discovery work. This is a bounded adversarial
+traffic fixture, not a distributed denial-of-service test.
+
+JSON output records effective policy, image IDs, container limits, fixture size,
+checkout and client-source digest, per-client results, HTTP and MCP service
+statuses, token requests, successful throughput, successful median/p95 latency,
+missed slots and authoring time. MCP errors carried in HTTP 200 responses and
+wrong domain answers never count as successful work. Credentials and returned
+private source are excluded. Progress goes to stderr so stdout can be saved as
+one JSON report.
+
+Unexpected failures or wrong answers fail the command. Ordinary 429/503
+backpressure remains visible in a capacity measurement. `--require-success`
+additionally requires every reader request and scheduled slot to succeed and
+authoring to finish within the load window. Compare the offered rate, success
+ratio and missed slots alongside latency; fast refusals are not useful throughput.
+
+This measures a single Linux host, a compact shop, local routed networks, TLS,
+identity verification, discovery and concurrent authoring. WAN latency,
+independent tenant fairness, larger shops, equipment adapters, certificate
+renewal and long-running operational reliability require further qualification.
+
+### Recorded measurements
+
+On 2026-10-21 UTC, a shared Linux x86-64 host with 16 logical CPUs and Docker
+29.8.1 produced the following results. API and gateway retained their one-CPU
+limits; the five service images and other limits are recorded in the linked JSON
+reports. The source bundle was 134,630 bytes with 24 acceptance cases. These
+measurements were taken during development; reports retain the checkout, dirty
+worktree flag and exact client-source digest.
+
+| Workload | Window | Scheduled reader requests/s | Correct results / attempts | Missed reader slots | Correct results/s | Successful p95 | Author completed |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| [Defaults](benchmarks/deployment-defaults.json) | 150 s | 10 | 1,497 / 1,497 | 3 | 9.98 | 56 ms | 7.33 s |
+| [Defaults with invalid-token traffic, first run](benchmarks/deployment-noise-initial.json) | 60 s | 10 | 597 / 600 | 0 | 9.95 | 76 ms | 11.98 s |
+| [Defaults with invalid-token traffic, repeat](benchmarks/deployment-noise.json) | 60 s | 10 | 600 / 600 | 0 | 10.00 | 58 ms | 7.33 s |
+| [Capacity policy](benchmarks/deployment-capacity.json) | 60 s | 80 | 2,780 / 2,801 | 1,999 | 46.33 | 59 ms | 8.39 s |
+
+All completed domain answers were correct. Publications stayed unchanged during
+draft work, post-load publication/rollback succeeded, and no service container
+restarted or reported an OOM kill. The 150-second run exercised token refresh
+successfully. Its slowest response took 761 ms, causing three missed reader slots.
+The first invalid-token run returned three HTTP 503 responses to readers;
+its separate noisy peer received 1,242 authentication denials, 1,537 rate limits
+and two admission-capacity refusals. It attempted 2,781 of 3,600 scheduled noisy
+requests; the generator's remaining slots were missed, not sent.
+
+The repeat passed its strict reader check while the noisy peer received 1,238
+authentication denials and 2,243 rate limits across 3,481 attempts. That generator
+missed 119 slots. The earlier refusals remain in the recorded evidence; one clean
+repeat does not establish consistent availability. The completed decoder also
+preserves MCP ingress-refusal details that the first report labeled `http_error`.
+
+The capacity probe returned 21 service refusals: twenty `data_busy` and one
+`request_capacity`. Eleven were MCP failures inside HTTP 200 responses. Its
+slowest successful response took 1.33 seconds. The offered 80 requests/s was
+not sustained: neither the reported successful p95 nor the process exit status
+should conceal those refused requests and missed slots.
+
+The initial regression target for the default and bounded-noise fixtures is
+every scheduled reader slot succeeding at 10 requests/s, successful p95 below
+100 ms, authoring within 30 seconds, and preserved publication/rollback checks.
+The strict zero-miss/refusal target is **not consistently met** by these measurements.
+Admission contention and long-tail responses require further work. The capacity
+probe reports overload behavior; it has no claim of sustaining the offered rate.
+These are development targets for this fixture and comparable hardware, not a
+production SLA.
