@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 import uuid
 from pathlib import Path
@@ -37,9 +38,12 @@ class SecretsRecoveryLiveTests(unittest.TestCase):
                 self.assertEqual(result.returncode, expected, result.stderr)
                 return result.stdout
 
-            def bao(method, path, data=None, token=None):
+            def bao(method, path, data=None, token=None, *, allowed_statuses=()):
                 value, _, _, container = script.deployment(state)
-                return script.request(state, value, container, method, path, data, token)
+                return script.request(
+                    state, value, container, method, path, data, token,
+                    allowed_statuses=allowed_statuses,
+                )
 
             run("docker", "network", "create", "--internal", network)
             try:
@@ -156,6 +160,18 @@ class SecretsRecoveryLiveTests(unittest.TestCase):
                 self.assertEqual(
                     script.read_json(state / "initialized.json")["cluster_id"], cluster
                 )
+                # Unsealing completes before the restored node is necessarily
+                # active. Establish readiness before testing authorization.
+                deadline = time.monotonic() + 30
+                while True:
+                    status, health = bao("GET", "sys/health", allowed_statuses=(429, 500))
+                    if status == 200:
+                        self.assertTrue(health["initialized"])
+                        self.assertFalse(health["sealed"])
+                        self.assertEqual(health["cluster_id"], cluster)
+                        break
+                    self.assertLess(time.monotonic(), deadline, f"OpenBao readiness: HTTP {status}")
+                    time.sleep(.2)
                 with self.assertRaisesRegex(ValueError, "HTTP 403"):
                     bao("GET", "sys/mounts", token=root_token)
                 token = bao(

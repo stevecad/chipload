@@ -15,8 +15,12 @@ PROFILES = {
          "python_checks", "assessments", "erp_interop", "evidence_worker", "offer_worker"),
     ),
     "tls": (
-        ("TLS", "OPERATION", "RECOVERY", "CREDENTIAL"),
-        ("tls", "edge", "execution", "recovery", "credentials", "signing"),
+        ("TLS", "OPERATION"),
+        ("tls", "edge", "execution"),
+    ),
+    "recovery": (
+        ("RECOVERY", "CREDENTIAL"),
+        ("recovery", "credentials", "signing"),
     ),
     "secrets": (
         ("SECRETS", "ADAPTER"),

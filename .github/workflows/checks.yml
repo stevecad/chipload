@@ -55,7 +55,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        profile: [python, tls, secrets]
+        profile: [python, tls, recovery, secrets]
     env:
       CI_PROFILE: ${{ matrix.profile }}
     steps:

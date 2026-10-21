@@ -334,8 +334,8 @@ retirement and coordinated replacement-host recovery still need qualification.
 ### 8. Demonstrate the whole workflow and prepare contributions
 
 **Progress:** GitHub Actions now defines ordinary tests and executable examples on
-Python 3.12 and 3.14, followed by three fresh-container profiles for Python
-authoring, TLS/recovery and secrets/adapters. The live runner rejects empty or
+Python 3.12 and 3.14, followed by four fresh-container profiles for Python
+authoring, TLS, recovery and secrets/adapters. The live runner rejects empty or
 skipped suites. See `docs/CI.md` for exact scope, local commands and checks that
 remain outside CI; this automation does not establish production qualification.
 

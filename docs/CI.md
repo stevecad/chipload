@@ -5,13 +5,14 @@ and manual dispatch. Each job uses a fresh GitHub-hosted Ubuntu 24.04 runner.
 Ordinary tests, lint and executable technical/business examples run on Python
 3.12.15 and 3.14.6 with the locked server dependencies.
 
-After both Python jobs pass, three jobs use Docker Engine 29.9.2, build the
+After both Python jobs pass, four jobs use Docker Engine 29.9.2, build the
 container images from the checkout and run disposable integration fixtures:
 
 | Profile | Coverage |
 | --- | --- |
 | `python` | Source builds, hosted Python and SDK isolation, MCP authoring, REST discovery, runtime persistence, binary assets, Python constraints and assessments, ERP observations, evidence revocation, and alternative offers. |
-| `tls` | Verified HTTPS and Keycloak, external client boundaries, callable operations, encrypted recovery, agent/database credential rotation, and signing-key rotation and revocation. |
+| `tls` | Verified HTTPS and Keycloak, external client boundaries, and callable operations. |
+| `recovery` | Encrypted shop/identity recovery, agent/database credential rotation, and signing-key rotation and revocation. |
 | `secrets` | TLS OpenBao bootstrap, recovery, workload credentials, Keycloak operator identity, HTTPS adapters, and the contained executor. |
 
 [`scripts/check-live`](../scripts/check-live) defines the exact suites and enables
@@ -30,6 +31,7 @@ uv sync --locked --extra server
 ./scripts/build-tls
 uv run --extra server python scripts/check-live python
 uv run --extra server python scripts/check-live tls
+uv run --extra server python scripts/check-live recovery
 uv run --extra server python scripts/check-live secrets
 ```
 
