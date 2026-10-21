@@ -8,6 +8,7 @@ from pathlib import Path
 from .access import ACTIONS, Grant, Principal
 from .execution import ExecutionService
 from .execution_model import AdapterBinding
+from .launch_reservations import recover_launch
 from .lifecycle import BuildProcessor, Repository, ShopService
 from .project import MAX_PROJECT_BYTES, SourceProject, unique_json
 from .quotas import QuotaPolicy
@@ -45,6 +46,10 @@ def parser() -> argparse.ArgumentParser:
         "recover-builds", help="remove expired workers and fail their jobs"
     )
     recover.add_argument("--image")
+    launch = commands.add_parser("recover-launch", help="reserve unresolved container names and recover an expired job")
+    launch.add_argument("kind", choices=("build", "python"))
+    launch.add_argument("job_id")
+    launch.add_argument("--image", help="immutable local worker image ID")
     status = commands.add_parser("quotas", help="read platform quotas, request limits, and usage")
     status.add_argument("--shop")
     status.add_argument("--identity")
@@ -66,6 +71,11 @@ def main() -> None:
         return
     try:
         service = ShopService(Repository(args.database))
+        if args.action == "recover-launch":
+            image = args.image or Path(".local/worker-image").read_text().strip()
+            builder = DockerBuilder(WorkerEnvironment.inspect(image))
+            print(json.dumps(recover_launch(service.repository, builder, args.kind, args.job_id), indent=2))
+            return
         if args.action == "bind-operation":
             with args.binding.open("rb") as source:
                 data = source.read(16 * 1024 + 1)
@@ -144,7 +154,7 @@ def main() -> None:
                 mode="json"
             )
         print(json.dumps(output, indent=2))
-    except (OSError, ValueError, LookupError) as error:
+    except (OSError, ValueError, LookupError, RuntimeError) as error:
         print(f"chipload: {error}", file=sys.stderr)
         raise SystemExit(1) from None
 

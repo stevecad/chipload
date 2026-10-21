@@ -24,7 +24,7 @@ OpenBao policies, JWT trust and local grant receipts live in the separate secret
 archive. Coordinate both recovery points and reconcile later revocations and key
 changes before restoring operator access.
 
-Recovery sets include schema-8 container launch records, operation bindings, Python run history, execution history, and
+Recovery sets include schema-9 container launch and name-reservation records, operation bindings, Python run history, execution history, and
 simulation receipts. Backups reject queued, running, or indeterminate operations.
 Stop new submissions, finish or cancel queued calls, reconcile uncertain outcomes,
 and stop separately launched executors before backup. The stack helper supervises
@@ -244,4 +244,10 @@ writer contention, wrong keys, tampered ciphertext, unsafe archive members,
 private file handling, and refusing to overwrite state. Test cleanup is restricted
 to each drill's own containers, volumes, and temporary directories.
 
-Python runs must settle before backup: queued or running code jobs are rejected. Cancel them or let the broker finish, then retry. Code run histories, call journals and resolved container launch records are preserved by schema-8 backups. Unresolved creation intent blocks backup even when the container is currently absent; do not discard it to make a backup pass.
+Python runs must settle before backup: queued or running code jobs are rejected. Cancel them or let the broker finish, then retry. Code run histories, call journals, resolved launch records and inert name reservations are preserved by schema-9 backups. Unresolved creation intent blocks backup even when the container is currently absent; do not discard it to make a backup pass. For current-protocol launches, use the local `recover-launch` procedure in [authoring recovery](AUTHORING.md#storage-authorization-and-recovery).
+
+Broker preparation verifies or reinstalls recorded inert name reservations before
+executing jobs on restored storage. Keep the original host's reservations until
+all its old creators and daemon requests are known to have ended; restoring a
+copy elsewhere does not revoke that host. Reservations are durable recovery
+state and must be excluded from container pruning.

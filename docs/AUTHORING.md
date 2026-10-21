@@ -276,8 +276,9 @@ response cannot be recalled. HTTP reads require revalidation and check withdrawa
 before returning 304; private and evaluation responses use `no-store`.
 
 Build claims have deadlines. A late worker cannot complete an expired claim.
-The broker confirms removal before recording any finished build, including a
-build that raised an exception. If cleanup cannot be confirmed, the job remains
+The broker confirms worker removal or an operator-installed inert name reservation
+before recording any finished build, including a build that raised an exception.
+If cleanup cannot be confirmed, the job remains
 `running` and retains its build slot and report-storage reservation. It cannot
 publish. After its lease expires, recovery can remove the worker and record the
 interrupted build without rerunning source.
@@ -299,11 +300,42 @@ execution authority from a late acknowledgement.
 If creation is unresolved and the container is absent, recovery retains the
 job and capacity: a delayed request could still create it. The broker logs the
 job ID and continues processing other eligible jobs. This includes a crash
-between recording intent and issuing the request. No automatic clearing of
-such records is supplied; an operator recovery procedure that fences all old
-creators and outstanding daemon requests remains deployment work. Do not delete
-the intent or release capacity solely because a deadline elapsed or inspection
-reported absence.
+between recording intent and issuing the request. Do not delete the intent or
+release capacity solely because a deadline elapsed or inspection reported absence.
+
+An operator can recover an expired job whose launches use the current cleanup
+protocol:
+
+```sh
+uv run --extra server python -m chipload.local --database /private/data/chipload.db recover-launch build BUILD_ID
+uv run --extra server python -m chipload.local --database /private/data/chipload.db recover-launch python RUN_ID
+```
+
+Use `--image` for an explicit immutable worker image; the default comes from
+`.local/worker-image`. This command requires local database ownership and Docker
+authority. It fences the job, records reservation intent, and installs inert
+containers under its unresolved names. A delayed creation then encounters a
+name conflict. Worker cleanup uses immutable IDs, so a delayed removal cannot
+delete a replacement reservation. The reservation's entrypoint is a directory
+and cannot execute. No source, program or SDK call is replayed. Build jobs fail;
+Python runs become interrupted, or cancelled if cancellation was requested.
+The JSON result reports the current job state and reserved names. A competing
+recovery may still own completion; retry or let the broker finish it.
+
+Interrupted operator attempts resume from the same durable intent, including
+after a lost Docker response. Reserved containers persist after completion:
+keep them out of Docker pruning and retain the referenced images. Builders and
+Python runners verify or reinstall recorded reservations before admitting work
+after restart or restore. Backups preserve those records. No automatic retirement
+of reservations is supplied; safely removing them requires proving that all old
+creators and daemon requests have ended.
+
+Launches from schema 8 or earlier retain the legacy removal protocol. A delayed
+removal by name could delete a replacement reservation, so `recover-launch`
+refuses them. Ordinary recovery still works when creation can be resolved by
+an acknowledgement or observed worker. Indefinitely ambiguous legacy launches
+require separate operator maintenance; this command does not assume that
+stopping a client has drained its daemon requests.
 
 After a broker interruption, run:
 
@@ -336,8 +368,8 @@ Shop business terms remain in the Python shop model.
 An accepted job reserves the full 8 MiB report allowance until it finishes.
 The finished report's actual bytes replace that reservation; failures still
 consume their actual storage and count toward the hourly/retained-build limits.
-Expired running jobs retain their slots and reservations until their containers
-have been removed and failure recorded. Quotas do not silently discard source,
+Expired running jobs retain their slots and reservations until worker cleanup
+or inert name reservation is confirmed and failure recorded. Quotas do not silently discard source,
 reports, publications, rollback history, or accepted work.
 
 Source/build usage checks, admissions, and dispatch claims use a
@@ -406,6 +438,10 @@ Existing running jobs receive unresolved launch records because older code did
 not retain creation acknowledgements. Settle running jobs before upgrading;
 otherwise missing containers can require operator intervention. Queued jobs,
 publications, paired admission state and spent allowances remain intact.
+Schema 8 migrates atomically to schema 9, adding durable name reservations and
+the cleanup protocol marker. Existing launch records retain the legacy marker;
+new attempts use removal by immutable ID. Settle older running jobs before this
+upgrade when possible; unresolved legacy requests cannot safely use name reservation.
 Before upgrading, stop old API/broker/executor processes and make a consistent backup.
 Do not run old code alongside the new schema. SQLite remains single-node
 storage; this does not establish safe use over a network filesystem or across

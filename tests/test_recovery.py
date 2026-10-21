@@ -131,9 +131,9 @@ class RecoveryTests(unittest.TestCase):
             archive.unpack(target, self.root / "limit", max_bytes=1)
 
     def test_launch_receipts_survive_backup_and_unresolved_intent_blocks_it(self):
-        receipt = ("chipload-build-" + "a" * 32, "builds", "a" * 32, "b" * 32, 1)
+        receipt = ("chipload-build-" + "a" * 32, "builds", "a" * 32, "b" * 32, 1, 2)
         with self.repository.transaction() as db:
-            db.execute("INSERT INTO worker_launches VALUES(?,?,?,?,?)", receipt)
+            db.execute("INSERT INTO worker_launches VALUES(?,?,?,?,?,?)", receipt)
         destination = self.root / "snapshot"
         archive.snapshot_pair(self.data, destination)
         with Repository(destination / "chipload.db").connection() as db:

@@ -261,6 +261,7 @@ class ProgramTests(unittest.TestCase):
 
     def test_schema_six_migrates_atomically_without_resetting_admission(self):
         with self.repository.transaction() as db:
+            db.execute("DROP TABLE launch_reservations")
             db.execute("DROP TABLE worker_launches")
             db.execute("DROP TABLE python_runs")
             db.execute("PRAGMA user_version=6")
@@ -274,4 +275,4 @@ class ProgramTests(unittest.TestCase):
         fresh = Repository(self.repository.path)
         self.assertEqual(fresh.admission.identity, self.repository.admission.identity)
         with fresh.connection() as db:
-            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 8)
+            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 9)

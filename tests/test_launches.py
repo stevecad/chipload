@@ -1,5 +1,6 @@
 """Creation intent survives expiry, lost replies and competing recovery."""
 
+import json
 import subprocess
 import tempfile
 import unittest
@@ -89,7 +90,9 @@ class LaunchTests(unittest.TestCase):
 
         def docker(command, **kwargs):
             if command[1] == "container":
-                return SimpleNamespace(returncode=0, stdout=b"a" * 64)
+                return SimpleNamespace(returncode=0, stderr=b"", stdout="\n".join(
+                    json.dumps(value) for value in ("a" * 64, {"org.chipload.worker": "true"}, ["python"], False)
+                ).encode())
             with self.repository.connection() as db:
                 self.assertEqual(db.execute("SELECT settled FROM worker_launches").fetchone()[0], 1)
             return SimpleNamespace(returncode=0)
@@ -115,12 +118,13 @@ class LaunchTests(unittest.TestCase):
 
     def test_schema_seven_migration_retains_unknown_old_running_launches(self):
         with self.repository.transaction() as db:
+            db.execute("DROP TABLE launch_reservations")
             db.execute("DROP TABLE worker_launches")
             db.execute("PRAGMA user_version=7")
         with ThreadPoolExecutor(2) as pool:
             list(pool.map(lambda _: Repository(self.repository.path), range(2)))
         with self.repository.connection() as db:
-            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 8)
+            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 9)
             row = db.execute("SELECT name,claim,settled FROM worker_launches").fetchone()
             self.assertEqual(tuple(row), (self.name, self.claim, 0))
 
@@ -128,6 +132,7 @@ class LaunchTests(unittest.TestCase):
         from chipload import lifecycle
 
         with self.repository.transaction() as db:
+            db.execute("DROP TABLE launch_reservations")
             db.execute("DROP TABLE worker_launches")
             db.execute("PRAGMA user_version=7")
         with patch.object(lifecycle, "LAUNCH_SCHEMA", lifecycle.LAUNCH_SCHEMA + "INVALID SQL;"):

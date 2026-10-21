@@ -127,6 +127,7 @@ class DockerProgramRunner:
         if self.host_data == Path("/") or any(c in str(self.host_data) for c in (",", "\n", "\r")):
             raise ValueError("invalid SDK service host data directory")
         local_daemon()
+        self.builder.prepare(repository)
         self.services = {}
 
     def remove(self, identifier, *, guard=None):

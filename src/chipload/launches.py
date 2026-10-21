@@ -7,6 +7,7 @@ import time
 from datetime import datetime, timezone
 
 from .containers import SandboxError
+from .launch_reservations import inspect_container, is_reservation
 
 LAUNCH_SCHEMA = """
 CREATE TABLE worker_launches (
@@ -51,7 +52,10 @@ class LaunchGuard:
         # A late acknowledgement remains useful after the job's claim changes.
         # It only resolves this one attempt; it never restores execution rights.
         with self.repository.transaction() as db:
-            db.execute("UPDATE worker_launches SET settled=1 WHERE name=?", (name,))
+            db.execute(
+                "UPDATE worker_launches SET settled=1 WHERE name=? AND NOT EXISTS "
+                "(SELECT 1 FROM launch_reservations WHERE name=?)", (name, name),
+            )
 
     def create(self, command):
         name = command[command.index("--name") + 1]
@@ -61,7 +65,7 @@ class LaunchGuard:
             if not self._active(db):
                 raise SandboxError("worker claim is no longer active")
             try:
-                db.execute("INSERT INTO worker_launches VALUES(?,?,?,?,0)",
+                db.execute("INSERT INTO worker_launches(name,kind,job_id,claim,settled,removal_protocol) VALUES(?,?,?,?,0,2)",
                            (name, self.kind, self.identifier, self.claim))
             except sqlite3.IntegrityError:
                 raise SandboxError("container creation was already attempted") from None
@@ -83,19 +87,29 @@ class LaunchGuard:
             raise ValueError("container does not belong to this job")
         with self.repository.connection() as db:
             row = db.execute("SELECT settled FROM worker_launches WHERE name=?", (name,)).fetchone()
-        if row is None or row["settled"]:
-            return
+            reserved = db.execute("SELECT 1 FROM launch_reservations WHERE name=?", (name,)).fetchone()
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise LaunchUncertain("container creation is unresolved: " + name)
         try:
-            found = subprocess.run(
-                ["docker", "container", "inspect", "--format", "{{.Id}}", name],
-                capture_output=True, timeout=min(1, remaining),
-            )
-        except (OSError, subprocess.TimeoutExpired):
+            found = inspect_container(name, deadline)
+        except SandboxError:
             raise LaunchUncertain("container creation is unresolved: " + name) from None
-        if found.returncode or not re.fullmatch(rb"[0-9a-f]{64}\s*", found.stdout):
+        if reserved:
+            if not is_reservation(self.repository, name, found):
+                raise LaunchUncertain("container name reservation is not confirmed: " + name)
+            with self.repository.transaction() as db:
+                db.execute("UPDATE worker_launches SET settled=1 WHERE name=?", (name,))
+            return None  # The inert reservation must outlive every delayed request.
+        if found is None:
+            if row is None or row["settled"]:
+                return None
             raise LaunchUncertain("container creation is unresolved: " + name)
+        if found["labels"].get("org.chipload.worker") != "true":
+            raise LaunchUncertain("unexpected container occupies worker name: " + name)
         # Persist the observation before removal can destroy this evidence.
-        self._settle(name)
+        if row is not None and not row["settled"]:
+            self._settle(name)
+        # A concurrent operator may replace this name with a reservation. Never
+        # let a delayed removal target that replacement.
+        return found["id"]

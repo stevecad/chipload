@@ -70,13 +70,16 @@ def remove_containers(*names, guard=None):
         # complete attempt and the subsequent database commit.
         at = time.monotonic()
         share = max(0, deadline - at) / (len(names) - index)
+        target = name
         if guard is not None:
             try:
-                guard.before_remove(name, at + share)
+                target = guard.before_remove(name, at + share)
             except SandboxError as error:
                 unresolved = error
                 continue
-        if not _remove(name, at + share):
+            if target is None:
+                continue
+        if not _remove(target, at + share):
             failed.append(name)
     if unresolved is not None:
         raise unresolved

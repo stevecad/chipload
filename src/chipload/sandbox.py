@@ -123,6 +123,11 @@ class DockerBuilder:
         self.environment = environment
         self.seconds = seconds
 
+    def prepare(self, repository):
+        from .launch_reservations import ensure_reservations
+
+        ensure_reservations(repository, self)
+
     def create_command(self, name: str) -> list[str]:
         return [
             "docker",

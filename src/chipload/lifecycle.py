@@ -21,6 +21,7 @@ from .artifact import Artifact, Digest, canonical_json, digest, read_artifact
 from .cache import DEFAULT_CACHE_BYTES, DataCache
 from .discovery import public_catalog
 from .execution_model import EXECUTION_SCHEMA
+from .launch_reservations import RESERVATION_SCHEMA
 from .launches import LAUNCH_SCHEMA, LaunchGuard, LaunchUncertain
 from .limits import bounded_json
 from .model import Id, Model, Timestamp
@@ -123,9 +124,9 @@ class Repository:
         private_database(self.path, create=True)
         with self.connection() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in {0, 1, 2, 3, 4, 5, 6, 7, 8}:
+            if version not in {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}:
                 raise ValueError("unsupported repository schema")
-            if version in {5, 6, 7, 8}:
+            if version in {5, 6, 7, 8, 9}:
                 reference = db.execute("SELECT * FROM admission_store WHERE id=1").fetchone()
                 if reference is None:
                     raise IntegrityError("missing admission store reference")
@@ -141,14 +142,16 @@ class Repository:
                         self._initialize_programs()
                     if version < 8:
                         self._initialize_launches()
+                    if version < 9:
+                        self._initialize_reservations()
                     return
             db.execute("PRAGMA journal_mode=WAL")
             db.execute("BEGIN IMMEDIATE")
             try:
                 version = db.execute("PRAGMA user_version").fetchone()[0]
-                if version not in {0, 1, 2, 3, 4, 5, 6, 7, 8}:
+                if version not in {0, 1, 2, 3, 4, 5, 6, 7, 8, 9}:
                     raise ValueError("unsupported repository schema")
-                if version in {5, 6, 7, 8}:
+                if version in {5, 6, 7, 8, 9}:
                     db.execute("COMMIT")
                     self._initialize_admission()
                     return
@@ -228,6 +231,15 @@ class Repository:
         self._initialize_executions()
         self._initialize_programs()
         self._initialize_launches()
+        self._initialize_reservations()
+
+    def _initialize_reservations(self):
+        with self.transaction() as db:
+            if db.execute("PRAGMA user_version").fetchone()[0] == 8:
+                for statement in RESERVATION_SCHEMA.split(";"):
+                    if statement.strip():
+                        db.execute(statement)
+                db.execute("PRAGMA user_version=9")
 
     def _initialize_launches(self):
         with self.transaction() as db:
@@ -713,6 +725,8 @@ class BuildProcessor:
     def __init__(self, repository: Repository, builder: DockerBuilder):
         self.repository = repository
         self.builder = builder
+        if hasattr(builder, "prepare"):
+            builder.prepare(repository)
 
     def run(self, build_id: str) -> None:
         claim, project = self.repository.claim(build_id, self.builder.seconds + 60)

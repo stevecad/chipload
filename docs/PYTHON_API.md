@@ -172,8 +172,11 @@ Both containers also have durable creation intent. Recovery cannot release the
 run while either creation is unresolved, even if that container is currently
 absent. A late acknowledgement or observed container permits cleanup; it never
 restores the expired claim or replays the program. See
-[authoring recovery](AUTHORING.md#storage-authorization-and-recovery) for the
-operator limitation when a creation attempt remains unresolved.
+[authoring recovery](AUTHORING.md#storage-authorization-and-recovery) for the local
+`recover-launch python RUN_ID` command. It can reserve unresolved names from the
+current cleanup protocol with inert containers before settling a run. Reservations
+persist and are reinstalled before execution after restore. Legacy removal by
+name requires separate maintenance.
 
 Per deployment, shop and identity, defaults allow 20 pending runs, one running
 run, 120 admissions per hour, 1,000 retained records and 512 MiB of reserved run
@@ -214,8 +217,8 @@ Existing bindings need explicit `code:run`, `code:read` and, if delegated,
 subject to those bindings; `shop:operate` still cannot author or publish source.
 A role alone gives no shop access. Rebuild worker and runtime images together.
 
-Stop old writers and back up before upgrade. Repository schema 8 adds durable
-container launch records after the schema-7 Python-run migration, preserving the
+Stop old writers and back up before upgrade. Repository schema 9 adds durable
+name reservations and cleanup protocol markers after the schema-8 launch migration, preserving the
 paired admission store. Settle running jobs first: migration preserves their
 unknown creation outcomes as unresolved intent. New backups include code history and require no queued
 or running code jobs. Stop/cancel or let runs settle before taking a backup.
