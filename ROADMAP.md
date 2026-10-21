@@ -233,6 +233,16 @@ restore are exercised against the actual containers; restored services remain
 offline until completion. This covers the single-host TLS topology, not OpenBao,
 external systems, or a qualified recovery onto a replacement host.
 
+TLS certificate installation now validates supplied material before mutation,
+persists its candidate and intent, resumes interrupted replacement/activation,
+and verifies the exact certificates served after container recreation. An explicit
+replacement can recover an expired pending candidate; stopped deployments remain
+stopped. Offline expiry reporting supplies monitoring exit codes, and encrypted
+recovery preserves certificate receipts while allowing expired historical
+material to be restored and repaired before startup. Automatic issuance, renewal
+scheduling, alert delivery and deployment-specific renewal qualification remain
+open. See `docs/TLS.md`.
+
 Agent-secret and identity-database password rotation now have durable retry,
 old-credential rejection, unchanged-grant checks, and a recovery drill using the
 rotated credentials. Already-issued JWTs retain their normal expiry. Managed

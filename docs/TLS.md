@@ -124,9 +124,11 @@ uv run --extra server python scripts/tls-stack --state .local/site init \
 uv run --extra server python scripts/tls-stack --state .local/site up
 ```
 
-The helper copies these inputs into private state and checks key/certificate
-compatibility. Startup verifies the actual chain and hostname at each HTTPS
-listener. The supplied-certificate profile rejects `.localhost` names; the
+The helper copies bounded inputs into private state and checks key compatibility,
+certificate dates, CA chains and both configured hostnames through an in-memory
+TLS handshake before initializing credentials. Startup repeats that validation
+before starting containers, then verifies each HTTPS listener. The
+supplied-certificate profile rejects `.localhost` names; the
 local profile requires them. Both profiles default to loopback host bindings.
 
 Keycloak's issuer and the token audience use the configured external HTTPS URLs.
@@ -255,18 +257,89 @@ individual read-only mount; the directory itself is never shared with that
 container. Startup rejects widened permissions, symlinks, and mismatched keys.
 Do not put state outside an ignored/protected location or commit it.
 
-To install renewed certificates, replace the four certificate/key files and
-CA bundle in state while preserving permissions, then run `tls-stack reload`.
-It recreates gateway, Keycloak, and API, and verifies their HTTPS endpoints.
-Plan a maintenance interruption and distribute a changed CA to clients first.
-The live test exercises replacement of both certificates and CA trust while
-preserving identities and grants, and rejects clients that retain only the old
-CA. Automatic certificate renewal remains work. Use the
+Use the [certificate installation workflow](#install-and-monitor-certificates)
+below for renewed HTTPS material. Use the
 [credential rotation helper](CREDENTIALS.md) for the provisioned shop-agent secret
 and Keycloak database password, including interruption and retry. The helper also
 rotates the realm's RS256 signing key with a recorded verification overlap and a
 separate retirement command that clears the API key cache. Signing-key rotation
 and HTTPS certificate renewal are separate operations.
+
+## Install and monitor certificates
+
+Obtain renewed certificates from your certificate provider, keeping the same two
+configured hostnames. For an established deployment, install all four PEM files
+and the CA bundle together:
+
+```sh
+uv run --extra server python scripts/tls-certificates --state .local/site install \
+  --certificates /secure/chipload-certificates \
+  --ca-bundle /secure/chipload-ca-bundle.pem
+uv run --extra server python scripts/tls-certificates --state .local/site status \
+  --warn-days 14
+```
+
+The deployment owner runs this command locally; it has no REST or MCP endpoint.
+Installation validates chains, names, dates and keys before changing active files.
+It accepts unencrypted PEM private keys, at most 1 MiB per file and 32 certificates
+per chain/bundle. Supplied leaf chains must have at least one day remaining;
+`--minimum-days 0` permits shorter-lived valid material. Incoming CA files must
+verify both chains. A changed CA must reach clients and dependent services before
+the maintenance window.
+
+The helper stages private copies, fsyncs its journal, then atomically replaces
+each active file. If any deployment service is running, it restores the complete
+configured stack, recreates gateway, Keycloak and API, and checks the exact
+installed leaf fingerprints at the public and administration
+listeners. The identity endpoint must still advertise the configured issuer.
+Plan a maintenance interruption. An established but fully stopped deployment stays
+stopped; its receipt records `live_verified: false`, and `tls-stack up` performs
+the live checks later. Fresh deployments use `tls-stack init` first; installation
+requires the existing identity database volume. Expired old certificates do not
+prevent repair.
+
+If interrupted, preserve the state directory and run:
+
+```sh
+uv run --extra server python scripts/tls-certificates --state .local/site resume
+```
+
+Resume uses the same staged bundle, even if the provider's input files have
+changed or disappeared. It refuses changes to deployment settings, credentials,
+images, identity storage, active TLS files or the staged candidate. Pending
+installation blocks normal startup/reload, backup, credential rotation and
+OpenBao identity changes. A lost activation reply is retried through container
+recreation and live verification; it does not recreate shop or identity data.
+If services stop after verified activation but before cleanup completes, resume
+restores the recorded running state and checks the listeners again.
+
+If the staged candidate has expired or its delivery is unusable, use
+`replace-pending` with the same `--certificates` and `--ca-bundle` arguments and
+a new valid bundle. It validates and journals that replacement before touching
+active files, retaining the original deployment checks. Do not delete the marker
+or edit active files to bypass recovery. Successful completion removes journaled
+staging files and saves `certificates.json`, containing public fingerprints,
+expiry dates and activation evidence. Encrypted backups preserve this receipt.
+A process killed before publishing its journal or replacing a file may leave an
+unreferenced private `.certificate-update-*` directory or `.certificate-*`
+temporary file. Inspect the journal before removing these. Pending stages and
+temporary key files must stay protected.
+
+`status` checks installed files without Docker or network access and prints JSON.
+Exit 0 means valid material outside the warning window; exit 2 means at least one
+supplied leaf, intermediate or trust certificate is approaching expiry; exit 1
+means invalid/unreadable material, a pending update or another inspection error.
+Warnings include every supplied trust certificate, even an unused CA retained for
+overlap. The default seven-day local certificates immediately warn with the
+fourteen-day default. Connect this check to your monitoring; an offline success
+does not prove the listener is reachable or already serving these files.
+
+`test_certificates.py` covers validation, file and activation interruption,
+configuration drift, stopped-service repair and expiry reporting. The real TLS
+test kills the installer between file replacements and after activation/cleanup,
+then resumes through the CLI. It checks unchanged identities/grants and rejects
+clients retaining only the old CA. Automatic certificate acquisition, scheduling,
+alert delivery and deployment-specific renewal qualification remain work.
 
 Keycloak imports a realm only when absent. Editing `realm.json` or an initial
 secret file does **not** update existing users, clients, or database passwords.
@@ -290,7 +363,8 @@ request bounds, and forwarded-header spoofing resistance. They also check actual
 mounts, capabilities, exposed ports, and API network denial. Untrusted identity
 TLS fails authenticated requests while existing public discovery stays usable.
 The supplied-certificate profile is exercised with new CA/certificate delivery
-through `reload`, followed by fresh authenticated requests. Only resources
+through `tls-certificates` and interrupted installation recovery, followed by
+fresh authenticated requests. Only resources
 belonging to each test are removed.
 
 ## Measure the deployed path

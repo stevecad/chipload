@@ -46,11 +46,11 @@ class TLSLiveTests(unittest.IsolatedAsyncioTestCase):
             name = "chipload-tls-rotation-" + uuid.uuid4().hex[:12]
             cli = [sys.executable, str(ROOT / "scripts/tls-stack"), "--state", str(state)]
 
-            async def run(*arguments):
+            async def run(*arguments, expected=0):
                 result = await asyncio.to_thread(
                     subprocess.run, list(arguments), capture_output=True, text=True, timeout=240
                 )
-                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.returncode, expected, result.stderr)
                 return result.stdout.strip()
 
             await run(
@@ -117,10 +117,41 @@ class TLSLiveTests(unittest.IsolatedAsyncioTestCase):
                 realm = (state / "realm.json").read_bytes()
                 renewed = root / "renewed"
                 stack.local_certificates(renewed, hosts)
-                for path in (renewed / "certificates").iterdir():
-                    (state / "certificates" / path.name).write_bytes(path.read_bytes())
-                (state / "identity-ca.pem").write_bytes((renewed / "identity-ca.pem").read_bytes())
-                await run(*cli, "reload")
+                certificate_cli = [
+                    sys.executable,
+                    str(ROOT / "scripts/tls-certificates"),
+                    "--state",
+                    str(state),
+                ]
+                status = json.loads(await run(*certificate_cli, "status", expected=2))
+                self.assertTrue(status["valid"])
+                self.assertTrue(status["renewal_due"])
+                # Exit the actual operator process after replacing only one file.
+                # A different process must recover from the durable journal.
+                crash = """
+import os, sys
+from pathlib import Path
+sys.path.insert(0, sys.argv[1])
+from certificates_support import certificates as script
+replace = script.replace_file
+def interrupted(*args):
+    replace(*args)
+    os._exit(99)
+script.replace_file = interrupted
+script.install(Path(sys.argv[2]), certificates=Path(sys.argv[3]) / 'certificates', ca_bundle=Path(sys.argv[3]) / 'identity-ca.pem')
+"""
+                await run(
+                    sys.executable,
+                    "-c",
+                    crash,
+                    str(ROOT / "tests"),
+                    str(state),
+                    str(renewed),
+                    expected=99,
+                )
+                self.assertTrue((state / ".certificates-incomplete.json").exists())
+                await run(*cli, "up", expected=1)
+                await run(*certificate_cli, "resume")
                 after = await asyncio.to_thread(verify_identity, renewed / "identity-ca.pem")
                 self.assertEqual(after, original)
                 self.assertTrue((state / "runtime.json").read_bytes() == configuration)
@@ -129,6 +160,71 @@ class TLSLiveTests(unittest.IsolatedAsyncioTestCase):
                     await asyncio.to_thread(
                         stack.probe, hosts["api"], port, "/healthz", old / "identity-ca.pem"
                     )
+                receipt = json.loads((state / "certificates.json").read_bytes())
+                self.assertTrue(receipt["live_verified"])
+                await asyncio.to_thread(
+                    stack.probe,
+                    hosts["api"],
+                    port,
+                    "/healthz",
+                    renewed / "identity-ca.pem",
+                    certificate_sha256=receipt["leaves"]["api"]["sha256"],
+                )
+                with self.assertRaisesRegex(ValueError, "installed certificate"):
+                    await asyncio.to_thread(
+                        stack.probe,
+                        hosts["api"],
+                        port,
+                        "/healthz",
+                        renewed / "identity-ca.pem",
+                        certificate_sha256="0" * 64,
+                    )
+                # Lose completion after real activation and stage removal. Resume
+                # must work even though the staged files no longer exist.
+                crash = crash.replace(
+                    "replace = script.replace_file", "replace = script.remove_stage"
+                ).replace("script.replace_file = interrupted", "script.remove_stage = interrupted")
+                await run(
+                    sys.executable,
+                    "-c",
+                    crash,
+                    str(ROOT / "tests"),
+                    str(state),
+                    str(renewed),
+                    expected=99,
+                )
+                self.assertEqual(
+                    json.loads((state / ".certificates-incomplete.json").read_bytes())["phase"],
+                    "verified",
+                )
+                await run(*cli, "down")
+                await run(*certificate_cli, "resume")
+                self.assertFalse((state / ".certificates-incomplete.json").exists())
+                running = json.loads(
+                    await run(
+                        "docker",
+                        "inspect",
+                        *(
+                            await run(
+                                "docker",
+                                "ps",
+                                "-q",
+                                "--filter",
+                                f"label=com.docker.compose.project={name}",
+                            )
+                        ).split(),
+                    )
+                )
+                self.assertEqual(
+                    {
+                        container["Config"]["Labels"]["com.docker.compose.service"]
+                        for container in running
+                    },
+                    {"gateway", "api", "keycloak", "keycloak-db", "broker"},
+                )
+                self.assertEqual(
+                    await asyncio.to_thread(verify_identity, renewed / "identity-ca.pem"), original
+                )
             finally:
                 await run(*cli, "down")
                 volumes = (

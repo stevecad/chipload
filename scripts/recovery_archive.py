@@ -35,7 +35,13 @@ STATE_FILES = {
     "secrets/db-password",
     "secrets/agent-secret",
 }
-OPTIONAL_FILES = {"recovery/local-ca-key.pem", "restore.json", "credentials.json", "signing.json"}
+OPTIONAL_FILES = {
+    "recovery/local-ca-key.pem",
+    "restore.json",
+    "credentials.json",
+    "signing.json",
+    "certificates.json",
+}
 DATA_FILES = {"data/chipload.db", "data/chipload.db.admission", "keycloak.dump"}
 ALL_FILES = STATE_FILES | OPTIONAL_FILES | DATA_FILES
 

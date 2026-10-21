@@ -200,6 +200,27 @@ class TLSStackTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     stack.check_tls_images(images)
 
+    def test_material_rejects_matching_key_and_certificate_for_the_wrong_hostname(self):
+        args = SimpleNamespace(
+            **self.values,
+            state=self.root / "state",
+            local=True,
+            shop="example",
+            certificates=None,
+            ca_bundle=None,
+        )
+        with (
+            patch.object(stack.subprocess, "check_output", return_value=""),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            stack.initialize(args)
+        for suffix in ("crt", "key"):
+            (args.state / f"certificates/api.{suffix}").write_bytes(
+                (args.state / f"certificates/identity.{suffix}").read_bytes()
+            )
+        with self.assertRaises((ValueError, ssl.SSLError)):
+            stack.check_material(args.state)
+
     def test_existing_deployment_volume_prevents_creating_replacement_credentials(self):
         args = SimpleNamespace(state=self.root / "state", name="existing")
         with patch.object(stack.subprocess, "check_output", return_value="existing-volume\n"):

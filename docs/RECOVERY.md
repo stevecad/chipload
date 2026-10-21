@@ -24,6 +24,13 @@ OpenBao policies, JWT trust and local grant receipts live in the separate secret
 archive. Coordinate both recovery points and reconcile later revocations and key
 changes before restoring operator access.
 
+Backups reject pending [TLS certificate installations](TLS.md#install-and-monitor-certificates)
+and preserve the latest `certificates.json` receipt. Offline recovery permits
+expired certificate material so an older recovery point remains usable. Complete
+restore first, then install a valid bundle before startup; a stopped restored
+deployment stays stopped during installation. The archived receipt is historical
+evidence, not proof that the restored listener is currently serving that certificate.
+
 Recovery sets include schema-9 container launch and name-reservation records, operation bindings, Python run history, execution history, and
 simulation receipts. Backups reject queued, running, or indeterminate operations.
 Stop new submissions, finish or cancel queued calls, reconcile uncertain outcomes,

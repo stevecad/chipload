@@ -14,6 +14,8 @@ The [deployment benchmark](docs/TLS.md#measure-the-deployed-path) measures TLS, 
 
 The TLS deployment has [encrypted backup and restore tooling](docs/RECOVERY.md) for shop data, identity data, grants, and TLS state. Recovery preserves request allowances and keeps a restored service offline until startup.
 
+The [certificate helper](docs/TLS.md#install-and-monitor-certificates) validates supplied certificates, resumes interrupted installation, verifies live activation, and reports approaching expiry. Automatic issuance and renewal scheduling remain deployment work.
+
 The [credential rotation helper](docs/CREDENTIALS.md) changes the provisioned agent secret and Keycloak database password with interrupted-cutover recovery and verification that the previous credentials no longer authenticate. It also rotates realm signing keys with a verification overlap and explicit retirement.
 
 The separate [private OpenBao service](docs/SECRETS.md) runs on the adapter network with TLS, encrypted threshold bootstrap, explicit unsealing, audit storage and certificate reload. Its operator helpers provision, verify, rotate and revoke scoped adapter credentials, and restore encrypted offline backups with the original quorum and access policies. [Keycloak browser login](docs/SECRETS.md#keycloak-operator-login) provides subject-bound administrative or named-workload rotation grants. Replacement-host qualification, automatic root retirement and operational custody remain deployment work.

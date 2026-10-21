@@ -145,7 +145,9 @@ def backup(state, output, key, max_bytes):
         if identity_marker.exists() or identity_marker.is_symlink():
             raise ValueError("finish the pending secrets identity change before backup")
         stack.require_ready(state)
-        command, environment, values = stack.deployment(state, check=True)
+        command, environment, values = stack.deployment(
+            state, check=True, verify_certificates=False
+        )
         runtime_contract = archive.contract()
         was_running, images = check_containers(state, values, environment, command)
         backup_id = uuid.uuid4().hex
@@ -332,7 +334,7 @@ def restore(state, source, key, name, resume, max_bytes):
                 },
             )
             # Validate images, grants, private files, and endpoints before creating deployment resources.
-            stack.deployment(prepared, check=True)
+            stack.deployment(prepared, check=True, verify_certificates=False)
             archive.sync_tree(prepared)
             os.rename(prepared, state)
             archive.sync_directory(state.parent)
@@ -355,7 +357,9 @@ def restore(state, source, key, name, resume, max_bytes):
                 raise ValueError(
                     "incomplete restore state changed; preserve it and restore into a fresh directory"
                 )
-            command, environment, values = stack.deployment(state, check=True)
+            command, environment, values = stack.deployment(
+                state, check=True, verify_certificates=False
+            )
             if values["name"] != name:
                 raise ValueError("restore project differs from the incomplete state")
             for container in records("container", name):
@@ -452,7 +456,18 @@ def main():
             with stack.operation_lock(state):
                 if (state / RESTORE_MARKER).exists():
                     raise ValueError("this is an incomplete restore, not an interrupted backup")
-                command, environment, _ = stack.deployment(state, check=True)
+                if any(
+                    (state / name).exists() or (state / name).is_symlink()
+                    for name in (
+                        ".certificates-incomplete.json",
+                        ".credentials-incomplete.json",
+                        ".secrets-identity-incomplete.json",
+                    )
+                ):
+                    raise ValueError("conflicting deployment operation is incomplete")
+                command, environment, _ = stack.deployment(
+                    state, check=True, verify_certificates=False
+                )
                 finish_backup(state, command, environment)
             print(
                 "Previous deployment running/stopped state restored. Verify any backup separately."

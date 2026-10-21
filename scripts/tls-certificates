@@ -1,0 +1,391 @@
+#!/usr/bin/env python3
+"""Inspect TLS expiry and install supplied certificates with resumable activation."""
+
+import argparse
+import http.client
+import importlib.machinery
+import importlib.util
+import json
+import os
+import re
+import shutil
+import ssl
+import subprocess
+import tempfile
+import uuid
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+import recovery_archive as archive
+
+ROOT = Path(__file__).resolve().parents[1]
+loader = importlib.machinery.SourceFileLoader(
+    "certificate_recovery", str(ROOT / "scripts/tls-recovery")
+)
+recovery = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
+loader.exec_module(recovery)
+stack = recovery.stack
+material = stack.material
+MARKER = ".certificates-incomplete.json"
+STABLE_FILES = archive.STATE_FILES - set(material.FILES)
+CONFLICTS = (
+    recovery.BACKUP_MARKER,
+    recovery.RESTORE_MARKER,
+    ".credentials-incomplete.json",
+    ".secrets-identity-incomplete.json",
+)
+
+
+def present(path):
+    return path.exists() or path.is_symlink()
+
+
+def stable_state(state):
+    return {name: archive.digest(state / name) for name in sorted(STABLE_FILES)}
+
+
+def hashes(root):
+    return {name: archive.digest(root / name) for name in material.FILES}
+
+
+def stage_path(state, identifier):
+    if not isinstance(identifier, str) or re.fullmatch(r"[a-f0-9]{32}", identifier) is None:
+        raise ValueError("invalid certificate staging identifier")
+    return state / (".certificate-update-" + identifier)
+
+
+def private_stage(path, *, incomplete=False):
+    if not present(path) and incomplete:
+        return
+    archive.private(path, directory=True)
+    allowed = {*material.FILES, "certificates"}
+    for child in path.rglob("*"):
+        name = child.relative_to(path).as_posix()
+        if name not in allowed:
+            raise ValueError("unexpected certificate staging content")
+        archive.private(child, directory=name == "certificates")
+    if not incomplete:
+        for name in material.FILES:
+            archive.private(path / name)
+
+
+def remove_stage(path):
+    private_stage(path, incomplete=True)
+    if path.exists():
+        shutil.rmtree(path)
+        archive.sync_directory(path.parent)
+
+
+def prepare(state, values, certificates, ca_bundle, minimum_days):
+    identifier = uuid.uuid4().hex
+    path = stage_path(state, identifier)
+    path.mkdir(mode=0o700)
+    try:
+        for name in material.FILES:
+            source = ca_bundle if name == "identity-ca.pem" else certificates / Path(name).name
+            archive.write(path / name, material.read(source))
+        material.validate(path, values, minimum_days=minimum_days)
+        archive.sync_tree(path)
+        archive.sync_directory(state)
+    except BaseException:
+        remove_stage(path)
+        raise
+    return identifier
+
+
+def replace_file(path, source):
+    fd, temporary = tempfile.mkstemp(prefix=".certificate-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "wb") as output:
+            output.write(material.read(source))
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, path)
+        archive.sync_directory(path.parent)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def read_journal(state):
+    path = state / MARKER
+    archive.private(path)
+    if path.stat().st_size > 64 * 1024:
+        raise ValueError("certificate journal exceeds its size limit")
+    journal = json.loads(path.read_bytes())
+    if (
+        journal.get("version") != 1
+        or journal.get("state") != str(state)
+        or journal.get("phase") not in {"installing", "verified"}
+        or type(journal.get("was_running")) is not bool
+        or not isinstance(journal.get("retired_stages"), list)
+        or len(journal["retired_stages"]) > 32
+    ):
+        raise ValueError("invalid certificate journal")
+    for identifier in [journal["update_id"], journal["stage_id"], *journal["retired_stages"]]:
+        stage_path(state, identifier)
+    for field in ("previous", "replacement"):
+        record = journal[field]
+        if (
+            not isinstance(record, dict)
+            or set(record) != set(material.FILES)
+            or any(
+                not isinstance(value, str) or re.fullmatch(r"[a-f0-9]{64}", value) is None
+                for value in record.values()
+            )
+        ):
+            raise ValueError("invalid certificate hashes in journal")
+    return journal
+
+
+def check_current(state, journal):
+    current = hashes(state)
+    for name, value in current.items():
+        allowed = {journal["replacement"][name]}
+        if journal["phase"] == "installing":
+            allowed.add(journal["previous"][name])
+        if value not in allowed:
+            raise ValueError("TLS material changed outside this installation")
+    return current
+
+
+def verify_live(state, values, report):
+    ca_file = state / "identity-ca.pem"
+    for role, path in (
+        ("api", "/healthz"),
+        ("identity", "/realms/chipload/.well-known/openid-configuration"),
+    ):
+        result = stack.probe(
+            values[role + "_host"],
+            values["port"],
+            path,
+            ca_file,
+            address=stack.connect_address(values),
+            certificate_sha256=report["leaves"][role]["sha256"],
+        )
+        if role == "identity" and result.get("issuer") != (
+            stack.origin(values["identity_host"], values["port"]) + "/realms/chipload"
+        ):
+            raise ValueError("identity listener returned an unexpected issuer")
+    stack.probe(
+        values["identity_host"],
+        values["admin_port"],
+        "/realms/chipload/.well-known/openid-configuration",
+        ca_file,
+        address=stack.connect_address(values, admin=True),
+        certificate_sha256=report["leaves"]["identity"]["sha256"],
+    )
+
+
+def install(state, *, certificates=None, ca_bundle=None, minimum_days=1, action="install"):
+    if action not in {"install", "resume", "replace-pending"}:
+        raise ValueError("unknown certificate action")
+    state = state.absolute()
+    with stack.operation_lock(state):
+        if any(present(state / name) for name in CONFLICTS):
+            raise ValueError("finish deployment recovery, credential or identity changes first")
+        marker = state / MARKER
+        if action == "install":
+            stack.require_ready(state)
+        elif not present(marker):
+            raise ValueError("there is no pending certificate installation")
+        # Old certificates may already be expired, mismatched or untrusted.
+        # Still check ownership, deployment policy, image provenance and storage.
+        command, environment, values = stack.deployment(
+            state, check=True, verify_certificates=False
+        )
+        running, images = recovery.check_containers(
+            state, values, environment, command, allow_partial=True
+        )
+        volume = recovery.records("volume", values["name"])[0]
+        identity = {key: volume[key] for key in ("Name", "CreatedAt", "Driver", "Labels")}
+        stable = stable_state(state)
+        if action == "install":
+            identifier = uuid.uuid4().hex
+            journal = {
+                "version": 1,
+                "state": str(state),
+                "update_id": identifier,
+                "started_at": datetime.now(timezone.utc).isoformat(),
+                "was_running": running,
+                "stable": stable,
+                "volume": identity,
+                "images": images,
+                "retired_stages": [],
+            }
+        else:
+            journal = read_journal(state)
+            if (
+                journal["stable"] != stable
+                or journal["volume"] != identity
+                or journal["images"] != images
+            ):
+                raise ValueError(
+                    "deployment settings, credentials, images or identity storage changed"
+                )
+            check_current(state, journal)
+        if action != "resume":
+            if action == "replace-pending" and len(journal["retired_stages"]) >= 32:
+                raise ValueError("too many pending replacements; inspect the deployment journal")
+            identifier = prepare(state, values, certificates, ca_bundle, minimum_days)
+            if action == "replace-pending":
+                journal["retired_stages"].append(journal["stage_id"])
+            journal.update(
+                phase="installing",
+                stage_id=identifier,
+                previous=hashes(state),
+                replacement=hashes(stage_path(state, identifier)),
+            )
+            # Never touch active files until the candidate and its intent are durable.
+            archive.replace_json(marker, journal)
+        if journal["phase"] == "installing":
+            staged = stage_path(state, journal["stage_id"])
+            private_stage(staged)
+            if hashes(staged) != journal["replacement"]:
+                raise ValueError("staged certificate material changed")
+            # Retry the same candidate while it remains valid, without reapplying
+            # the initial minimum lifetime. An expired candidate requires replacement.
+            material.validate(staged, values)
+            check_current(state, journal)
+            for name in material.FILES:
+                replace_file(state / name, staged / name)
+            report = material.validate(state, values)
+            if journal["was_running"]:
+                recovery.compose(
+                    command,
+                    environment,
+                    "up",
+                    "--detach",
+                    "--force-recreate",
+                    "--wait",
+                    "--wait-timeout",
+                    "180",
+                    "gateway",
+                    "keycloak",
+                    "api",
+                )
+                # A whole-host interruption may also have removed/stopped the
+                # broker. Keep existing services and restore any missing ones.
+                recovery.compose(
+                    command,
+                    environment,
+                    "up",
+                    "--detach",
+                    "--no-recreate",
+                    "--wait",
+                    "--wait-timeout",
+                    "180",
+                )
+                verify_live(state, values, report)
+            receipt = {
+                "version": 1,
+                "update_id": journal["update_id"],
+                "started_at": journal["started_at"],
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "operator_uid": os.getuid(),
+                "live_verified": journal["was_running"],
+                **report,
+            }
+            archive.replace_json(state / "certificates.json", receipt)
+            journal["phase"] = "verified"
+            archive.replace_json(marker, journal)
+        else:
+            check_current(state, journal)
+            report = material.validate(state, values)
+            if journal["was_running"]:
+                # A host interruption can stop services after successful activation
+                # but before cleanup completes. Restore the recorded running intent.
+                recovery.compose(
+                    command,
+                    environment,
+                    "up",
+                    "--detach",
+                    "--no-recreate",
+                    "--wait",
+                    "--wait-timeout",
+                    "180",
+                )
+                verify_live(state, values, report)
+        for identifier in [*journal["retired_stages"], journal["stage_id"]]:
+            remove_stage(stage_path(state, identifier))
+        marker.unlink()
+        archive.sync_directory(state)
+
+
+def status(state, warn_days=14):
+    if type(warn_days) is not int or not 0 <= warn_days <= 365:
+        raise ValueError("expiry warning must be between 0 and 365 days")
+    state = state.absolute()
+    with stack.operation_lock(state):
+        archive.private(state / "deployment.json")
+        values = stack.configuration(json.loads((state / "deployment.json").read_bytes()))
+        archive.private(state / "certificates", directory=True)
+        for name in material.FILES:
+            archive.private(state / name)
+        pending = present(state / MARKER)
+        try:
+            report = material.inspect(state, values)
+            material.validate(state, values)
+        except (ValueError, TypeError, ssl.SSLError):
+            return {"valid": False, "update_pending": pending}, 1
+        threshold = datetime.now(timezone.utc) + timedelta(days=warn_days)
+        supplied = [
+            *report["trust"],
+            *(cert for chain in report["chains"].values() for cert in chain),
+        ]
+        due = any(datetime.fromisoformat(cert["expires_at"]) <= threshold for cert in supplied)
+        return {
+            "valid": True,
+            "update_pending": pending,
+            "renewal_due": due,
+            "warn_days": warn_days,
+            **report,
+        }, 1 if pending else 2 if due else 0
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--state", type=Path, default=ROOT / ".local/tls")
+    actions = parser.add_subparsers(dest="action", required=True)
+    inspect = actions.add_parser("status", help="offline JSON report; exit 2 means renewal due")
+    inspect.add_argument("--warn-days", type=int, default=14)
+    for name in ("install", "replace-pending"):
+        command = actions.add_parser(name)
+        command.add_argument("--certificates", type=Path, required=True)
+        command.add_argument("--ca-bundle", type=Path, required=True)
+        command.add_argument("--minimum-days", type=int, default=1)
+    actions.add_parser("resume")
+    args = parser.parse_args()
+    if os.getuid() == 0:
+        parser.error("run as the non-root deployment owner")
+    try:
+        if args.action == "status":
+            report, code = status(args.state, args.warn_days)
+            print(json.dumps(report, indent=2))
+            return code
+        install(
+            args.state,
+            action=args.action,
+            certificates=getattr(args, "certificates", None),
+            ca_bundle=getattr(args, "ca_bundle", None),
+            minimum_days=getattr(args, "minimum_days", 1),
+        )
+    except (
+        OSError,
+        ValueError,
+        KeyError,
+        TypeError,
+        subprocess.SubprocessError,
+        http.client.HTTPException,
+    ):
+        parser.exit(
+            1,
+            "tls-certificates: operation failed. Preserve deployment state; resume a pending "
+            "installation after correcting its cause, or replace-pending with a valid bundle.\n",
+        )
+    print("Certificate installation complete; certificates.json records activation and expiry.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

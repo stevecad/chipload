@@ -36,6 +36,11 @@ ROOT = Path(__file__).resolve().parents[1]
 loader = importlib.machinery.SourceFileLoader("runtime_helpers", str(ROOT / "scripts/runtime"))
 runtime = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
 loader.exec_module(runtime)
+spec = importlib.util.spec_from_file_location(
+    "tls_material_helpers", ROOT / "scripts/tls_material.py"
+)
+material = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(material)
 
 
 @contextmanager
@@ -54,6 +59,12 @@ def operation_lock(state):
 
 
 def require_ready(state):
+    if (state / ".certificates-incomplete.json").exists() or (
+        state / ".certificates-incomplete.json"
+    ).is_symlink():
+        raise ValueError(
+            "certificate installation is incomplete; use scripts/tls-certificates resume before starting services"
+        )
     if (state / ".credentials-incomplete.json").exists() or (
         state / ".credentials-incomplete.json"
     ).is_symlink():
@@ -102,15 +113,23 @@ def check_public_engine(values):
         raise ValueError("a non-loopback listener requires Docker Engine 28 or later")
 
 
-def probe(host, port, path, ca_file, *, address="127.0.0.1"):
+def probe(host, port, path, ca_file, *, address="127.0.0.1", certificate_sha256=None):
     """Verify the local listener using the configured TLS name and Host header.
 
     This does not require changing host DNS before a deployment's public routing
     is configured, and does not disable certificate or hostname verification.
     """
-    context = ssl.create_default_context(cafile=ca_file)
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.verify_flags |= ssl.VERIFY_X509_STRICT
+    context.load_verify_locations(cafile=ca_file)
     with socket.create_connection((address, port), timeout=10) as connection:
         with context.wrap_socket(connection, server_hostname=host) as secured:
+            if (
+                certificate_sha256 is not None
+                and hashlib.sha256(secured.getpeercert(binary_form=True)).hexdigest()
+                != certificate_sha256
+            ):
+                raise ValueError("TLS listener did not serve the installed certificate")
             authority = origin(host, port).removeprefix("https://")
             secured.sendall(
                 f"GET {path} HTTP/1.1\r\nHost: {authority}\r\nConnection: close\r\n\r\n".encode(
@@ -314,15 +333,10 @@ def initialize(args):
                 for suffix in ("crt", "key"):
                     write(
                         prepared / f"certificates/{role}.{suffix}",
-                        (args.certificates / f"{role}.{suffix}").read_bytes(),
+                        material.read(args.certificates / f"{role}.{suffix}"),
                     )
-            write(prepared / "identity-ca.pem", args.ca_bundle.read_bytes())
-        ssl.create_default_context(cafile=prepared / "identity-ca.pem")
-        for role in ("api", "identity"):
-            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-            context.load_cert_chain(
-                prepared / f"certificates/{role}.crt", prepared / f"certificates/{role}.key"
-            )
+            write(prepared / "identity-ca.pem", material.read(args.ca_bundle))
+        material.validate(prepared, values)
         for name in ("db-password", "admin-password", "agent-secret"):
             write(prepared / "secrets" / name, secrets.token_urlsafe(32))
         # PostgreSQL uses its image's postgres UID. The parent directory is 0700;
@@ -394,7 +408,7 @@ def initialize(args):
     print(f"Initialized {state}. Agent connection settings: {state / 'client.json'}")
 
 
-def check_material(state):
+def check_material(state, *, verify_certificates=True):
     for directory in ("certificates", "secrets"):
         runtime.private(state / directory, directory=True)
     for name in (
@@ -414,12 +428,13 @@ def check_material(state):
         raise ValueError(
             "db-password must be an owned regular file with mode 0444 inside the private secrets directory"
         )
-    ssl.create_default_context(cafile=state / "identity-ca.pem")
     for role in ("api", "identity"):
         certificate, key = (state / f"certificates/{role}.{suffix}" for suffix in ("crt", "key"))
         runtime.private(certificate)
         runtime.private(key)
-        ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER).load_cert_chain(certificate, key)
+    if verify_certificates:
+        values = configuration(json.loads((state / "deployment.json").read_bytes()))
+        material.validate(state, values)
     if (state / "recovery").exists():
         runtime.private(state / "recovery", directory=True)
         runtime.private(state / "recovery/local-ca-key.pem")
@@ -455,7 +470,7 @@ def check_tls_images(images):
             raise ValueError(f"{role} image differs from the checkout; run ./scripts/build-tls")
 
 
-def deployment(state, *, check=False):
+def deployment(state, *, check=False, verify_certificates=True):
     state = state.absolute()
     runtime.private(state, directory=True)
     runtime.private(state / "deployment.json")
@@ -468,7 +483,7 @@ def deployment(state, *, check=False):
         runtime.check_images(images)
         check_tls_images(tls_images)
         runtime.check_data(state / "data")
-        check_material(state)
+        check_material(state, verify_certificates=verify_certificates)
         runtime.private(state / "runtime.json")
         settings = ServerSettings.model_validate_json((state / "runtime.json").read_bytes())
         network = ipaddress.ip_network(values["subnet"])
@@ -597,6 +612,7 @@ def main():
     except (
         OSError,
         ValueError,
+        TypeError,
         KeyError,
         subprocess.SubprocessError,
         http.client.HTTPException,

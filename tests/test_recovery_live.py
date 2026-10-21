@@ -76,6 +76,18 @@ class RecoveryLiveTests(unittest.IsolatedAsyncioTestCase):
             )
             try:
                 await run(*cli(original), "up")
+                await run(
+                    sys.executable,
+                    str(ROOT / "scripts/tls-certificates"),
+                    "--state",
+                    str(original),
+                    "install",
+                    "--certificates",
+                    str(original / "certificates"),
+                    "--ca-bundle",
+                    str(original / "identity-ca.pem"),
+                )
+                certificate_receipt = (original / "certificates.json").read_bytes()
                 connection = json.loads((original / "client.json").read_bytes())
                 context = ssl.create_default_context(cafile=connection["ca_file"])
                 base = connection["resource_url"].removesuffix("/mcp")
@@ -182,6 +194,7 @@ class RecoveryLiveTests(unittest.IsolatedAsyncioTestCase):
                         )
                     )
                     self.assertIn("data/chipload.db.admission", details["files"])
+                    self.assertIn("certificates.json", details["files"])
                     self.assertIn("commit", details["checkout"])
                     self.assertEqual((await client.get(shop + "/catalog")).json(), catalog)
                     # Abrupt death after snapshots must not publish a partial archive or allow startup.
@@ -261,6 +274,9 @@ script.backup(Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4]), archive.M
                         "--resume",
                     )
                     self.assertFalse((restored / script.RESTORE_MARKER).exists())
+                    self.assertEqual(
+                        (restored / "certificates.json").read_bytes(), certificate_receipt
+                    )
                     self.assertEqual(
                         json.loads((restored / "restore.json").read_bytes())["backup_id"],
                         details["backup_id"],
