@@ -39,8 +39,8 @@ do not use the persistent development stack or contact equipment. Docker access
 is required; use a disposable development or CI host for untrusted contributions.
 
 The hosted jobs stop the runner's preinstalled daemon and start the pinned engine.
-They link its Unix socket at `/var/run/docker.sock` so the broker and host tools
-use the same daemon. Keep these jobs on disposable hosted runners. The external
+Chipload's runtime resolves its local Unix socket from the Docker environment so
+the broker and host tools use the same daemon. Keep these jobs on disposable hosted runners. The external
 peer test depends on Docker 29's [bridge routing behavior](https://docs.docker.com/engine/release-notes/29/):
 older engines can proxy both clients through one address, which correctly shares
 their request allowance but cannot verify independent client budgets.
