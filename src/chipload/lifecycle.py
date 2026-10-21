@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import sqlite3
 import uuid
 from contextlib import contextmanager
@@ -29,6 +28,7 @@ from .project import MAX_OUTPUT_BYTES, MAX_PROJECT_BYTES, BuildReport, SourcePro
 from .quotas import QUOTA_SCHEMA, QuotaPolicy, admit_build, admit_running, admit_source, quota_usage
 from .request_limits import REQUEST_SCHEMA
 from .sandbox import DockerBuilder
+from .storage import private_database
 from .validation import Diagnostic
 
 
@@ -119,12 +119,7 @@ class Repository:
         self.path = Path(path).absolute()
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         # The operator selects this path. Refuse symlink databases and permissive files.
-        fd = os.open(self.path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
-        try:
-            if os.fstat(fd).st_mode & 0o077:
-                raise ValueError("repository database must be private to its owner (mode 0600)")
-        finally:
-            os.close(fd)
+        private_database(self.path, create=True)
         with self.connection() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
             if version not in {0, 1, 2, 3, 4, 5, 6, 7}:
@@ -263,7 +258,10 @@ class Repository:
 
     @contextmanager
     def connection(self, *, timeout=5):
-        db = sqlite3.connect(self.path, timeout=timeout, isolation_level=None)
+        private_database(self.path)
+        db = sqlite3.connect(
+            self.path.as_uri() + "?mode=rw", uri=True, timeout=timeout, isolation_level=None
+        )
         db.row_factory = sqlite3.Row
         db.execute("PRAGMA foreign_keys=ON")
         db.execute("PRAGMA synchronous=FULL")

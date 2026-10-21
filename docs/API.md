@@ -365,12 +365,17 @@ trusted services directly and is outside HTTP rate accounting.
 
 Operators edit `policy.requests` using the existing
 [`quotas` and `set-quotas` commands](AUTHORING.md#authoring-and-build-quotas).
-The paired `PATH.admission` database stores policy and balances. Checks and debits use a
+The paired `PATH.admission` database stores policy and balances. Accepted checks and debits use a
 [SQLite write transaction](https://www.sqlite.org/lang_transaction.html), so
 API processes and restarts share the allowance. A failed combined check charges
 none of its buckets. Later authentication, validation, or domain failures do not
 refund earlier admission. Policy edits retain spent credit, capped by the new
 burst, and update existing refill rates and expiration times atomically.
+An initial read transaction can reject an exhausted caller without acquiring
+the writer lock. A positive read never grants admission: policy, time and all
+selected balances are recomputed under the write lock before charging. Validation
+of identical immutable policy bytes is cached in at most eight entries; policy
+selection, generations, balances and admission decisions remain uncached.
 Shop source/build/publication writes use the main database and do not acquire
 this accounting lock. Both files must be preserved together; see
 [storage and recovery](AUTHORING.md#storage-authorization-and-recovery).

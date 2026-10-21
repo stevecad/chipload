@@ -26,7 +26,7 @@ executors retain their separate containment boundaries.
 | Supervisor wall deadline | 5 seconds, including replacement startup |
 | IPC request / response | 4 MiB / 8 MiB, bounded JSON |
 | File descriptors / core dumps | 64 / disabled |
-| Process recycling | Before the next call after 1,000 completed calls |
+| Process recycling | After 1,000 completed calls, while another slot can serve |
 | API container | 1 CPU, 1 GiB memory with no additional swap, 128 processes |
 
 Limits are applied before SDK imports. Workers start with an explicit minimal
@@ -36,6 +36,14 @@ if that process exits, the worker kills its own group. The supervisor also kills
 the group on timeout, malformed output or shutdown, and confirms termination
 before reusing the slot. If termination cannot be confirmed, the slot stays
 unavailable. Calls already admitted to other slots can finish.
+
+After a process reaches its call limit, a maintenance thread confirms its
+termination and warms its replacement. Incoming calls prefer ready processes;
+they never wait for a slot undergoing maintenance. Both slots may be unavailable
+during simultaneous replacement, producing normal capacity refusals. Replacement
+does not add processes beyond the configured count. Shutdown stops replacements
+and joins maintenance threads. A custom one-worker pool still replaces its
+process synchronously on the next call.
 
 CPU limits track accumulated process CPU, extending the soft threshold before
 each request. The supervisor's monotonic wall deadline also covers blocked I/O.

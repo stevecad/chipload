@@ -417,3 +417,44 @@ Admission contention and long-tail responses require further work. The capacity
 probe reports overload behavior; it has no claim of sustaining the offered rate.
 These are development targets for this fixture and comparable hardware, not a
 production SLA.
+
+### Measurements after worker and storage changes
+
+On the same host, replacement workers now warm between calls while another ready
+process can serve. Exhausted request allowances can be rejected without the
+accounting write lock; accepted requests still recompute all charges under that
+lock. Policy validation is cached by immutable bytes. Database file
+checks also preserve SQLite's process-wide advisory locks. The measurements below
+retain the same client workload, limits and strict targets; the earlier results
+remain above for comparison.
+
+| Workload | Window | Scheduled reader requests/s | Correct results / attempts | Missed reader slots | Correct results/s | Successful p95 | Author completed |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| [Revised defaults](benchmarks/deployment-revised-defaults.json) | 150 s | 10 | 1,500 / 1,500 | 0 | 10.00 | 56 ms | 7.77 s |
+| [Revised defaults with invalid-token traffic](benchmarks/deployment-revised-noise.json) | 60 s | 10 | 600 / 600 | 0 | 10.00 | 60 ms | 10.59 s |
+| [Revised invalid-token traffic, repeat](benchmarks/deployment-revised-noise-repeat.json) | 60 s | 10 | 600 / 600 | 0 | 10.00 | 57 ms | 7.77 s |
+| [Revised capacity policy](benchmarks/deployment-revised-capacity.json) | 60 s | 80 | 2,752 / 2,791 | 2,009 | 45.87 | 60 ms | 8.39 s |
+
+The revised default run met every fixture target, including token refresh,
+publication isolation and subsequent publication/rollback. Its slowest response
+was 158 ms, compared with 761 ms in the earlier run. This is one measured run;
+the comparison does not establish sustained or general deployment capacity.
+
+The invalid-token run also met every target. Its noisy peer attempted 3,460
+requests, receiving 1,238 authentication denials and 2,222 rate limits; 140
+scheduled noisy requests were missed. Legitimate readers received no refusals,
+and their slowest response was 165 ms.
+
+The repeat also met every target, with a 153 ms maximum response. Its noisy peer
+attempted 3,562 requests, received 1,238 authentication denials and 2,324 rate
+limits, and missed 38 scheduled slots. These bounded runs do not establish
+independent tenant fairness or resilience to a distributed flood.
+
+The revised capacity probe returned 39 `data_busy` refusals, eighteen of them
+inside MCP HTTP 200 responses, and no `request_capacity` errors. Its slowest
+successful response was 197 ms, compared with 1.33 seconds previously. Throughput
+remained about 46 correct results/s, with more worker refusals and missed slots
+than the earlier capacity probe. Warming replacements can temporarily reduce
+available slots; these changes do not establish a throughput increase or support
+for the offered 80 requests/s. Publication/rollback checks passed, and no service
+container restarted or reported an OOM kill in these runs.

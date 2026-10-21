@@ -6,6 +6,7 @@ import time
 import unittest
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
+from unittest.mock import patch
 
 from chipload.lifecycle import Repository
 from chipload.quotas import QuotaPolicy
@@ -153,6 +154,66 @@ class RequestLimitTests(unittest.TestCase):
                 self.peer(1)
             self.assertLess(time.monotonic() - started, 1)
         self.peer(1)
+
+    def test_exhausted_peer_is_refused_without_acquiring_the_writer(self):
+        self.policy(peer={"per_minute": 1, "burst": 1})
+        self.peer(1)
+        with self.repository.admission.transaction():
+            with self.assertRaises(RateLimited) as refused:
+                self.peer(1)
+            self.assertEqual(refused.exception.limit, "peer")
+            # Read-only inspection can refuse, but cannot admit the fresh peer
+            # while another transaction owns the accounting write lock.
+            with self.assertRaises(RequestCapacity):
+                self.peer(2)
+        self.peer(2)
+
+    def test_a_positive_read_snapshot_cannot_spend_credit_consumed_by_another_caller(self):
+        self.policy(identity={"per_minute": 1, "burst": 1})
+        other = RequestLimiter(self.repository, clock=lambda: self.at)
+        charges = self.limiter._charges
+        first = True
+
+        def consumed(db, selected):
+            nonlocal first
+            result = charges(db, selected)
+            if first:
+                first = False
+                other.identity("owner")
+            return result
+
+        with patch.object(self.limiter, "_charges", side_effect=consumed):
+            with self.assertRaises(RateLimited):
+                self.limiter.identity("owner")
+        with self.assertRaises(RateLimited):
+            other.identity("owner")
+
+    def test_admission_rechecks_a_policy_edit_after_its_read_snapshot(self):
+        self.policy(identity={"per_minute": 60, "burst": 1})
+        self.limiter.identity("owner")
+        self.at += 1000
+        charges = self.limiter._charges
+        first = True
+
+        def reduced(db, selected):
+            nonlocal first
+            result = charges(db, selected)
+            if first:
+                first = False
+                self.policy(identity={"per_minute": 1})
+            return result
+
+        with patch.object(self.limiter, "_charges", side_effect=reduced):
+            with self.assertRaises(RateLimited) as refused:
+                self.limiter.identity("owner")
+        self.assertEqual(refused.exception.retry_after, 59)
+
+    def test_a_previously_valid_policy_cannot_hide_corrupted_current_bytes(self):
+        self.limiter.identity("owner")
+        with self.repository.admission.transaction() as db:
+            db.execute("UPDATE quota_policy SET policy=?", (b'{"requests":false}',))
+        with self.assertRaises(RequestCapacity):
+            self.limiter.identity("owner")
 
     def test_storage_failure_cannot_admit_requests(self):
         with self.repository.admission.transaction() as db:

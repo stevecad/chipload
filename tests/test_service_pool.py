@@ -7,6 +7,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
@@ -307,6 +308,146 @@ os._exit(0)
         latest.wait()
         self.assertEqual(pool.call("shop_catalog", None, body)["shop"]["id"], "thermal-example")
         self.assertNotEqual(latest.pid, pool.slots[0].process.pid)
+
+    def recycling_pool(self):
+        block, entered, release = (self.root / name for name in ("block", "entered", "release"))
+        fault = f"""
+from pathlib import Path
+import time
+if Path({str(block)!r}).exists():
+    Path({str(entered)!r}).touch()
+    while not Path({str(release)!r}).exists():
+        time.sleep(0.01)
+"""
+        pool = self.pool(fault=fault, max_calls=1)
+        self.addCleanup(release.touch)
+        block.touch()
+        old = pool.slots[0].process
+        self.assertEqual(pool.call("identity_read", self.owner, {})["subject"], "owner")
+        for _ in range(200):
+            if entered.exists():
+                break
+            time.sleep(0.01)
+        self.assertTrue(entered.exists(), "replacement did not reach its startup gate")
+        self.assertIsNotNone(old.poll(), "replacement started before old worker was reaped")
+        return pool, release
+
+    def test_retired_worker_warms_without_delaying_other_calls_or_retaining_publication(self):
+        pool, release = self.recycling_pool()
+        # Startup stays blocked until explicitly released, so a completed call
+        # here proves that a warm process served it without waiting for imports.
+        with ThreadPoolExecutor(1) as thread:
+            publication = thread.submit(
+                pool.call, "publication_read", self.owner, {"shop_id": "thermal-example"}
+            ).result(timeout=2)
+        self.assertFalse(release.exists())
+        with self.assertRaises(DataBusy):
+            pool.call("identity_read", self.owner, {})
+        self.original.call(
+            "publication_change",
+            self.owner,
+            {
+                "shop_id": "thermal-example",
+                "action": "withdraw",
+                "expected_generation": publication["generation"],
+            },
+        )
+        release.touch()
+        for _ in range(300):
+            if not any(slot.busy for slot in pool.slots):
+                break
+            time.sleep(0.01)
+        self.assertFalse(any(slot.busy for slot in pool.slots))
+        with self.assertRaises(ServiceFailure) as withdrawn:
+            pool.call("shop_catalog", None, {"shop_id": "thermal-example"})
+        self.assertEqual(withdrawn.exception.status, 404)
+
+    def test_shutdown_during_replacement_confirms_children_and_maintenance_terminate(self):
+        pool, _ = self.recycling_pool()
+        processes = [slot.process for slot in pool.slots]
+        maintenance = pool.slots[0].maintenance
+        pool.close()
+        self.assertFalse(maintenance.is_alive())
+        self.assertTrue(all(process.poll() is not None for process in processes))
+        self.assertTrue(all(slot.process is None for slot in pool.slots))
+        with self.assertRaises(ServiceFailure):
+            pool.call("identity_read", self.owner, {})
+
+    def test_unconfirmed_retirement_does_not_block_the_other_worker_or_create_a_replacement(self):
+        pool = self.pool(max_calls=1)
+        retired = pool.slots[0].process
+        attempted = threading.Event()
+        kill = os.killpg
+
+        def cannot_stop(pid, sig):
+            if pid == retired.pid:
+                attempted.set()
+            else:
+                kill(pid, sig)
+
+        with patch("chipload.service_pool.os.killpg", side_effect=cannot_stop):
+            pool.call("identity_read", self.owner, {})
+            self.assertTrue(attempted.wait(2))
+            with ThreadPoolExecutor(1) as thread:
+                result = thread.submit(pool.call, "identity_read", self.owner, {}).result(timeout=2)
+            self.assertEqual(result["subject"], "owner")
+            for _ in range(600):
+                if pool.slots[0].maintenance is None:
+                    break
+                time.sleep(0.01)
+            self.assertIsNone(pool.slots[0].maintenance)
+            self.assertTrue(pool.slots[0].poisoned)
+            self.assertIs(pool.slots[0].process, retired)
+            self.assertIsNone(retired.poll())
+        pool.close()
+        self.assertIsNotNone(retired.poll())
+
+    def test_failed_background_startup_does_not_fail_a_completed_mutation(self):
+        marker = self.root / "bad-startup"
+        fault = f"""
+from pathlib import Path
+import sys,time
+if Path({str(marker)!r}).exists():
+    sys.stdout.write('bad frame\\n');sys.stdout.flush()
+    time.sleep(30)
+"""
+        pool = self.pool(fault=fault, max_calls=1)
+        marker.touch()
+        source = self.original.call("source_read", self.owner, {"shop_id": "thermal-example"})
+        created = pool.call(
+            "build_request",
+            self.owner,
+            {
+                "shop_id": "thermal-example",
+                "revision": source["revision"],
+                "request_key": "retirement-response",
+            },
+        )
+        for _ in range(300):
+            if pool.slots[0].maintenance is None:
+                break
+            time.sleep(0.01)
+        self.assertIsNone(pool.slots[0].process)
+        self.assertIsNone(pool.slots[0].maintenance)
+        self.assertEqual(
+            self.original.call(
+                "build_inspect",
+                self.owner,
+                {
+                    "shop_id": "thermal-example",
+                    "build_id": created["id"],
+                },
+            )["id"],
+            created["id"],
+        )
+        with self.repository.connection() as db:
+            self.assertEqual(
+                db.execute(
+                    "SELECT COUNT(*) FROM audit WHERE action='build.requested' AND target=?",
+                    (created["id"],),
+                ).fetchone()[0],
+                1,
+            )
 
     def test_default_rest_and_mcp_use_the_same_process_pool(self):
         app = create_app(self.identity.settings, verifier=self.identity.verifier)

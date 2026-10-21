@@ -1,19 +1,26 @@
 """Durable capacity policy and request accounting, independent of shop write locks."""
 
-import os
 import sqlite3
-import stat
 from contextlib import contextmanager
+from functools import lru_cache
 from pathlib import Path
 
 from .artifact import canonical_json
 from .limits import bounded_json
 from .quotas import QuotaPolicy
 from .request_limits import REQUEST_SCHEMA, update_request_rates
+from .storage import private_database
 
 
 class PolicyConflict(ValueError):
     pass
+
+
+@lru_cache(maxsize=8)
+def decoded_policy(payload: bytes) -> QuotaPolicy:
+    # Cache only validation of identical bounded bytes. Every transaction still
+    # reads its current policy row; generations and balances are never cached.
+    return QuotaPolicy.model_validate(bounded_json(payload, max_bytes=16 * 1024))
 
 
 SCHEMA = (
@@ -35,16 +42,10 @@ class AdmissionStore:
         self.path, self.identity = path, identity
 
     def _private_file(self, *, create=False):
-        flags = os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK
-        fd = os.open(self.path, flags | (os.O_CREAT if create else 0), 0o600)
         try:
-            mode = os.fstat(fd).st_mode
-            if not stat.S_ISREG(mode) or mode & 0o077:
-                raise sqlite3.DatabaseError(
-                    "admission database must be a regular owner-only file (0600)"
-                )
-        finally:
-            os.close(fd)
+            private_database(self.path, create=create)
+        except ValueError as error:
+            raise sqlite3.DatabaseError(str(error)) from error
 
     @contextmanager
     def _connection(self, *, timeout=5):
@@ -131,7 +132,7 @@ class AdmissionStore:
         if row is None:
             raise sqlite3.DatabaseError("missing capacity policy")
         try:
-            return QuotaPolicy.model_validate(bounded_json(row["policy"], max_bytes=16 * 1024))
+            return decoded_policy(row["policy"])
         except ValueError as error:
             raise sqlite3.DatabaseError("invalid capacity policy") from error
 

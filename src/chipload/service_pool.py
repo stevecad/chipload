@@ -82,6 +82,7 @@ class Slot:
     calls: int = 0
     poisoned: bool = False
     guard: threading.Lock = field(default_factory=threading.Lock)
+    maintenance: threading.Thread | None = None
 
 
 class ServicePool:
@@ -231,13 +232,58 @@ class ServicePool:
         with self.lock:
             self.closed = True
             failure = None
+            maintenance = [slot.maintenance for slot in self.slots if slot.maintenance]
             for slot in self.slots:
                 try:
                     self.stop(slot)
                 except (OSError, subprocess.TimeoutExpired) as error:
                     failure = error
-            if failure is not None:
-                raise failure
+        # A replacement may be finishing its handshake or waiting for this lock.
+        # It must observe closed before spawning, and its old/new process has
+        # already been stopped above. Never join it while holding the pool lock.
+        deadline = time.monotonic() + self.seconds + 4
+        for thread in maintenance:
+            thread.join(max(0, deadline - time.monotonic()))
+            if thread.is_alive() and failure is None:
+                failure = TimeoutError("service maintenance did not stop")
+        if failure is not None:
+            raise failure
+
+    def recycle(self, slot):
+        """Replace an idle retired process without occupying a service request."""
+        try:
+            self.stop(slot)
+            self.spawn(slot, time.monotonic() + self.seconds)
+        except BaseException:
+            try:
+                self.stop(slot)
+            except (OSError, subprocess.TimeoutExpired):
+                pass  # A process with unconfirmed termination remains poisoned.
+        finally:
+            with self.lock:
+                slot.busy = False
+                slot.maintenance = None
+
+    def retire(self, slot):
+        # Called under the pool lock after a completed exchange. With one slot,
+        # preserve synchronous replacement: there is no other process to serve.
+        if (
+            self.closed
+            or len(self.slots) == 1
+            or slot.process is None
+            or slot.poisoned
+            or slot.calls < self.max_calls
+        ):
+            return
+        slot.busy = True
+        slot.maintenance = threading.Thread(target=self.recycle, args=(slot,), daemon=True)
+        try:
+            slot.maintenance.start()
+        except RuntimeError:
+            # The completed request stays completed. A later caller can replace
+            # this process synchronously if the host cannot start a thread.
+            slot.busy = False
+            slot.maintenance = None
 
     def call(self, operation, principal, request):
         payload = {
@@ -249,9 +295,13 @@ class ServicePool:
             if self.closed:
                 raise unavailable()
             for candidate in self.slots:
-                if candidate.poisoned and self.dead(candidate):
+                if candidate.poisoned and not candidate.busy and self.dead(candidate):
                     self.stop(candidate)
-            slot = next((slot for slot in self.slots if not slot.busy and not slot.poisoned), None)
+            available = [slot for slot in self.slots if not slot.busy and not slot.poisoned]
+            slot = next(
+                (slot for slot in available if slot.calls < self.max_calls and not self.dead(slot)),
+                available[0] if available else None,
+            )
             if slot is None:
                 raise DataBusy("service workers are at capacity; retry later")
             slot.busy = True
@@ -278,3 +328,4 @@ class ServicePool:
         finally:
             with self.lock:
                 slot.busy = False
+                self.retire(slot)

@@ -217,6 +217,14 @@ the subcommand to select another repository; its capacity store is always
 capacity storage stops startup and request admission; it is never silently
 recreated with fresh allowances.
 
+File checks use metadata inspection, without directly opening and closing live
+database files. A raw descriptor close can release another SQLite connection's
+process-wide advisory locks; see [SQLite's locking guidance](https://www.sqlite.org/howtocorrupt.html).
+Only exclusive creation of a missing file uses a raw descriptor, serialized
+against other checks in the process. SQLite connections reopen existing files
+without creating missing replacements. `test_storage.py` verifies retained locks
+from a separate process and concurrent repository startup.
+
 The [hosted Python service](PYTHON_API.md#deployment-and-upgrade) mounts this
 directory into a trusted SDK service container. Its directory admission rejects
 unrelated files, symlinks and permissive ownership/modes. Configure matching

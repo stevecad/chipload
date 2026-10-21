@@ -117,46 +117,53 @@ class RequestLimiter:
     def mutation(self, subject: str, shop: str) -> None:
         self._admit((("mutation_identity", subject), ("mutation_shop", shop)))
 
+    def _charges(self, db, selected):
+        limits = self.repository.admission.policy(db).requests
+        at = self.clock()
+        updates = []
+        missing = 0
+        for scope, subject in selected:
+            key = hashlib.sha256(subject.encode()).digest()
+            row = db.execute(
+                "SELECT * FROM request_buckets WHERE scope=? AND subject=?", (scope, key)
+            ).fetchone()
+            rate = getattr(limits, scope)
+            if row is None:
+                credit, updated = rate.burst * TOKEN, at
+                missing += 1
+            else:
+                # A backward wall-clock adjustment never creates refill credit.
+                updated = max(at, row["updated_ms"])
+                credit = min(
+                    row["burst"] * TOKEN,
+                    row["credit"] + (updated - row["updated_ms"]) * row["per_minute"],
+                )
+                credit = min(credit, rate.burst * TOKEN)
+            if credit < TOKEN:
+                wait_ms = updated - at + math.ceil((TOKEN - credit) / rate.per_minute)
+                raise RateLimited(scope, max(1, math.ceil(wait_ms / 1000)))
+            credit -= TOKEN
+            full_at = updated + math.ceil((rate.burst * TOKEN - credit) / rate.per_minute)
+            updates.append((scope, key, credit, updated, rate.per_minute, rate.burst, full_at))
+        return limits, at, updates, missing
+
     def _admit(self, selected) -> None:
         # Keep lock waits short so saturation cannot occupy the request pool for seconds.
         # Work after admission runs outside this write transaction.
         try:
             with self.repository.admission.connection(timeout=0.05) as db:
+                # An exhausted caller can be refused using one consistent WAL
+                # snapshot without taking the writer away from other peers.
+                db.execute("BEGIN")
+                try:
+                    self._charges(db, selected)
+                finally:
+                    db.execute("ROLLBACK")
+                # Never admit from the read snapshot. Another process or policy
+                # edit may have spent/changed credit; recompute under the lock.
                 db.execute("BEGIN IMMEDIATE")
                 try:
-                    limits = self.repository.admission.policy(db).requests
-                    at = self.clock()
-                    updates = []
-                    missing = 0
-                    for scope, subject in selected:
-                        key = hashlib.sha256(subject.encode()).digest()
-                        row = db.execute(
-                            "SELECT * FROM request_buckets WHERE scope=? AND subject=?",
-                            (scope, key),
-                        ).fetchone()
-                        rate = getattr(limits, scope)
-                        if row is None:
-                            credit, updated = rate.burst * TOKEN, at
-                            missing += 1
-                        else:
-                            # A backward wall-clock adjustment never creates refill credit.
-                            updated = max(at, row["updated_ms"])
-                            credit = min(
-                                row["burst"] * TOKEN,
-                                row["credit"] + (updated - row["updated_ms"]) * row["per_minute"],
-                            )
-                            # Policy edits preserve earned credit, capped by the new burst.
-                            credit = min(credit, rate.burst * TOKEN)
-                        if credit < TOKEN:
-                            wait_ms = updated - at + math.ceil((TOKEN - credit) / rate.per_minute)
-                            raise RateLimited(scope, max(1, math.ceil(wait_ms / 1000)))
-                        credit -= TOKEN
-                        full_at = updated + math.ceil(
-                            (rate.burst * TOKEN - credit) / rate.per_minute
-                        )
-                        updates.append(
-                            (scope, key, credit, updated, rate.per_minute, rate.burst, full_at)
-                        )
+                    limits, at, updates, missing = self._charges(db, selected)
                     if missing:
                         # Fully replenished buckets can be removed without restoring extra credit.
                         # Exclude selected rows: they may carry a newly reduced/increased policy.
