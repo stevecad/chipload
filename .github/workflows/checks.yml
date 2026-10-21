@@ -70,6 +70,21 @@ jobs:
           enable-cache: false
           download-from-astral-mirror: false
       - run: uv sync --locked --extra server
+      - name: Stop the hosted runner's preinstalled Docker daemon
+        run: sudo systemctl stop docker.service docker.socket
+      - name: Set up pinned Docker engine
+        id: docker
+        uses: docker/setup-docker-action@2bf61fb9464cc67f0cbdeabed6aa0380accd1c70 # v5.5.0
+        with:
+          version: v29.9.2
+          set-host: true
+      - name: Use the same daemon inside the broker
+        env:
+          CI_DOCKER_HOST: ${{ steps.docker.outputs.sock }}
+        run: |
+          test "${CI_DOCKER_HOST#unix://}" != "$CI_DOCKER_HOST"
+          test -S "${CI_DOCKER_HOST#unix://}"
+          sudo ln -sfn "${CI_DOCKER_HOST#unix://}" /var/run/docker.sock
       - name: Check host tools
         run: |
           docker version

@@ -173,7 +173,8 @@ The tested path uses direct IPv4 clients. IPv6 listener bindings, upstream HTTP
 proxies/CDNs and Docker direct-routing configurations need a separate verified
 trust design. Do not enable forwarded-header trust for an unverified upstream.
 
-The external-client drill runs on a separate Docker network without source NAT
+The external-client drill requires Docker Engine 29 or later for its bridge
+routing behavior. It runs on a separate Docker network without source NAT
 and binds the gateway to a test bridge's host address. It verifies REST/MCP
 discovery, verified TLS, private-source refusal, inaccessible administration and
 direct API ports, and distinct client request budgets despite forged forwarding

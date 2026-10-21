@@ -5,8 +5,8 @@ and manual dispatch. Each job uses a fresh GitHub-hosted Ubuntu 24.04 runner.
 Ordinary tests, lint and executable technical/business examples run on Python
 3.12.15 and 3.14.6 with the locked server dependencies.
 
-After both Python jobs pass, three jobs build the container images from the
-checkout and run disposable integration fixtures:
+After both Python jobs pass, three jobs use Docker Engine 29.9.2, build the
+container images from the checkout and run disposable integration fixtures:
 
 | Profile | Coverage |
 | --- | --- |
@@ -20,7 +20,7 @@ expected failures and test failures all fail the selected profile. The ordinary
 test command intentionally skips opt-in integration tests; its success alone
 does not establish container coverage.
 
-To run the same profiles locally, install Docker with Compose, GnuPG 2.4+,
+To run the same profiles locally, install Docker Engine 29 with Compose, GnuPG 2.4+,
 Python 3.12+ and `uv`, then run:
 
 ```sh
@@ -37,6 +37,13 @@ Keep the checkout and image fingerprints fixed during each run. These profiles
 create and clean up their own temporary services, storage and credentials. They
 do not use the persistent development stack or contact equipment. Docker access
 is required; use a disposable development or CI host for untrusted contributions.
+
+The hosted jobs stop the runner's preinstalled daemon and start the pinned engine.
+They link its Unix socket at `/var/run/docker.sock` so the broker and host tools
+use the same daemon. Keep these jobs on disposable hosted runners. The external
+peer test depends on Docker 29's [bridge routing behavior](https://docs.docker.com/engine/release-notes/29/):
+older engines can proxy both clients through one address, which correctly shares
+their request allowance but cannot verify independent client budgets.
 
 The workflow grants only repository-content read access, disables persisted Git
 credentials and dependency caching, and uses full commit pins for third-party
