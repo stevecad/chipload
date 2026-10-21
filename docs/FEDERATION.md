@@ -2,9 +2,10 @@
 
 Status: implementation in progress. Listings, direct public instance queries,
 the directory, geographic supplier search and the cloud relay service are
-implemented. Managed connector credentials/lifecycle, hosted Python network
-composition and federation container packaging remain to be implemented against
-the acceptance criteria below.
+implemented. The managed outbound connector and runtime credential provider are
+also implemented; see [CONNECTOR.md](CONNECTOR.md). Hosted Python network
+composition, federation container packaging and the combined real-identity
+container drill remain to be implemented against the acceptance criteria below.
 
 ## Implemented listing contract
 
@@ -154,8 +155,9 @@ The listener defaults to `127.0.0.1:8090`. Initialization is not a recovery
 command: restore the directory, accounting and admission files together if state
 is lost. Serving refuses missing accounting state. A private process lock enforces
 one serving process per state volume, since relay sessions are in memory. This
-checkpoint supplies the service and conventional Python client; managed cloud
-containers, enrollment credential provisioning and a connector daemon are still
+checkpoint supplies the service and conventional Python client. The separate
+[connector daemon](CONNECTOR.md) handles outbound sessions and publication
+refresh. Managed cloud containers and combined enrollment provisioning are still
 pending. These commands alone do not qualify a public deployment.
 
 | Route | Contract |
@@ -224,8 +226,9 @@ lease expiry, replay/withdrawal, same-offering geography/material matching,
 pagination fences, queue/session limits and restart. Actual HTTPS client tests
 show the nearest seller rejecting a small lot, a farther relay-only advertisement
 accepting it, equal direct/relayed evaluations, and direct queries surviving a
-cloud outage. Their outbound receiver is a test fixture; real connector
-credential lifecycle and the full multi-instance container drill remain open.
+cloud outage. Their outbound receiver is a test fixture; the managed connector
+has separate TLS tests in `test_connector.py` and `test_connector_auth.py`.
+The combined real-identity multi-instance container drill remains open.
 
 ## Two ways to reach the same shop
 

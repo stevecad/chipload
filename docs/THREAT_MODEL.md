@@ -64,9 +64,21 @@ to suppliers. Directory/accounting state must be restored together; one process
 per volume is enforced for in-memory relay ownership. Cloud operators can see
 public advertisements and relayed queries: relay use adds that trusted party.
 `test_directory.py`, `test_relay.py`, `test_cloud.py` and actual HTTPS checks in
-`test_cloud_client.py` exercise these controls. Managed connector credentials,
-hosted network composition and federation container packaging in
-[the federation design](FEDERATION.md) remain to be implemented.
+`test_cloud_client.py` exercise these controls.
+
+The separate [outbound connector](CONNECTOR.md) reads only public source data,
+has explicit configured shops/clouds, and runs no shop Python. Runtime credentials
+come from one OpenBao KV-v2 field through a short-lived scoped AppRole token;
+verified Keycloak JWTs stay in connector memory. The provider checks expected
+issuer, audience, subject, client and lifetime, and refetches the secret on refresh.
+Secret/credential echo and oversized form expansion are rejected before a usable
+reply can leave the transport process. Actual policy contents and ACL denials
+must still be verified during provisioning. Managed reads retain request identity
+and deadlines with four global delivery slots, bounded polling and reconnection;
+withdrawal refreshes use CAS. `test_connector.py` and `test_connector_auth.py`
+exercise managed loops and credential exchange using TLS protocol fixtures.
+Hosted network composition, federation packaging and the combined real-identity
+container drill in [the federation design](FEDERATION.md) remain to be implemented.
 
 ## Boundaries
 

@@ -87,6 +87,16 @@ class WireTests(unittest.TestCase):
         self.assertLess(time.monotonic() - started, 4)
         self.assertEqual(self.server.paths, ["/source"])
 
+    def test_escaped_credentials_in_response_values_keys_and_errors_are_rejected(self):
+        token = "fixture-only-token"
+        escaped = "".join("\\u%04x" % ord(character) for character in token)
+        for status, body in ((200, '{"value":"' + escaped + '"}'),
+                             (200, '{"' + escaped + '":true}'),
+                             (403, '{"error":{"message":"' + escaped + '"}}')):
+            self.server.status, self.server.body = status, body.encode()
+            with self.subTest(status=status, body=body), self.assertRaises(TransportError):
+                request(self.server.origin, "GET", "/source", policy=self.policy, token=token)
+
     def test_correct_ca_with_the_wrong_tls_hostname_is_rejected(self):
         origin = self.server.origin.replace("localhost", "127.0.0.1")
         policy = self.policy.model_copy(update={"private_origins": (origin,)})

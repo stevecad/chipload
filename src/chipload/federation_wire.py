@@ -15,9 +15,9 @@ import sys
 import time
 from pathlib import Path
 from typing import Annotated, Literal
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
-from pydantic import AfterValidator, Field, StrictInt, StrictStr, field_validator
+from pydantic import AfterValidator, Field, StrictInt, StrictStr, field_validator, model_validator
 
 from .artifact import canonical_json
 from .client import ServiceError, TransportError
@@ -41,6 +41,7 @@ def checked_origin(value):
 
 
 Origin = Annotated[StrictStr, Field(max_length=2048), AfterValidator(checked_origin)]
+WireToken = Annotated[StrictStr, Field(pattern=r"^[A-Za-z0-9._~+/-]{1,16384}=*$", max_length=16384)]
 
 
 class EgressPolicy(Model):
@@ -56,7 +57,17 @@ class WireJob(Model):
     method: Literal["GET", "POST", "PUT", "DELETE"]
     path: Annotated[StrictStr, Field(max_length=512, pattern=r"^/(?:[A-Za-z0-9_.-]+/?)*$")]
     body: dict | None = None
-    token: Annotated[StrictStr, Field(pattern=r"^[A-Za-z0-9._~+/-]{1,16384}=*$", max_length=16384)] | None = None
+    token: WireToken | None = None
+    credential_header: Literal["bearer", "vault"] = "bearer"
+    encoding: Literal["json", "form"] = "json"
+    sensitive: tuple[Annotated[StrictStr, Field(min_length=1, max_length=16384)], ...] = Field(default=(), max_length=8)
+
+    @model_validator(mode="after")
+    def form_values(self):
+        if self.encoding == "form" and (self.body is None or len(self.body) > 16
+                or any(not isinstance(k, str) or not isinstance(v, str) for k, v in self.body.items())):
+            raise ValueError("form requests require a bounded string mapping")
+        return self
 
     @field_validator("path")
     @classmethod
@@ -114,6 +125,25 @@ class PinnedHTTPS(http.client.HTTPSConnection):
         raise last or OSError("no destination address")
 
 
+def contains_sensitive(value, protected):
+    """Check decoded JSON too: Unicode escapes cannot disguise a credential echo."""
+    if not protected:
+        return False
+    stack = [value]
+    while stack:
+        current = stack.pop()
+        if isinstance(current, str):
+            if any(secret in current for secret in protected):
+                return True
+        elif isinstance(current, dict):
+            if any(secret in key for key in current for secret in protected):
+                return True
+            stack.extend(current.values())
+        elif isinstance(current, list):
+            stack.extend(current)
+    return False
+
+
 def exchange(job: WireJob):
     """Child-only exchange: no proxies, redirects, compression or HTTP retries."""
     parsed = urlsplit(job.origin)
@@ -124,12 +154,23 @@ def exchange(job: WireJob):
                              context=context, timeout=job.policy.seconds)
     headers = {"Accept": "application/json", "Accept-Encoding": "identity", "Content-Type": "application/json"}
     if job.token:
-        headers["Authorization"] = "Bearer " + job.token
-    encoded = canonical_json(job.body) if job.body is not None else None
+        if job.credential_header == "vault":
+            headers["X-Vault-Token"] = job.token
+        else:
+            headers["Authorization"] = "Bearer " + job.token
+    if job.encoding == "form":
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
+        encoded = urlencode(job.body).encode("ascii")
+    else:
+        encoded = canonical_json(job.body) if job.body is not None else None
+    if encoded is not None and len(encoded) > MAX_JOB_BYTES:
+        raise ValueError("encoded request byte limit")
     deadline = time.monotonic() + job.policy.seconds
     try:
         connection.request(job.method, job.path, body=encoded, headers=headers)
         response = connection.getresponse()
+        if response.status == 204:
+            return {"status": 204, "value": {}}
         if response.getheader("Content-Encoding", "identity") != "identity":
             raise ValueError("encoded response is not supported")
         if response.getheader("Content-Type", "").split(";", 1)[0].lower() != "application/json":
@@ -144,20 +185,25 @@ def exchange(job: WireJob):
                 raise ValueError("response byte limit")
             if not chunk:
                 break
-        if job.token and job.token.encode() in data:
+        protected = (*job.sensitive, *((job.token,) if job.token else ()))
+        if any(value.encode() in data for value in protected):
             raise ValueError("credential echoed by destination")
         value = bounded_json(bytes(data), max_bytes=MAX_BODY_BYTES)
         if not isinstance(value, dict):
             raise ValueError("response envelope required")
+        if contains_sensitive(value, protected):
+            raise ValueError("credential echoed by destination")
         return {"status": response.status, "value": value}
     finally:
         connection.close()
 
 
-def request(origin, method, path, *, policy=None, body=None, token=None):
+def request(origin, method, path, *, policy=None, body=None, token=None,
+            credential_header="bearer", encoding="json", sensitive=()):
     """One attempt, with a hard process deadline that also contains DNS stalls."""
     job = WireJob(origin=origin, policy=policy or EgressPolicy(), method=method, path=path,
-                  body=body, token=token)
+                  body=body, token=token, credential_header=credential_header,
+                  encoding=encoding, sensitive=sensitive)
     encoded = canonical_json(job)
     if len(encoded) > MAX_JOB_BYTES:
         raise ValueError("network request byte limit")
