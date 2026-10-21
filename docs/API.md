@@ -166,7 +166,12 @@ not enable execution. The supplied executor supports simulated adapters and a se
 [HTTPS receiver with scoped credentials](ADAPTERS.md).
 
 Source writes contain `project` and a required `expected_head` (null for a new
-shop). Build requests contain `shop_id`, an exact source `revision`, and a
+shop). Optional `project.assets` entries contain `path` and canonical standard
+`content_base64`. Source files and assets share a 128-entry limit; each asset has
+at most 1 MiB decoded bytes and the whole serialized project remains bounded to
+2 MiB. Assets require source permissions and are not public downloads. See
+[project assets](AUTHORING.md#private-project-assets).
+Build requests contain `shop_id`, an exact source `revision`, and a
 `request_key`. Retrying the same key, identity, shop, and revision returns the
 same build; reusing the key for another revision returns 409. The response is
 202 and the queued job is polled through build inspection.

@@ -58,6 +58,10 @@ Create a new shop using `chipload.project.SourceProject` and `SourceFile`, then
 business/technical acceptance cases in Python; [the authoring guide](AUTHORING.md)
 and [process examples](PROCESS_EXAMPLES.md) document those contracts. Helper
 modules for the automation itself go in `files` as `{path, content}` records.
+Versioned shop projects may also contain [private assets](AUTHORING.md#private-project-assets)
+as `SourceAsset` objects. Python can construct their bytes or inspect a saved
+project's canonical base64 data; the shop's build and assessment workers receive
+the complete bundle. No new MCP tool is needed.
 The installed environment includes Chipload and its locked dependencies, plus
 any [operator-provisioned shop libraries](DEPENDENCIES.md). Source projects can
 pin that environment with `dependencies_sha256`. The database-backed SDK service

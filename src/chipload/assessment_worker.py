@@ -12,16 +12,14 @@ from .assessment_model import AssessmentWork
 from .check_worker import invoke_checks
 from .limits import MAX_JSON_BYTES, bounded_json
 from .model import Shop
+from .source_worker import materialize
 
 
 def main():
     work = AssessmentWork.model_validate(bounded_json(sys.stdin.buffer.read(MAX_JSON_BYTES + 1)))
     with tempfile.TemporaryDirectory(prefix="chipload-assessment-") as directory:
         root = Path(directory)
-        for file in work.project.files:
-            path = root / file.path
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(file.content, encoding="utf-8")
+        materialize(work.project, root)
         sys.path.insert(0, str(root))
         with contextlib.redirect_stdout(sys.stderr):
             module, function = work.project.entrypoint.split(":")

@@ -30,6 +30,7 @@ Chipload is becoming a platform for software-defined shops. Read [ROADMAP.md](RO
 - `tests/test_process_shops.py`, `test_process_transports.py`, `test_process_worker_live.py`: complete process/business matrix, REST/MCP parity for every example, and opt-in isolated builds of all exported projects.
 - `tests/test_domain.py`, `tests/test_abstract_engine.py`, `tests/test_variable_query.py`: domain, artifact, privacy, abstraction, contextual policy, and example acceptance tests.
 - `src/chipload/project.py`, `lifecycle.py`, `access.py`: source bundles, durable revisions/builds/publications, and shop/action permission checks.
+- `src/chipload/source_worker.py`, `examples/asset_shop.py`, `tests/test_project_assets*.py`: private binary assets in versioned source. Preserve canonical encoding, shared path/count/size limits and text-only revision identities. Materialize only in source containers; the API and broker never parse asset formats.
 - `src/chipload/sandbox.py`, `worker.py`: trusted Docker broker and disposable source worker; the broker revalidates returned data.
 - `src/chipload/containers.py`, `tests/test_container_cleanup.py`: shared bounded cleanup of build and Python containers. A missing reply is not confirmed removal; failed cleanup retains running capacity and report reservations until recovery succeeds.
 - `src/chipload/launches.py`, `tests/test_launches.py`: durable container-creation intent, current-claim checks, one attempt per name, and recovery of delayed creation. Preserve unresolved intent across expiry, migration and restart; absence alone cannot resolve a pending Docker request.
@@ -212,3 +213,5 @@ Keep each change focused on its issue or authorized roadmap task. Do not add gen
 For assessment changes, run the focused and live assessment tests plus the program, SDK service, worker, agent lifecycle and runtime suites. Schema changes require recovery checks. Rebuild images before live tests and keep source fingerprints fixed while they run.
 
 For external observation or ERP mapping changes, run `examples.erp_shop`, `test_erp_interop.py`, and `test_erp_interop_live.py` with `CHIPLOAD_WORKER_TESTS=1`. Rebuild the worker after SDK changes. Verify original source times, exact retries, merge conflicts, private references and an unchanged upstream record. Simulation is not vendor connector qualification.
+
+For project asset changes, run `test_project_assets.py` and `test_project_assets_live.py` with the worker flag, plus source-worker and assessment checks. Verify arbitrary bytes, canonical identities, private source access, limits, fresh-directory writes and assessments after asset update/rollback. Export the fixture with `uv run python -m examples.asset_shop`; its mesh and business policies are simulated.

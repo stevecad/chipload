@@ -12,6 +12,7 @@ from pydantic import ValidationError
 from .check_worker import CheckExecutionError, run_checks
 from .model import Shop
 from .project import MAX_PROJECT_BYTES, SourceProject, unique_json
+from .source_worker import materialize
 from .validation import validate_shop
 
 
@@ -23,10 +24,7 @@ def main() -> None:
         project = SourceProject.model_validate(unique_json(data))
         with tempfile.TemporaryDirectory(prefix="chipload-source-") as directory:
             root = Path(directory)
-            for file in project.files:
-                target = root / file.path
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text(file.content, encoding="utf-8")
+            materialize(project, root)
             sys.path.insert(0, str(root))
             module, function = project.entrypoint.split(":")
             # Source output is a private diagnostic stream, not the result protocol.

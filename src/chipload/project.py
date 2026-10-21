@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import re
 from pathlib import PurePosixPath
 from typing import Annotated, Literal, Self
@@ -18,6 +20,17 @@ from .validation import Diagnostic
 
 MAX_PROJECT_BYTES = 2 * 1024 * 1024
 MAX_OUTPUT_BYTES = 8 * 1024 * 1024
+MAX_ASSET_BYTES = 1024 * 1024
+
+
+def _safe_path(path: str) -> None:
+    parts = path.split("/")
+    if (
+        len(parts) > 8
+        or any(not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]*", p) for p in parts)
+        or parts[0].casefold() in {"chipload", "chipload.py"}
+    ):
+        raise ValueError("use a relative project path with safe names outside the chipload package")
 
 
 class SourceFile(Model):
@@ -26,19 +39,42 @@ class SourceFile(Model):
 
     @model_validator(mode="after")
     def safe_path(self) -> Self:
-        parts = self.path.split("/")
-        if (
-            len(parts) > 8
-            or any(not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]*", p) for p in parts)
-            or PurePosixPath(self.path).suffix not in {".py", ".json", ".toml", ".txt", ".md"}
-            or parts[0] in {"chipload", "chipload.py"}
-        ):
-            raise ValueError(
-                "use a relative project path with safe names and a supported text suffix"
-            )
+        _safe_path(self.path)
+        if PurePosixPath(self.path).suffix not in {".py", ".json", ".toml", ".txt", ".md"}:
+            raise ValueError("use a supported text suffix")
         if "\0" in self.content:
             raise ValueError("source files cannot contain NUL")
         return self
+
+
+class SourceAsset(Model):
+    """Opaque private bytes, materialized only inside a source worker."""
+
+    path: Annotated[StrictStr, Field(min_length=1, max_length=200)]
+    content_base64: Annotated[StrictStr, Field(max_length=4 * ((MAX_ASSET_BYTES + 2) // 3))]
+
+    @model_validator(mode="after")
+    def valid_asset(self) -> Self:
+        _safe_path(self.path)
+        self.read_bytes()
+        return self
+
+    def read_bytes(self) -> bytes:
+        try:
+            content = base64.b64decode(self.content_base64, validate=True)
+        except (ValueError, binascii.Error):
+            raise ValueError("asset content must be canonical standard base64") from None
+        if len(content) > MAX_ASSET_BYTES:
+            raise ValueError("asset exceeds the decoded size limit")
+        if base64.b64encode(content).decode("ascii") != self.content_base64:
+            raise ValueError("asset content must be canonical standard base64")
+        return content
+
+    @classmethod
+    def from_bytes(cls, *, path: str, content: bytes) -> SourceAsset:
+        if not isinstance(content, bytes) or len(content) > MAX_ASSET_BYTES:
+            raise ValueError("asset content must be bytes within the decoded size limit")
+        return cls(path=path, content_base64=base64.b64encode(content).decode("ascii"))
 
 
 class AcceptanceCase(Model):
@@ -61,12 +97,19 @@ class SourceProject(Model):
     tests: Annotated[tuple[AcceptanceCase, ...], Field(max_length=100)] = ()
     # Omit an absent pin to preserve existing source bytes and revision IDs.
     dependencies_sha256: Digest | None = Field(default=None, exclude_if=lambda value: value is None)
+    # Existing text-only projects retain their canonical bytes and revision IDs.
+    assets: Annotated[tuple[SourceAsset, ...], Field(max_length=128)] = Field(
+        default=(), exclude_if=lambda value: not value
+    )
 
     @model_validator(mode="after")
     def bounded_unique_project(self) -> Self:
-        paths = {f.path for f in self.files}
-        if len(paths) != len(self.files):
-            raise ValueError("source paths must be unique")
+        entries = (*self.files, *self.assets)
+        if len(entries) > 128:
+            raise ValueError("project exceeds the combined file and asset count limit")
+        paths = {f.path for f in entries}
+        if len(paths) != len(entries):
+            raise ValueError("project paths must be unique")
         # Files cannot also be ancestor directories, even on a case-insensitive client.
         folded = {p.casefold() for p in paths}
         if len(folded) != len(paths):
@@ -75,7 +118,8 @@ class SourceProject(Model):
             if any(str(parent) in folded for parent in PurePosixPath(path).parents):
                 raise ValueError("a source file cannot also be a directory")
         module = self.entrypoint.split(":")[0].replace(".", "/")
-        if f"{module}.py" not in paths and f"{module}/__init__.py" not in paths:
+        source_paths = {f.path for f in self.files}
+        if f"{module}.py" not in source_paths and f"{module}/__init__.py" not in source_paths:
             raise ValueError("entrypoint module must be supplied in the project")
         if len({case.id for case in self.tests}) != len(self.tests):
             raise ValueError("test identifiers must be unique")
@@ -85,7 +129,10 @@ class SourceProject(Model):
 
     def to_json(self) -> bytes:
         return canonical_json(
-            self.model_copy(update={"files": tuple(sorted(self.files, key=lambda f: f.path))})
+            self.model_copy(update={
+                "files": tuple(sorted(self.files, key=lambda f: f.path)),
+                "assets": tuple(sorted(self.assets, key=lambda f: f.path)),
+            })
         )
 
     @property

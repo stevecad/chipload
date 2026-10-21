@@ -79,23 +79,28 @@ Rollback targets must have been published previously.
 
 ## Project and build contracts
 
-`SourceProject` contains a shop ID, `module:function` entrypoint, text files, and
-declarative acceptance cases. The zero-argument function returns a `Shop`.
+`SourceProject` contains a shop ID, `module:function` entrypoint, text files,
+optional private assets, and declarative acceptance cases. The zero-argument function returns a `Shop`.
 Ordinary imports, modules, functions, and data files work inside the project.
 Paths must be relative, cannot traverse directories or shadow the `chipload`
-package, and cannot collide with other files. The bundle supports `.py`, `.json`,
-`.toml`, `.txt`, and `.md` files. Binary assets are not supported yet.
+package (including case variants), and cannot collide with other files or assets.
+Text files support `.py`, `.json`, `.toml`, `.txt`, and `.md` suffixes. Assets
+carry arbitrary bytes under the same path rules; the entrypoint and declared
+Python check modules must still be supplied as text source files.
 
-Limits are 128 files, 128 KiB of characters per file, eight path components,
+Limits are 128 files and assets combined, 128 KiB of characters per text file,
+1 MiB of decoded bytes per asset, eight path components,
 100 acceptance cases, and 2 MiB for the complete serialized bundle. The total
 byte limit also bounds multibyte text. Each case specifies an evaluation request,
 time, observations, expected outcome, and optional required reason codes.
 Passing these cases establishes conformance to the shop's assertions, not
 independent physical qualification.
 
-Source identity includes files, entrypoint, shop ID, acceptance cases, and any
+Source identity includes files, assets, entrypoint, shop ID, acceptance cases, and any
 explicit dependency pin.
-File ordering does not affect it. Build identity additionally records the SDK,
+File/asset ordering does not affect it. Text-only projects omit the empty asset
+collection and retain their earlier canonical bytes and source revisions.
+Build identity additionally records the SDK,
 dependency lock, Python version, and immutable worker image. The broker rejects
 a worker whose SDK fingerprint differs from its own; rebuild the image after
 SDK or broker source changes.
@@ -110,6 +115,65 @@ domain results from bounded function answers and the validated model; private
 case reports retain exact build/query/time bindings. Every function needs a case.
 Use [queued assessments](ASSESSMENTS.md) for on-demand REST/MCP queries. Published
 data queries do not reuse acceptance-test results or import source into the API.
+
+### Private project assets
+
+Add geometry, reference tables or other data through `SourceAsset`:
+
+```python
+from pathlib import Path
+from chipload.project import SourceAsset
+
+fixture = SourceAsset.from_bytes(
+    path="data/fixture.stl", content=Path("fixture.stl").read_bytes()
+)
+# Include fixture in SourceProject(..., assets=(fixture,)).
+```
+
+The REST representation is `{"path":"data/fixture.stl","content_base64":"..."}`
+inside `project.assets`. Encoding must be canonical standard base64 with padding
+and no whitespace. Base64 overhead counts toward the existing 2 MiB serialized
+project limit and source-storage quotas. A malformed encoding or conflicting
+path is rejected before a build. Asset filenames may have any suffix; Chipload
+does not infer their format from the name.
+
+Build and assessment workers write the complete bundle into a fresh private
+directory before importing source. Shop code can read assets relative to
+`Path(__file__).parent`. Archives stay opaque bytes: Chipload does not extract
+them, fetch URLs, or parse geometry in the API or broker. A shop's format parser
+runs with the source container's resource and isolation limits.
+
+Assets travel with immutable source revisions. Publishing and rolling back a
+build selects those exact bytes for later assessments, even when the draft head
+has changed. Source reads require `source:read`; public discovery exposes only
+the published model's explicit projection. Assets are not separately served as
+public downloads. Hosted Python programs can author and inspect bundles through
+the existing SDK; their own `files` parameter still contains text helpers.
+The Python run request/result limits still apply. A program can generate a large
+asset, save it through the SDK and return a small revision/hash result; submitting
+an entire bundle in a run's `inputs` must fit that run's smaller request limit.
+Ordinary REST source writes accept the complete bounded project directly.
+
+The [fixture asset example](../examples/asset_shop.py) exports a binary STL mesh
+with explicit unit metadata. It combines an envelope/clearance check with
+prototype terms, whole-quantity limits and drawing approval. Its eight cases
+exercise all four outcomes. The mesh describes simulated rectangular available
+space; its bounding box does not prove arbitrary fixture fit or machining
+qualification.
+
+```sh
+./scripts/build-worker
+uv run python -m examples.asset_shop > .local/fixture-project.json
+uv run python -m chipload.local save .local/fixture-project.json
+# Use the returned revision with the build/publish commands above.
+CHIPLOAD_WORKER_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_project_assets_live.py' -v
+```
+
+Rebuild worker and runtime images before using this SDK change. Existing
+text-only source revisions keep their identity; servers predating asset support
+cannot read a project containing assets. The database schema is unchanged.
+
+### Worker result validation
 
 Source may fabricate output or modify its own Python process. The broker treats
 all worker output as untrusted: it validates the returned model and references,

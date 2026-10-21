@@ -10,6 +10,11 @@ The shop authoring SDK and initial runtime use Python. A documented REST API let
 additional Python libraries. The CadQuery example derives a fixture envelope
 from code and combines geometric fit with business conditions.
 
+[Private project assets](docs/AUTHORING.md#private-project-assets) keep geometry
+and reference data with the Python source. Builds and queued assessments read
+the exact published bytes; the fixture example combines binary geometry with
+technical and business checks.
+
 [Alternative offers](docs/SHOP_MODEL.md#alternative-routes) group different
 capabilities or workflows under one discoverable service. Each route retains
 its technical limits, business conditions, evidence and freshness.

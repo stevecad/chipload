@@ -157,7 +157,15 @@ Preserve the useful v0.1 invariants: permanent IDs, explicit units and timestamp
 
 ### 3. Implement the authoring and publication lifecycle
 
-**Status:** The local service, operator CLI, SDK schema reference, revision/publication guards, container broker, diagnostics, acceptance cases, rollback, withdrawal, and expired-job recovery are implemented and tested. REST/MCP and verified remote identities now expose the lifecycle; the queue process supervises local jobs. See `docs/AUTHORING.md` and `docs/API.md`. Operator-built hash-pinned libraries, source dependency pins, and separate shop/core interpreters now support additional Python dependencies. The CadQuery fixture example includes technical and business acceptance cases; see `docs/DEPENDENCIES.md`. Binary project assets and production supervision remain; this milestone is not yet complete.
+**Status:** The local service, operator CLI, SDK schema reference, revision/publication guards, container broker, diagnostics, acceptance cases, rollback, withdrawal, and expired-job recovery are implemented and tested. REST/MCP and verified remote identities now expose the lifecycle; the queue process supervises local jobs. See `docs/AUTHORING.md` and `docs/API.md`. Operator-built hash-pinned libraries, source dependency pins, and separate shop/core interpreters now support additional Python dependencies. The CadQuery fixture example includes technical and business acceptance cases; see `docs/DEPENDENCIES.md`. Production supervision qualification remains; this milestone is not yet complete.
+
+Private binary assets now travel with source revisions under shared path, count
+and serialized-size limits. Builds and queued assessments materialize the exact
+bundle in their source containers; the API and broker do not parse asset formats.
+The fixture example combines binary geometry, explicit units and business rules.
+Live checks cover source permissions, reproducible builds, maximum-size assets,
+updated geometry, failed builds and assessments after rollback while the draft
+head retains newer assets. See [project assets](docs/AUTHORING.md#private-project-assets).
 
 Implement source storage and revision guards; SDK reference access; isolated, bounded build jobs; build diagnostics; model inspection; shop tests; immutable artifacts; and atomic publication of an exact revision. Include update, withdrawal, and rollback behavior. Keep publication authorization independent from source editing.
 

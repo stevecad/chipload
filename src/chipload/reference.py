@@ -15,7 +15,7 @@ from .limits import (
     MAX_WORKFLOW_STATE,
 )
 from .model import UNITS, Shop
-from .project import SourceProject
+from .project import MAX_ASSET_BYTES, MAX_PROJECT_BYTES, SourceProject
 from .query import VariableQuery
 
 
@@ -45,6 +45,9 @@ def sdk_reference() -> dict:
             for name, unit in UNITS.items()
         },
         "limits": {
+            "project_serialized_bytes": MAX_PROJECT_BYTES,
+            "project_asset_decoded_bytes": MAX_ASSET_BYTES,
+            "project_files_and_assets": 128,
             "json_depth": MAX_JSON_DEPTH,
             "json_structural_tokens": MAX_JSON_TOKENS,
             "model_structural_tokens": MAX_MODEL_TOKENS,
@@ -68,6 +71,7 @@ def sdk_reference() -> dict:
             "Save, build, test, and publish are separate actions.",
             "Publication requires a successful build with at least one acceptance case.",
             "Source runs in an operator-provisioned environment with pinned dependencies.",
+            "SourceProject.assets holds private base64 bytes alongside text files. Assets are versioned and materialized in source workers; Chipload does not fetch, extract or parse their formats.",
             "PythonCheck functions consume declared facts and return supported, unsupported, conditional or unknown. A conditional result requires a declared remedy.",
             "Use shop.assess with a published revision and stable request key to run Python constraints. Read or cancel that assessment in a subsequent run; it shares Python queue capacity.",
             "Assessment receipts describe their evaluation time. Changed publication, observations or revocations supersede the receipt; submit a new key for a fresh query.",
