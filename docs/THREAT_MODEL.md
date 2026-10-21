@@ -117,7 +117,7 @@ revocations recorded after that snapshot.
 - Qualify actual vendor receivers and external systems, including ambiguous
   effects, receiver persistence and recovery. The test receiver and simulator are
   evidence of protocol behavior, not qualification of a shop or machine.
-- Complete retention/storage policy, operator lifecycle, emergency signing-key revocation,
+- Complete retention/storage policy, operator lifecycle, coordinated incident response,
   monitoring, off-host restores and external-secret recovery. Agent-secret
   rotation does not revoke already-issued access tokens.
 - Qualify the [ACME issuer](ACME.md) against the selected public provider and DNS
@@ -147,7 +147,12 @@ synchronization; this is not automatic JWKS refresh or emergency key revocation.
 
 The supplied deployment supports managed RS256 signing-key rotation with a
 recorded overlap and separate retirement, including cache clearing and encrypted
-recovery. See [credential operations](CREDENTIALS.md). It does not manage
+recovery. An explicit early-revocation command requires the recorded previous
+key ID and a verified replacement, confirms the API is stopped before disabling
+the key, and preserves its retry intent across lost responses. The live signing
+drill verifies rejection of an unexpired old token and preservation after restore.
+OpenBao trust, other clients' caches and already-admitted work still require
+separate incident actions. See [credential operations](CREDENTIALS.md). It does not manage
 master-realm keys or prove every offline client refreshed before retirement.
 
 See [service workers](SERVICE_WORKERS.md), [application packaging](RUNTIME.md),

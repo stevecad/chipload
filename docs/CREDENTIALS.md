@@ -178,8 +178,67 @@ against the recorded provider and key IDs; resume does not generate another key.
 The retention interval cannot be shortened during resume. Backups preserve
 `signing.json` and the actual Keycloak keys; a retired provider stays absent after
 restore. Earlier backups can contain earlier keys, so coordinate their retention
-and access with incident recovery. This helper's timed retirement is not an
-emergency compromised-key revocation procedure.
+and access with incident recovery. Use the explicit early-revocation command
+below when the recorded previous key must lose trust before that deadline.
+
+## Revoke a previous signing key early
+
+After a replacement key has been activated and verified, the operator can revoke
+the exact previous key without waiting for its retention deadline:
+
+```sh
+uv run --extra server python scripts/tls-credentials --state .local/tls \
+  --key-id PREVIOUS_KEY_ID revoke-signing
+```
+
+Read `old_kid` from the protected `signing.json` receipt and verify it against your
+incident's trusted key inventory. The command requires that exact ID, an intact
+overlap receipt, the recorded active replacement and a passive previous provider.
+It refuses the active replacement or an unrelated key. `retire-signing` keeps its
+normal deadline; changing `--retain-days` cannot shorten an existing overlap.
+
+The helper records its intent before changing services, stops the API and
+confirms it is stopped, then disables the previous Keycloak provider. This removes
+the API process that may have cached the compromised public key. After disabling
+the provider, the helper recreates the API, verifies fresh-token authentication
+with unchanged grants and the old key's absence from JWKS, then deletes the old
+provider. Public discovery and authenticated API calls are interrupted during
+this cutover. Other realm clients must refresh their own verification-key caches.
+
+If the disable response is lost, the API stays stopped. Keep the journal and run
+the ordinary `resume` command, without `--key-id`. Resume uses the recorded ID and
+does not generate another signing key or restart the retention interval. Startup
+and backup remain blocked while the journal exists. If stopping the API cannot
+be confirmed, the helper refuses to disable a provider and reports the failure;
+it has not established containment. Operator changes outside the deployment lock
+must remain suspended throughout the cutover.
+
+The completed `signing.json` keeps status `retired` and adds `revocation` with the
+exact `key_id`, `requested_at` and `completed_at` timestamps. `credentials.json`
+records kind `signing-revoke`. Encrypted backups preserve both the receipt and
+the Keycloak database with the provider removed. A backup predating revocation
+can restore the compromised key; reconcile incident history before exposure.
+
+For a compromise of the currently active key, first isolate public client traffic
+using the deployment's network controls while retaining operator access. Prepare
+a verified replacement with `rotate-signing`, then revoke its recorded previous
+key. If an earlier rotation is still in overlap, resolve that previous key first
+with its exact ID, then rotate and revoke the affected active key. Keep public
+access contained during the sequence. This helper does not coordinate that
+network containment or determine which key was compromised.
+
+OpenBao's pinned JWT keys remain a separate trust store. Obtain an independent,
+usable OpenBao administrative token and run
+[key synchronization](SECRETS.md#synchronize-signing-keys) after activation and
+again after revocation. Until synchronization removes the old key, OpenBao still
+trusts it. Existing OpenBao tokens retain their own lifetime and policy; review
+and revoke affected tokens or grants through OpenBao incident procedures.
+Do not treat Chipload's successful revocation receipt as revocation everywhere.
+
+Already-admitted Python/build/operation jobs and completed effects are not undone
+by key revocation. Review and contain suspected jobs and external effects
+separately. A compromised host, Keycloak administrator or master-realm key also
+requires broader recovery than this Chipload-realm command provides.
 
 ## Verify
 
@@ -195,11 +254,18 @@ preservation, and cross-shop denial. It then backs up and restores the rotated
 deployment and checks the new credentials and signing keys again. Tests use
 temporary state and remove only their own containers and volumes.
 
-The signing drill loses a provider-creation response, verifies both generations
-of tokens and cross-shop denial during overlap, rejects premature retirement,
-and loses the disable response. It advances only the operator retention clock
+The scheduled-retirement drill loses a provider-creation response, verifies both
+generations of tokens and cross-shop denial during overlap, rejects premature
+retirement, and loses the disable response. It advances only the operator retention clock
 to exercise retirement while the original JWT is still unexpired. Actual API
 rejection then proves key removal rather than token expiry. It backs up and
 restores the identity database and retirement receipt, checking that the old key
 remains absent. Unit checks cover activation/passivation/deletion interruptions,
 changed-provider refusal, retention, and bounded verifier-cache behavior.
+
+The emergency drill uses the real retention clock, rejects a wrong target ID,
+loses the provider-disable response and confirms the API is actually stopped.
+After resume, the previously accepted, still-unexpired token is rejected and a
+new token keeps the original grants. Backup/restore preserves the revocation
+receipt and the key's absence. This verifies the supplied Keycloak/Chipload stack;
+it does not exercise other clients' caches or a coordinated OpenBao incident.

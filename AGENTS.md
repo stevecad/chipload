@@ -195,6 +195,10 @@ For OpenBao deployment/recovery changes, also run `test_secrets_stack.py`, `test
 For credential changes, also run `test_credentials.py` and `CHIPLOAD_CREDENTIAL_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_credentials_live.py' -v`. Exercise lost responses after remote commits, retry, unchanged effective grants, old-secret rejection, and backup/restore with rotated credentials. Keep the checkout and image references fixed throughout live checks.
 
 For signing-key changes, additionally run `test_signing.py`, `test_auth.py`, and `test_signing_live.py` with the credential flag. Check overlap with distinct real keys, premature-retirement refusal, interrupted remote changes, API cache clearing, and restored JWKS/receipts. Never treat expired-token rejection as proof that a key was retired.
+Early revocation must name the exact recorded previous key and confirm the API
+is stopped before disabling it. Preserve that intent across lost replies;
+`resume` must not accept a different key ID. Verify still-unexpired old tokens
+fail after recovery, and keep OpenBao's separate pinned trust explicit.
 
 For operation contracts, permissions, dispatch, or adapter changes, run `test_execution.py`, `test_execution_transports.py`, and `CHIPLOAD_OPERATION_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_execution_live.py' -v`. Build worker/runtime/TLS images first. Test actual lost completion, exact retries, cancellation races, stale preconditions, resource exclusion, and REST/MCP permission parity; invalid output or uncertainty must never be reported as successful physical work.
 

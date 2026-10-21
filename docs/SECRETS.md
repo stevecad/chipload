@@ -234,6 +234,9 @@ independent OpenBao emergency procedure; deleting journals cannot restore access
 An interrupted sync can use a completed grant for login once OpenBao has accepted
 the pending keys. The helper refuses unexpected client or trust configuration
 drift. Coordinate with [realm signing operations](CREDENTIALS.md#rotate-the-realm-signing-key).
+An [early key revocation](CREDENTIALS.md#revoke-a-previous-signing-key-early) also
+requires this synchronization. The Keycloak helper does not change OpenBao's
+pinned trust or invalidate already-issued OpenBao tokens.
 
 ## Managed adapter credentials
 

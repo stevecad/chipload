@@ -12,7 +12,7 @@ PROVIDERS = REALM + "/components"
 CERTS = "/realms/chipload/protocol/openid-connect/certs"
 TYPE = "org.keycloak.keys.KeyProvider"
 RECEIPT = "signing.json"
-KINDS = {"signing", "signing-retire"}
+KINDS = {"signing", "signing-retire", "signing-revoke"}
 
 
 def now():
@@ -94,14 +94,20 @@ class Rotation:
             raise self.h.CredentialError("invalid signing rotation receipt")
         return record
 
-    def prepare(self, kind, retain_days):
-        if kind == "signing-retire":
+    def prepare(self, kind, retain_days, *, key_id=None):
+        if kind in {"signing-retire", "signing-revoke"}:
             record = self.receipt()
-            if record["status"] != "overlap" or now() < record["retire_after"]:
+            if record["status"] != "overlap":
+                raise self.h.CredentialError("a verified replacement and pending previous key are required")
+            if kind == "signing-retire" and now() < record["retire_after"]:
                 raise self.h.CredentialError("previous signing key is not due for retirement")
+            if kind == "signing-revoke" and (not key_id or key_id != record["old_kid"]):
+                raise self.h.CredentialError("key ID must match the recorded previous signing key")
             self.verify_keys(record, old_required=True)
             if self.checked(record["old"])["config"].get("active", ["true"]) != ["false"]:
                 raise self.h.CredentialError("previous signing provider is no longer passive")
+            if kind == "signing-revoke":
+                record["revocation"] = {"key_id": key_id, "requested_at": now()}
             return {"signing": record, "phase": "retire"}
         if type(retain_days) is not int or not 1 <= retain_days <= 365:
             raise self.h.CredentialError("signing retention must be 1–365 days")
@@ -231,6 +237,13 @@ class Rotation:
         record = journal["signing"]
         if journal["phase"] not in {"retire", "disabled", "delete"}:
             raise self.h.CredentialError("invalid signing retirement phase")
+        emergency = journal["kind"] == "signing-revoke"
+        intent = record.get("revocation")
+        if emergency and (
+            not isinstance(intent, dict) or intent.get("key_id") != record["old_kid"]
+            or type(intent.get("requested_at")) is not int
+        ):
+            raise self.h.CredentialError("invalid signing revocation intent")
         self.verify_keys(record, old_required=False)
         old = self.checked(record["old"], missing=journal["phase"] == "delete")
         if old is not None:
@@ -245,6 +258,15 @@ class Rotation:
         if journal["phase"] == "retire":
             if self.key(record["old"]["id"])["kid"] != record["old_kid"]:
                 raise self.h.CredentialError("previous signing key changed")
+            if emergency:
+                # Discard the API's cached key before mutating Keycloak. A lost
+                # disable response must leave authentication stopped until resume.
+                self.h.recovery.compose(command, environment, "stop", "--timeout", "20", "api")
+                apis = [c for c in self.h.recovery.records("container", self.values["name"])
+                        if c["Config"]["Labels"].get("com.docker.compose.service") == "api"]
+                if len(apis) != 1 or any(apis[0]["State"].get(flag, True)
+                                         for flag in ("Running", "Paused", "Restarting")):
+                    raise self.h.CredentialError("API stop must be confirmed before signing revocation")
             self.set_flags(record["old"], active=False, enabled=False)
             journal["phase"] = "disabled"
             self.save(journal)
@@ -274,4 +296,6 @@ class Rotation:
         self.verify_keys(record, old_required=False)
         self.verify_agent(journal)
         record.update(status="retired", retired_at=now())
+        if emergency:
+            record["revocation"]["completed_at"] = record["retired_at"]
         self.h.archive.replace_json(self.state / RECEIPT, record)

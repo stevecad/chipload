@@ -17,6 +17,10 @@ The identity database preserves active and retained verification keys; a retired
 provider stays deleted after restoration from a later backup. Backups reject
 unfinished [credential rotations](CREDENTIALS.md); finish the pending cutover
 before taking a new recovery set.
+Early signing-key revocation receipts are preserved too. Restore a backup from
+after revocation when possible; an older identity database can restore a
+compromised signing key. Reconcile incident history and external trust stores
+before exposing a restored deployment.
 
 Backups also reject unfinished [OpenBao operator identity changes](SECRETS.md#keycloak-operator-login).
 The Keycloak database holds those users, clients and role assignments; their

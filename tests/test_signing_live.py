@@ -23,6 +23,12 @@ from credentials_support import credentials as script
 )
 class SigningLiveTests(unittest.TestCase):
     def test_rotation_overlap_retirement_interrupted_responses_and_restore(self):
+        self.exercise(emergency=False)
+
+    def test_emergency_revocation_stops_cached_api_and_survives_restore(self):
+        self.exercise(emergency=True)
+
+    def exercise(self, *, emergency):
         with tempfile.TemporaryDirectory(prefix="chipload-signing-test-") as temporary:
             root = Path(temporary)
             state, restored = root / "state", root / "restored"
@@ -125,12 +131,27 @@ class SigningLiveTests(unittest.TestCase):
                         raise OSError("lost signing disable response")
                     return result
 
-                # Advance only the operator retention clock. Real tokens are
-                # still unexpired, so rejection proves key removal, not expiry.
-                with patch.object(script.signing, "now", return_value=record["retire_after"]):
+                if emergency:
+                    # A replacement or unrelated key cannot be selected by mistake.
+                    run(*cli("tls-credentials"), "--key-id", record["new_kid"], "revoke-signing", expected=1)
+                    self.assertFalse((state / script.MARKER).exists())
+                    self.assertLess(script.signing.now(), record["retire_after"])
                     with patch.object(script, "request", side_effect=lose_disable):
                         with self.assertRaisesRegex(OSError, "lost signing"):
-                            script.rotate(state, "signing-retire")
+                            script.rotate(state, "signing-revoke", key_id=record["old_kid"])
+                    apis = [c for c in script.recovery.records("container", names[0])
+                            if c["Config"]["Labels"].get("com.docker.compose.service") == "api"]
+                    self.assertEqual(len(apis), 1)
+                    self.assertFalse(apis[0]["State"]["Running"])
+                    run(*cli("tls-stack"), "up", expected=1)
+                    run(*cli("tls-recovery"), "backup", "--key", str(key), "--archive", str(backup), expected=1)
+                else:
+                    # Advance only the operator retention clock. Real tokens
+                    # remain unexpired; rejection proves key removal, not expiry.
+                    with patch.object(script.signing, "now", return_value=record["retire_after"]):
+                        with patch.object(script, "request", side_effect=lose_disable):
+                            with self.assertRaisesRegex(OSError, "lost signing"):
+                                script.rotate(state, "signing-retire")
                 run(*cli("tls-credentials"), "resume")
                 self.assertGreater(
                     jwt.decode(old, options={"verify_signature": False})["exp"],
@@ -145,6 +166,12 @@ class SigningLiveTests(unittest.TestCase):
                 self.assertNotIn(record["old_kid"], {k["kid"] for k in keys["keys"]})
                 receipt = (state / "signing.json").read_bytes()
                 self.assertEqual(json.loads(receipt)["status"], "retired")
+                if emergency:
+                    revocation = json.loads(receipt)["revocation"]
+                    self.assertEqual(revocation["key_id"], record["old_kid"])
+                    self.assertLessEqual(revocation["requested_at"], revocation["completed_at"])
+                    self.assertLess(revocation["completed_at"], record["retire_after"])
+                    self.assertEqual(json.loads((state / "credentials.json").read_bytes())["kind"], "signing-revoke")
                 run(*cli("tls-recovery"), "backup", "--key", str(key), "--archive", str(backup))
                 run(*cli("tls-stack"), "down")
                 run(

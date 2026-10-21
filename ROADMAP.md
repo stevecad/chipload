@@ -39,7 +39,7 @@ Steve integration is planned for a later stage.
 - Revised deployment measurements met the 10-request/s default and invalid-token fixture targets, including concurrent Python authoring and publication/rollback. The default run served all 1,500 scheduled queries with a 56 ms p95 and 158 ms maximum. The capacity probe still delivered about 46 correct results/s against an offered 80, with 39 worker refusals and 2,009 missed slots. See `docs/TLS.md` for raw evidence and qualification limits.
 - A contained executor now supports offline simulators and the bounded `chipload-receiver-1` HTTPS protocol with scoped OpenBao AppRole credentials. Configuration fingerprints pin receiver routes; uncertain work queries durable receipts without repeating commands. See `docs/ADAPTERS.md`. Qualified vendor bridges and internet deployment qualification remain work. Operator-provisioned pinned libraries are described in `docs/DEPENDENCIES.md`.
 - Encrypted recovery now snapshots both shop databases, Keycloak, grants, and TLS/secrets state together. Restore targets fresh state, retains spent request capacity, blocks application startup during interruption, and resumes the same recovery attempt. A live drill checks real identity/signing keys, publication and observation history, REST/MCP discovery, and interruption before backup completion and after identity restore commits. See `docs/RECOVERY.md`; external secrets and off-host disaster recovery remain operational work.
-- Operator credential rotation now journals agent-secret and identity-database password changes, retries the same pending credential, verifies old-credential rejection, and preserves subjects and grants. Realm RS256 rotation records its provider/key IDs, verifies new tokens, preserves the old key during a timed overlap, and retires it through a separate command that clears the API key cache. Signing receipts and keys belong to encrypted recovery. Startup and backups reject unfinished rotations. See `docs/CREDENTIALS.md`; operator-account lifecycle, emergency key revocation, and production OpenBao delivery/rotation remain work.
+- Operator credential rotation now journals agent-secret and identity-database password changes, retries the same pending credential, verifies old-credential rejection, and preserves subjects and grants. Realm RS256 rotation records its provider/key IDs, verifies new tokens, preserves the old key during a timed overlap, and retires it through a separate command that clears the API key cache. Early revocation requires the exact previous key ID and a verified replacement, with an API stop before disabling the key. Signing receipts and keys belong to encrypted recovery. Startup and backups reject unfinished rotations. See `docs/CREDENTIALS.md`; operator-account lifecycle, coordinated incident response, and production OpenBao qualification remain work.
 - No open GitHub issues existed when this plan was written. The milestones below are a local implementation backlog; they have not been published as issues.
 
 The existing Compose configuration is for local development. Completing a local demo will not complete the deployment goal.
@@ -288,7 +288,7 @@ retention remain open. See `docs/ACME.md` and `docs/ACME_RECOVERY.md`.
 Agent-secret and identity-database password rotation now have durable retry,
 old-credential rejection, unchanged-grant checks, and a recovery drill using the
 rotated credentials. Already-issued JWTs retain their normal expiry. Managed
-operator lifecycle and emergency key revocation remain separate work. Per-adapter HTTPS secret delivery is
+operator lifecycle and coordinated incident response remain separate work. Per-adapter HTTPS secret delivery is
 implemented and exercises actual KV and AppRole rotation in the live test.
 
 The separate TLS OpenBao deployment provides encrypted quorum bootstrap and
@@ -310,8 +310,14 @@ Realm signing rotation now preserves an explicitly timed verification overlap,
 records the exact replacement provider, and supports interrupted activation and
 retirement. A live Keycloak drill checks old/new tokens, early-retirement refusal,
 cache clearing, lost responses and encrypted recovery of the resulting keys and
-receipt. This manages the supplied realm's RS256 keys; master-realm keys and
-emergency revocation remain operator lifecycle work.
+receipt. An early-revocation command now names the exact previous key, requires
+a verified replacement and confirms the API is stopped before disabling the old
+provider. Lost-response recovery and encrypted restore preserve its intent and
+receipt; real unexpired tokens verify rejection after the cutover. The active-key
+incident procedure requires containment and a replacement rotation first. This
+manages the supplied realm's RS256 keys; master-realm keys, other clients' caches,
+OpenBao trust synchronization and already-admitted work still require coordinated
+incident actions. See `docs/CREDENTIALS.md`.
 
 Keycloak device login now supplies subject-bound OpenBao operator grants, with
 separate client/audience claims and explicit administrator or named-workload
