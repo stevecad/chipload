@@ -164,6 +164,14 @@ Other clients manage their own JWKS caches. Tokens or sessions still using the
 old key can stop working. A new signing rotation is refused until the recorded
 previous key is retired, keeping outstanding retirement work explicit.
 
+The [OpenBao operator login](SECRETS.md#synchronize-signing-keys) uses pinned public
+keys on its isolated network. Obtain a fresh OpenBao administrator token before
+activating a realm key, then run `secrets-identity sync-keys` while that token is
+valid. Repeat synchronization after retirement. These signing commands do not
+update OpenBao automatically; new-key login fails until synchronization, and a
+retired key remains trusted there until removed. Both backup and credential
+rotation refuse an unfinished secrets-identity change; resume it first.
+
 Both commands use the same private journal, deployment lock and `resume` command
 as credential rotation. Lost create/update/delete responses are reconciled
 against the recorded provider and key IDs; resume does not generate another key.

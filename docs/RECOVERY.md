@@ -12,6 +12,12 @@ provider stays deleted after restoration from a later backup. Backups reject
 unfinished [credential rotations](CREDENTIALS.md); finish the pending cutover
 before taking a new recovery set.
 
+Backups also reject unfinished [OpenBao operator identity changes](SECRETS.md#keycloak-operator-login).
+The Keycloak database holds those users, clients and role assignments; their
+OpenBao policies, JWT trust and local grant receipts live in the separate secrets
+archive. Coordinate both recovery points and reconcile later revocations and key
+changes before restoring operator access.
+
 Recovery sets include schema-7 operation bindings, Python run history, execution history, and
 simulation receipts. Backups reject queued, running, or indeterminate operations.
 Stop new submissions, finish or cancel queued calls, reconcile uncertain outcomes,

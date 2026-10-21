@@ -8,7 +8,7 @@ settings, Docker socket, or PGP private keys.
 
 This single-node deployment includes encrypted offline backup and fresh-directory
 restore. Replacement-host qualification, automatic certificate delivery,
-operator authentication, automatic root-token retirement, and high availability remain
+automatic root-token retirement, and high availability remain
 deployment work. The [shop/Keycloak recovery archive](RECOVERY.md) does not contain
 this separate service.
 
@@ -104,10 +104,136 @@ Verify the workload's permitted read and denied cross-shop reads, writes, lists
 and administration. Then revoke the bootstrap root token through OpenBao
 administration. Do not retain it in an executor credential directory or grant
 operator access to shop code. The workload helper below provisions and rotates
-adapter identities. Operator authentication and root-token retirement still need
-an independent administrative procedure. OpenBao
+adapter identities. The operator login below establishes independent access;
+root-token retirement remains an explicit administration step. OpenBao
 [revokes descendant tokens with their parent](https://openbao.org/docs/internals/token/);
 verify that the replacement operator login survives root retirement.
+
+## Keycloak operator login
+
+`scripts/secrets-identity` connects this OpenBao deployment to the supplied
+[TLS Keycloak deployment](TLS.md). Each grant binds one human user's immutable
+Keycloak subject UUID to either full OpenBao administration or rotation of named
+managed workloads. A dedicated public OAuth client and audience separate these
+tokens from shop-agent access tokens. No secret-administration MCP tool is added.
+These helpers run as the deployment owner. The grants constrain OpenBao API
+access; they do not restrict that owner's separate OS or Docker authority.
+
+Create the human account in the `chipload` realm through Keycloak administration
+and apply your browser authentication/MFA policy there. The helper does not create
+users, enroll MFA, or collect their passwords. For configuration, supply private
+files containing an existing OpenBao administrative token and a Keycloak
+administrative bearer token authorized to manage the realm's clients, client
+roles, scope mappings and user role assignments. An ordinary shop token has
+neither authority. Keep token files and their parent directory owner-only,
+outside both deployment states and every workload credential directory.
+
+For the first grant, use the protected bootstrap root token as the OpenBao
+configuration credential. Replace the subject below with the actual user UUID:
+
+```sh
+uv run --extra server python scripts/secrets-identity \
+  --state .local/secrets --identity-state .local/tls \
+  --operator-token /secure/bootstrap-token --keycloak-token /secure/keycloak-admin-token \
+  grant --name alice-admin --subject USER_UUID --administrator
+uv run --extra server python scripts/secrets-identity \
+  --state .local/secrets --identity-state .local/tls \
+  login --name alice-admin --output /secure/alice-bao-token
+```
+
+Login displays the configured Keycloak verification address and a short code.
+When Keycloak supplies a prefilled verification link, the helper verifies its
+origin, path and code before displaying it. Open that address in a trusted browser,
+check the code and confirm the request you initiated.
+The CLI polls the [device authorization flow](https://www.keycloak.org/securing-apps/oidc-layers),
+verifies the returned JWT locally, and exchanges it with OpenBao. The output file
+must be new and is written with mode 0600; the token itself is never printed.
+`--jwt-file PATH` can supply an already-issued JWT for this dedicated client
+instead. Both paths verify the issuer, audience, subject, client, grant, token
+type and signing key. Password grants, service accounts and implicit login are
+disabled on this client. Browser login uses your configured Keycloak policy.
+
+The Keycloak access token lasts at most two minutes. The resulting OpenBao token
+has one policy, no default or additional identity policies, and a hard five-minute
+maximum lifetime. It is independent of the bootstrap root token. Use it with
+`secrets-workload --operator-token /secure/alice-bao-token`; log in again to a new
+private output file when it expires. Full administration deliberately grants
+OpenBao-wide authority, including secret access and policy changes.
+
+Before retiring root, verify the new operator can authenticate independently and
+perform the needed administration. Configure the official OpenBao CLI's verified
+TLS connection from `secrets-stack status`, authenticate its token helper with
+the bootstrap root token, and run `bao token revoke -self`. Confirm that root
+authentication fails and a fresh Keycloak operator login still works. Remove
+temporary plaintext root material under your custody procedure. The encrypted
+bootstrap packet remains a record of a revoked token; decrypting it does not
+restore access. Keep an independently tested quorum-based emergency procedure.
+
+For a second operator who should rotate only an existing workload, use:
+
+```sh
+uv run --extra server python scripts/secrets-identity \
+  --state .local/secrets --identity-state .local/tls \
+  --operator-token /secure/alice-bao-token --keycloak-token /secure/keycloak-admin-token \
+  grant --name bob-rotation --subject ANOTHER_USER_UUID --workload evidence-adapter
+```
+
+Repeat `--workload` for additional explicitly named workloads. The policy permits
+reading their policy/role configuration and managing their SecretIDs. It denies
+direct KV access, policy writes, role changes and management of other workloads.
+Because the operator can mint credentials for those workloads, they can assume
+their secret-reading authority. Grant rotation access only to someone trusted
+with those particular workload secrets. It does not provision new workloads.
+
+To revoke a grant, use another active administrative grant:
+
+```sh
+uv run --extra server python scripts/secrets-identity \
+  --state .local/secrets --identity-state .local/tls \
+  --operator-token /secure/alice-bao-token --keycloak-token /secure/keycloak-admin-token \
+  revoke --name bob-rotation
+```
+
+Revocation first changes the named OpenBao policy to deny all paths, then removes
+the login role and Keycloak assignment. Already-issued operator tokens lose that
+policy's access without waiting for expiry. Independently issued workload tokens
+or SecretIDs require workload revocation too. Removing a Keycloak assignment
+alone does not revoke existing JWTs or OpenBao tokens. Grant names stay reserved;
+use a new name when replacing a grant. OpenBao-wide administrators can create
+other authority, which must be reviewed separately during offboarding.
+
+Configuration writes matching public-intent journals into both deployments
+before remote changes. If interrupted, retain both directories and run `resume`
+with the same state paths and current administrative token files. Resume reuses
+the recorded client UUID, subject, policy and keys. Existing, unaffected completed
+grants may log in to obtain a fresh administrative token during recovery; the
+grant being changed cannot. Both backup helpers and Keycloak credential rotation
+refuse an unfinished identity change. Normal service startup remains available
+so the authorities can be brought back online for recovery.
+
+### Synchronize signing keys
+
+OpenBao validates locally pinned RS256 public keys through its
+[JWT authentication backend](https://openbao.org/docs/api/auth/jwt/). It stays on
+the isolated adapter network and does not fetch Keycloak JWKS itself. After every
+realm signing-key activation and retirement, explicitly run:
+
+```sh
+uv run --extra server python scripts/secrets-identity \
+  --state .local/secrets --identity-state .local/tls \
+  --operator-token /secure/alice-bao-token --keycloak-token /secure/keycloak-admin-token \
+  sync-keys
+```
+
+Obtain a fresh OpenBao administrative token **before** activating a new Keycloak
+key, then synchronize while that token remains valid. New-key logins fail until
+synchronization. After retirement, synchronization removes the retired key from
+OpenBao trust; existing OpenBao tokens keep their lifetime and policy. If the
+last usable administrator expires before the new trust is installed, use the
+independent OpenBao emergency procedure; deleting journals cannot restore access.
+An interrupted sync can use a completed grant for login once OpenBao has accepted
+the pending keys. The helper refuses unexpected client or trust configuration
+drift. Coordinate with [realm signing operations](CREDENTIALS.md#rotate-the-realm-signing-key).
 
 ## Managed adapter credentials
 
@@ -262,7 +388,7 @@ before backup. The helper removes only its OpenBao container; it cannot establis
 the outcome of a receiver action. Keep a coordinated shop/Keycloak backup and
 external-system recovery records separately. The OpenBao archive contains Raft
 storage, audit files, TLS material, configuration, cluster identity, and the
-encrypted bootstrap packets. It excludes PGP private keys, decrypted shares,
+encrypted bootstrap packets, operator trust and grant receipts. It excludes PGP private keys, decrypted shares,
 external workload credential files, and container diagnostic logs.
 
 Create private backup/key directories outside deployment state. Store a copy of
@@ -311,6 +437,11 @@ returns secrets and policies to the backup time, while receiver credentials,
 external actions and wall-clock expiry remain independent. Do not use a restored
 store as a second active copy of the same authority.
 
+Operator logins also need the matching Keycloak clients, users, assignments and
+signing keys in the separate TLS recovery set. Coordinate both backups and
+review changes made after either checkpoint. A restored revoked grant stays
+revoked; restoring an earlier checkpoint can resurrect earlier authority.
+
 Restore authenticates and validates a private staged copy, then atomically
 installs the complete offline directory. Failure before installation leaves the
 destination absent and can be retried. If completion output is lost after
@@ -327,9 +458,11 @@ replacement-host recovery need operator drills.
 
 ```sh
 ./scripts/build-runtime
+./scripts/build-tls
 CHIPLOAD_SECRETS_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_secrets_stack_live.py' -v
 CHIPLOAD_SECRETS_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_secrets_recovery_live.py' -v
 CHIPLOAD_SECRETS_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_secrets_workload_live.py' -v
+CHIPLOAD_SECRETS_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_secrets_identity_live.py' -v
 ```
 
 The live test creates temporary TLS/PGP material and a fresh private network. It
@@ -354,3 +487,11 @@ retirement, restores an active workload, and revokes both new logins and an
 already-issued token's read access. Ordinary tests cover drift, private paths,
 failed installation, expired pending credentials, missing local files and safe
 diagnostics.
+
+The identity drill uses real browser forms and device-token exchange, rejects
+shop-agent and wrong-subject tokens, retires bootstrap root and rotates a workload
+under a scoped operator grant. It loses client-registration and revocation
+responses, verifies both backup gates, and resumes with a fresh administrator
+login. Actual signing-key activation/retirement requires synchronization; the
+retired-key assertion uses an unexpired JWT. Finally it restores fresh OpenBao
+storage with the original quorum and authenticates again from Keycloak.

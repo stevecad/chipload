@@ -141,6 +141,9 @@ def backup(state, output, key, max_bytes):
     output.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     archive.private(output.parent, directory=True)
     with stack.operation_lock(state):
+        identity_marker = state / ".secrets-identity-incomplete.json"
+        if identity_marker.exists() or identity_marker.is_symlink():
+            raise ValueError("finish the pending secrets identity change before backup")
         stack.require_ready(state)
         command, environment, values = stack.deployment(state, check=True)
         runtime_contract = archive.contract()

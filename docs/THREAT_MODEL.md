@@ -70,7 +70,7 @@ so their trusted implementation must enforce the caller's shop/action grants.
 - Reduce worker-host authority and strengthen isolation for hostile tenants.
   The broker's Docker socket remains a host-level trust dependency. Shop-specific
   dependency installation and custom evaluation environments need their own design.
-- Complete production OpenBao operator authentication,
+- Qualify production OpenBao operator enrollment, MFA and emergency access,
   audit retention and replacement-host recovery. The separate [private secrets
   service](SECRETS.md) now supplies TLS, PGP-encrypted threshold initialization,
   explicit unsealing, audit storage and certificate reload. Its tests verify
@@ -91,8 +91,20 @@ Managed adapter identities now have exact-path policy checks, bounded token TTLs
 journaled issuance/rotation and policy revocation. The workload live drill covers
 lost remote responses, the actual contained client, independent operator-token
 use after root retirement, restored receipts and denial for already-issued
-tokens. Operator login provisioning, renewal scheduling and coordinated receiver
+tokens. Operator enrollment, renewal scheduling and coordinated receiver
 credential changes still require deployment-specific procedures.
+
+OpenBao operator login uses Keycloak browser device authorization, a dedicated
+client/audience, exact subjects and named grants. OpenBao tokens last at most five
+minutes. Full administrators have OpenBao-wide authority; workload rotators can
+mint only their named workload credentials and therefore can assume that
+workload's secret-reading authority. Policy denial revokes existing operator
+tokens' access; it cannot undo independently minted credentials or an
+administrator's other policy changes. Dual configuration journals block backups
+and identity rotation until recovery finishes. `test_secrets_identity_live.py`
+exercises actual login, scoped denials, root retirement, interrupted recovery,
+signing-key synchronization and restored access. Pinned keys require explicit
+synchronization; this is not automatic JWKS refresh or emergency key revocation.
 
 The supplied deployment supports managed RS256 signing-key rotation with a
 recorded overlap and separate retirement, including cache clearing and encrypted
