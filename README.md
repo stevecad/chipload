@@ -21,6 +21,11 @@ its technical limits, business conditions, evidence and freshness.
 
 The API and build broker can run in separate containers with locked dependencies, private persistent storage, and process limits. See [application container setup](docs/RUNTIME.md) or the [TLS gateway and Keycloak stack](docs/TLS.md) for verified HTTPS, private networks, and a shop agent identity. Listeners default to loopback; supplied-certificate deployments can explicitly configure a [public client listener](docs/TLS.md#configure-a-public-client-listener). Administration stays private. Public deployment and operational qualification remain work.
 
+The [deployment design](ROADMAP.md#self-hosted-and-hosted-deployments) supports
+self-hosted shops and hosted instances using the same projects and interfaces.
+The initial hosted recommendation is a separate VM per customer organization;
+the domain model still supports multiple shops with explicit grants.
+
 API domain calls use [supervised service workers](docs/SERVICE_WORKERS.md) with CPU, memory and wall-time limits. The guide includes reproducible HTTP measurements and explains how clients recover when a write commits before its response is lost.
 
 The [deployment benchmark](docs/TLS.md#measure-the-deployed-path) measures TLS, real identity checks, REST/MCP discovery and concurrent Python authoring in a disposable container stack.

@@ -7,6 +7,17 @@ is an open milestone in [the roadmap](../ROADMAP.md). The model assumes the
 operator controls the host, Docker daemon, configuration and image build process.
 A compromised operator or host can read and change shop data and credentials.
 
+The [deployment design](../ROADMAP.md#self-hosted-and-hosted-deployments) supports
+self-hosted shops and provider-operated instances. Its initial hosted boundary
+is a separate VM for each independent customer organization, including the
+broker, Docker daemon and private state. Multiple shops within one instance have
+application authorization boundaries; they share trusted services and the host
+kernel. Separate Compose projects do not protect against compromise of that
+host. This recommendation follows the authority exposed by the current broker
+and Docker's [daemon security model](https://docs.docker.com/engine/security/#docker-daemon-attack-surface).
+VM isolation, provider administration and inter-VM network policy still need
+verification on the hosting platform; existing container tests do not prove them.
+
 ## Assets and callers
 
 Protect private shop source, evidence and observations; the integrity and history
@@ -97,7 +108,9 @@ revocations recorded after that snapshot.
   dependency environments are operator-selected and hash-pinned. Python constraints
   run during isolated builds and queued assessments with shared admission,
   cancellation and publication checks. Qualifying isolation for hostile tenants
-  remains deployment work.
+  remains deployment work. The initial hosted design avoids sharing this Docker
+  host between unrelated customer organizations; denser hosting requires a
+  separately qualified execution boundary.
 - Qualify maintenance for indefinitely ambiguous legacy launches and eventual
   retirement of inert name reservations. The operator command handles the new
   cleanup protocol; older removal requests by name could delete a reservation

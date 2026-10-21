@@ -5,11 +5,21 @@ Docker host. They share the repository's two database files. The API serves
 REST and MCP; the broker starts the existing isolated source workers through
 the host Docker daemon.
 
+The same containers serve self-hosted and provider-operated instances. The
+[initial hosted design](../ROADMAP.md#self-hosted-and-hosted-deployments) places
+each independent customer organization in its own VM, including its Docker
+daemon and private state. Multiple Compose projects on one Docker host share
+that host's authority. The launcher manages an instance; it does not provision
+VMs or implement a hosting control plane. Multiple shops within an instance
+still require explicit shop grants.
+
 This packaging adds process and filesystem limits. The supplied Compose file
 exposes HTTP only on host loopback. The [TLS stack](TLS.md) adds a gateway,
-production-mode Keycloak, and private application/identity networks. Production
-OpenBao lifecycle, automatic certificate renewal, off-host recovery,
-and deployment load qualification remain required for public deployment.
+production-mode Keycloak, and private application/identity networks. Separate
+helpers provide [TLS OpenBao lifecycle](SECRETS.md), [certificate renewal](ACME.md)
+and [encrypted recovery](RECOVERY.md). Public launch qualification still needs
+the actual host/network configuration, renewal and alert delivery, off-host
+recovery custody and representative load measurements.
 The separate [executor packaging](ADAPTERS.md) supports offline simulation and
 HTTPS calls with scoped OpenBao credentials.
 The TLS deployment has [operator-driven credential and signing-key rotation](CREDENTIALS.md).

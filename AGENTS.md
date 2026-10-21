@@ -74,6 +74,14 @@ Chipload is becoming a platform for software-defined shops. Read [ROADMAP.md](RO
 
 Use Python for the shop authoring SDK and initial runtime. Provide both a documented REST API and MCP by default, backed by the same domain services and authorization rules. Ordinary HTTP clients must be able to discover public shop capabilities without an agent. Agents should be able to define an entire shop in code, including resources, manufacturing processes, constraints, evidence, adapters, operations, and workflows.
 
+Support self-hosted shops and provider-operated instances with the same projects,
+images and interfaces. The [deployment design](ROADMAP.md#self-hosted-and-hosted-deployments)
+starts with one independent customer organization per VM for hosted execution;
+this does not limit the number of shops in the domain model. Keep shop grants
+explicit. A shared Docker host and separate Compose projects do not provide this
+customer boundary. Keep site-specific inputs configurable and distinguish
+portable release checks from qualification of an actual public launch.
+
 Design the agent interface around code. Agents should read/edit Python shop projects, run them in the isolated worker, inspect results, and publish tested revisions. Python functions, imports, loops, and SDK calls express shop configuration and business logic; do not add an MCP tool for each domain entity or internal service method. MCP exposes `run_python`, `read_run`, `cancel_run`, and `discover_shop`; use `chipload.client` to compose service calls in Python. Read `docs/PYTHON_API.md` for grants, limits, durable retry keys, and partial-failure handling. Keep REST independently usable. Any code-driven publication or external operation must pass through the same caller-scoped service permissions and durable execution records; executing Python must not grant operator authority or equipment secrets.
 
 Keep the engine abstract. Shop types, resource kinds, processes, input catalogs, variable categories, and state names belong in shop projects. Do not add machining, heat-treatment, or other shop-type branches to core validation or evaluation. Materials are an optional shop-defined catalog, not a mandatory input. Physical resources and sites are optional. Test new domain features with meaningfully different kinds of shops.

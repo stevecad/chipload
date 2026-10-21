@@ -67,6 +67,44 @@ without multiplying MCP tools.
 
 ## Design commitments
 
+### Self-hosted and hosted deployments
+
+Support both operating models with the same Python shop projects, container
+images, REST API and MCP interface. Hosting changes who operates the service;
+it must not change what a shop can express or how its clients use it.
+
+| Model | Initial deployment boundary | Operator |
+| --- | --- | --- |
+| Self-hosted | One organization's instance on a dedicated Linux host or VM. | The shop or its chosen administrator. |
+| Hosted | One instance on a separate VM for each independent customer organization. | The hosting provider. |
+
+This is the initial deployment recommendation, not a one-shop restriction in the
+engine. An organization may represent multiple shops or sites and still needs
+explicit grants for each shop. For the initial hosted model, each customer's
+API, broker, Docker daemon, databases, identity/secrets state and execution
+containers stay within that customer's VM. Recovery material and credentials
+must retain the same customer separation. VM and provider administrators remain
+trusted operators.
+
+The current broker has Docker host authority, and trusted service containers
+have repository access. Distinct shop IDs, grants, Compose projects or Docker
+networks do not isolate customers from a compromised broker or host kernel.
+Shared execution across unrelated customers requires a separately designed and
+tested isolation boundary. The current packaging runs one instance; automated
+fleet provisioning and shared hosting services are future work. Public discovery
+uses each instance's published REST/MCP interface in either model.
+
+Keep domains, issuers, certificates, bind addresses and capacity policy in
+deployment configuration. Continue portable release checks using disposable
+fixtures: authoring/discovery, authorization, containment, dependency failures,
+recovery and credential rotation. Record benchmark hardware, workload, latency,
+correct results, refusals and missed requests. The existing 10-query/s compact
+shop measurement is a regression reference, not a capacity promise for every
+shop or Python workload. A real launch additionally verifies its actual DNS,
+edge, VM/host isolation, certificate renewal, backup custody and alerts, and
+measures its representative workload. Those launch inputs do not block design
+or testing of the reusable software.
+
 ### Work with ERP systems
 
 Chipload is not an ERP. Order management, purchasing, inventory management, production planning, accounting, and invoicing are out of scope.
