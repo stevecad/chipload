@@ -247,9 +247,13 @@ generates user-systemd renewal units. Local Pebble tests perform real HTTP
 challenges through a published port, interrupt installation, resume without a
 second issuance, fire a timer and verify served certificates and unchanged real
 identity grants. Tests also cover no-op renewal, CA failure, missing account
-keys, container-policy changes and manual certificate takeover. Public-provider
-and DNS qualification, alert delivery, encrypted issuer custody, account/image/
-trust migration and generation retention remain open. See `docs/ACME.md`.
+keys, container-policy changes and manual certificate takeover. Separate encrypted
+issuer snapshots now preserve account registration and keys; a storage-loss drill
+restores into fresh private state and renews the running deployment through the
+same account. Recovery leaves delivery disabled until an explicit binding and
+does not restore old timer paths. Public-provider and DNS qualification, alert
+delivery, off-host issuer custody, account/image/trust migration and generation
+retention remain open. See `docs/ACME.md` and `docs/ACME_RECOVERY.md`.
 
 Agent-secret and identity-database password rotation now have durable retry,
 old-credential rejection, unchanged-grant checks, and a recovery drill using the

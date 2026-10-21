@@ -191,11 +191,12 @@ environment variables are explicitly empty. TLS verification remains enabled.
 Only the separate host helper has deployment and Docker authority.
 
 Issuer state is **not included** in the [TLS recovery archive](RECOVERY.md).
-Preserve it separately with encrypted off-host custody while the timer and client
-are stopped, including `client/`, account receipts, configuration, trust and
-delivery records. Do not reinitialize over existing state or selectively restore
-an account key. Automated issuer backup/restore, account rollover, image/trust
-migration and generation retention remain operational work. An established
+Use the separate [issuer backup and restore helper](ACME_RECOVERY.md) for encrypted
+account custody, and retain verified archives and their key off-host. It preserves
+account registration and keys, restores into fresh private state, and requires
+an explicit deployment binding before delivery. Do not reinitialize over existing
+state or selectively restore an account key. Off-host recovery qualification,
+account rollover, image/trust migration and generation retention remain work. An established
 issuer is pinned to its configuration and image; changing checkout pins alone
 does not upgrade it safely. TLS recovery still preserves the deployed leaf keys
 and certificate receipt, allowing manual repair if issuer recovery is unavailable.

@@ -1,0 +1,221 @@
+#!/usr/bin/env python3
+"""Encrypt issuer snapshots and restore the same ACME account into fresh private state."""
+
+import argparse
+import ctypes
+import hashlib
+import importlib.machinery
+import importlib.util
+import json
+import os
+import subprocess
+import tempfile
+import time
+from pathlib import Path
+
+import acme_archive as bundle
+import recovery_archive as archive
+
+ROOT = Path(__file__).resolve().parents[1]
+loader = importlib.machinery.SourceFileLoader("recovery_acme", str(ROOT / "scripts/tls-acme"))
+acme = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
+loader.exec_module(acme)
+
+
+def paths(args):
+    state, key, target = args.state.absolute(), args.key.absolute(), args.archive.absolute()
+    if state != state.resolve():
+        raise ValueError("use a canonical issuer state path without symlinks")
+    archive.private(target.parent, directory=True)
+    archive.check_key(key)
+    if (
+        key.resolve().is_relative_to(state)
+        or target.resolve().is_relative_to(state)
+        or key.resolve() == target.resolve()
+    ):
+        raise ValueError("keep the archive and encryption key separate from issuer state")
+    return state, key, target
+
+
+def storage_users(states, lock_fd, *, except_id=None):
+    identifiers = acme.run_command(["docker", "ps", "-aq", "--no-trunc"], lock_fd).decode().split()
+    for identifier in identifiers:
+        record = acme.inspect(identifier, lock_fd)
+        if record is None or record["Id"] == except_id:
+            continue
+        for mount in record["Mounts"]:
+            if mount["Type"] != "bind":
+                continue
+            source = Path(mount["Source"]).resolve()
+            if any(
+                source.is_relative_to(state) or state.is_relative_to(source) for state in states
+            ):
+                raise ValueError("another container mounts issuer state; retire it before recovery")
+
+
+def stopped(state, lock_fd):
+    stamp = acme.identity(state)
+    record = acme.inspect("chipload-acme-" + stamp[:24], lock_fd)
+    if record is not None:
+        if record["Config"]["Labels"].get(acme.LABEL) != stamp:
+            raise ValueError("the issuer container belongs to another state directory")
+        if (
+            record["State"]["Status"] not in {"created", "exited"}
+            or record["State"]["Running"]
+            or record["State"].get("Paused")
+            or record["State"].get("Restarting")
+            or record["HostConfig"]["RestartPolicy"]["Name"] not in {"", "no"}
+        ):
+            raise ValueError("the issuer must be stopped without an automatic restart policy")
+    storage_users([state], lock_fd, except_id=record["Id"] if record else None)
+    return record
+
+
+def publish(encrypted, target):
+    # A lost response can leave a complete archive, never a replaced older one.
+    os.link(encrypted, target)
+    archive.sync_directory(target.parent)
+
+
+def publish_state(prepared, state):
+    # Linux is already required by the local Docker topology. Do not replace an
+    # empty directory created by another operator between the check and rename.
+    library = ctypes.CDLL(None, use_errno=True)
+    rename = getattr(library, "renameat2", None)
+    if rename is None:
+        raise ValueError("issuer restore requires Linux renameat2 with no-replace support")
+    rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    rename.restype = ctypes.c_int
+    if rename(-100, os.fsencode(prepared), -100, os.fsencode(state), 1):
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error))
+    archive.sync_directory(state.parent)
+
+
+def backup(args):
+    state, key, target = paths(args)
+    if acme.certificates.present(target):
+        raise ValueError("backup output already exists; inspect it or use a new filename")
+    with acme.operation_lock(state) as lock_fd:
+        acme.load(state)
+        acme.stack.runtime.docker_socket()
+        original = stopped(state, lock_fd)
+        with tempfile.TemporaryDirectory(prefix=".acme-backup-", dir=target.parent) as temporary:
+            working = Path(temporary)
+            plain, encrypted = working / "state.bin", working / "state.gpg"
+            manifest = bundle.pack(state, plain, acme)
+            bundle.unpack(plain, working / "verified", acme)
+            final = stopped(state, lock_fd)
+            if (original is None) != (final is None) or (
+                original is not None
+                and (original["Id"], original["State"]["StartedAt"])
+                != (final["Id"], final["State"]["StartedAt"])
+            ):
+                raise ValueError("issuer execution changed during its snapshot")
+            archive.crypt(plain, encrypted, key, max_bytes=bundle.MAX_ARCHIVE)
+            publish(encrypted, target)
+    return {
+        "backup": str(target),
+        "backup_id": manifest["backup_id"],
+        "files": len(manifest["files"]),
+    }
+
+
+def inspect_archive(args):
+    _, key, source = paths(args)
+    with tempfile.TemporaryDirectory(prefix=".acme-inspect-", dir=source.parent) as temporary:
+        working = Path(temporary)
+        plain = working / "state.bin"
+        archive.crypt(source, plain, key, decrypt=True, max_bytes=bundle.MAX_ARCHIVE)
+        manifest = bundle.unpack(plain, working / "verified", acme)
+        return {
+            "backup_id": manifest["backup_id"],
+            "created_at": manifest["created_at"],
+            "image": manifest["image"],
+            "source": manifest["source"],
+            "source_container": original_container(manifest),
+            "files": len(manifest["files"]),
+            "certificate_sha256": manifest["current"],
+        }
+
+
+def original_container(manifest):
+    stamp = hashlib.sha256(
+        (str(manifest["source_uid"]) + "\0" + manifest["source"]).encode()
+    ).hexdigest()
+    return "chipload-acme-" + stamp[:24]
+
+
+def restore(args):
+    state, key, source = paths(args)
+    state.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    # A private destination parent serializes recovery without exposing partial state.
+    with acme.operation_lock(state.parent) as lock_fd:
+        if acme.certificates.present(state):
+            raise ValueError("restore requires a fresh issuer state directory")
+        acme.stack.runtime.docker_socket()
+        with tempfile.TemporaryDirectory(prefix=".acme-restore-", dir=state.parent) as temporary:
+            working = Path(temporary)
+            plain, prepared = working / "state.bin", working / "state"
+            archive.crypt(source, plain, key, decrypt=True, max_bytes=bundle.MAX_ARCHIVE)
+            manifest = bundle.unpack(plain, prepared, acme)
+            old_state = Path(manifest["source"])
+            if acme.certificates.present(old_state):
+                raise ValueError("retire or move aside the original issuer state before restore")
+            for name in {
+                original_container(manifest),
+                "chipload-acme-" + acme.identity(state)[:24],
+            }:
+                if acme.inspect(name, lock_fd) is not None:
+                    raise ValueError("retire the original issuer container before restore")
+            storage_users([old_state, state], lock_fd)
+            binding = prepared / acme.delivery.BINDING
+            previous = acme.delivery.read(binding) if binding.exists() else None
+            acme.delivery.unbind(prepared)
+            archive.replace_json(
+                prepared / "restore.json",
+                {
+                    "version": 1,
+                    "backup_id": manifest["backup_id"],
+                    "archive_sha256": archive.digest(source),
+                    "restored_at": int(time.time()),
+                    "previous_binding": previous,
+                },
+            )
+            archive.sync_tree(prepared)
+            if acme.certificates.present(state):
+                raise ValueError("restore destination appeared during preparation")
+            publish_state(prepared, state)
+    return {"restored": str(state), "backup_id": manifest["backup_id"], "delivery_enabled": False}
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--state", type=Path, default=ROOT / ".local/acme")
+    commands = parser.add_subparsers(dest="action", required=True)
+    keygen = commands.add_parser("keygen")
+    keygen.add_argument("--key", type=Path, required=True)
+    for action in ("backup", "inspect", "restore"):
+        command = commands.add_parser(action)
+        command.add_argument("--key", type=Path, required=True)
+        command.add_argument("--archive", type=Path, required=True)
+    args = parser.parse_args()
+    if os.getuid() == 0:
+        parser.error("run as the non-root issuer owner")
+    try:
+        if args.action == "keygen":
+            archive.generate_key(args.key.absolute())
+            print("Created a private recovery key; retain it separately from encrypted archives.")
+        else:
+            result = {"backup": backup, "inspect": inspect_archive, "restore": restore}[
+                args.action
+            ](args)
+            print(json.dumps(result, indent=2))
+    except (OSError, ValueError, TypeError, KeyError, RecursionError, subprocess.SubprocessError):
+        parser.exit(
+            1, "tls-acme-recovery: operation failed; preserve the source state, archive and key.\n"
+        )
+
+
+if __name__ == "__main__":
+    main()
