@@ -56,20 +56,29 @@ def _remove(name, deadline):
     return False
 
 
-def remove_containers(*names):
+def remove_containers(*names, guard=None):
     if not 1 <= len(names) <= 2 or any(
         not re.fullmatch(r"chipload-(?:build|sdk|code)-[0-9a-f]{32}", name) for name in names
     ):
         raise ValueError("invalid worker container names")
     deadline = time.monotonic() + CLEANUP_SECONDS
     failed = []
+    unresolved = None
     for index, name in enumerate(names):
         # Give every container a share of the remaining budget, including when
         # its sibling stays present. Recovery's 30-second claim covers this
         # complete attempt and the subsequent database commit.
         at = time.monotonic()
         share = max(0, deadline - at) / (len(names) - index)
+        if guard is not None:
+            try:
+                guard.before_remove(name, at + share)
+            except SandboxError as error:
+                unresolved = error
+                continue
         if not _remove(name, at + share):
             failed.append(name)
+    if unresolved is not None:
+        raise unresolved
     if failed:
         raise SandboxError("could not confirm removal of worker containers: " + ", ".join(failed))

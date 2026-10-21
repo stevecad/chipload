@@ -33,12 +33,12 @@ except ServiceError as error:
 
 
 class FixtureRunner:
-    def run(self, identifier, request, dispatch, active):
+    def run(self, identifier, request, dispatch, active, *, guard=None):
         assert request.code == SCRIPT, "Only the exact trusted parity fixture is supported"
         assert active()
         return {"value": dispatch(request.inputs["operation"], request.inputs["request"])}
 
-    def remove(self, identifier):
+    def remove(self, identifier, *, guard=None):
         pass
 
 

@@ -21,6 +21,7 @@ from .artifact import Artifact, Digest, canonical_json, digest, read_artifact
 from .cache import DEFAULT_CACHE_BYTES, DataCache
 from .discovery import public_catalog
 from .execution_model import EXECUTION_SCHEMA
+from .launches import LAUNCH_SCHEMA, LaunchGuard, LaunchUncertain
 from .limits import bounded_json
 from .model import Id, Model, Timestamp
 from .program_model import PROGRAM_SCHEMA
@@ -122,9 +123,9 @@ class Repository:
         private_database(self.path, create=True)
         with self.connection() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in {0, 1, 2, 3, 4, 5, 6, 7}:
+            if version not in {0, 1, 2, 3, 4, 5, 6, 7, 8}:
                 raise ValueError("unsupported repository schema")
-            if version in {5, 6, 7}:
+            if version in {5, 6, 7, 8}:
                 reference = db.execute("SELECT * FROM admission_store WHERE id=1").fetchone()
                 if reference is None:
                     raise IntegrityError("missing admission store reference")
@@ -138,14 +139,16 @@ class Repository:
                         self._initialize_executions()
                     if version < 7:
                         self._initialize_programs()
+                    if version < 8:
+                        self._initialize_launches()
                     return
             db.execute("PRAGMA journal_mode=WAL")
             db.execute("BEGIN IMMEDIATE")
             try:
                 version = db.execute("PRAGMA user_version").fetchone()[0]
-                if version not in {0, 1, 2, 3, 4, 5, 6, 7}:
+                if version not in {0, 1, 2, 3, 4, 5, 6, 7, 8}:
                     raise ValueError("unsupported repository schema")
-                if version in {5, 6, 7}:
+                if version in {5, 6, 7, 8}:
                     db.execute("COMMIT")
                     self._initialize_admission()
                     return
@@ -224,6 +227,25 @@ class Repository:
                 self.admission.snapshot()
         self._initialize_executions()
         self._initialize_programs()
+        self._initialize_launches()
+
+    def _initialize_launches(self):
+        with self.transaction() as db:
+            if db.execute("PRAGMA user_version").fetchone()[0] == 7:
+                for statement in LAUNCH_SCHEMA.split(";"):
+                    if statement.strip():
+                        db.execute(statement)
+                # Old running jobs have no creation receipts. Treat their
+                # possible requests as unresolved, rather than inventing proof
+                # that an absent container cannot still be created.
+                for kind, prefixes in (("builds", ("build",)), ("python_runs", ("sdk", "code"))):
+                    for prefix in prefixes:
+                        db.execute(
+                            "INSERT INTO worker_launches SELECT ? || id,?,id,claim,0 "
+                            f"FROM {kind} WHERE state='running'",
+                            (f"chipload-{prefix}-", kind),
+                        )
+                db.execute("PRAGMA user_version=8")
 
     def _initialize_programs(self):
         with self.transaction() as db:
@@ -433,6 +455,11 @@ class Repository:
                 or record.deadline <= now()
             ):
                 raise Conflict("build claim is no longer current")
+            if db.execute(
+                "SELECT 1 FROM worker_launches WHERE kind='builds' AND job_id=? AND settled=0",
+                (build_id,),
+            ).fetchone():
+                raise Conflict("container creation is unresolved")
             if report.source_revision != record.source_revision:
                 raise ValueError("build report source does not match")
             if report.artifact:
@@ -699,8 +726,9 @@ class BuildProcessor:
         return True
 
     def _run_claimed(self, build_id: str, claim: str, project: SourceProject) -> None:
+        guard = LaunchGuard(self.repository, "builds", build_id, claim)
         try:
-            report = self.builder.build(project, job_id=build_id)
+            report = self.builder.build(project, job_id=build_id, guard=guard)
             if len(report.model_dump_json().encode()) > MAX_OUTPUT_BYTES:
                 raise ValueError("build report exceeds the storage limit")
         except Exception:
@@ -720,7 +748,7 @@ class BuildProcessor:
             )
         # A builder exception can include failed cleanup. Confirm removal even
         # on that path before committing any terminal state or releasing quota.
-        self.builder.remove(build_id)
+        self.builder.remove(build_id, guard=guard)
         self.repository.finish(build_id, claim, report)
 
     def recover_expired(self) -> int:
@@ -736,7 +764,12 @@ class BuildProcessor:
                 claim = self.repository.fence_expired(row["id"])
             except Conflict:
                 continue
-            self.builder.remove(row["id"])
+            guard = LaunchGuard(self.repository, "builds", row["id"], claim)
+            try:
+                self.builder.remove(row["id"], guard=guard)
+            except LaunchUncertain:
+                logging.getLogger(__name__).warning("Build creation remains unresolved: %s", row["id"])
+                continue
             report = BuildReport(
                 source_revision=row["source_revision"],
                 worker_image=self.builder.environment.image,

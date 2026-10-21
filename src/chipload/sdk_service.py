@@ -69,12 +69,16 @@ class SDKService:
         command[-1] = "chipload.sdk_worker"
         return command
 
-    def start(self, keep_running):
+    def start(self, keep_running, *, guard=None):
         if self.child is not None or not keep_running():
             raise SandboxError("SDK service cannot start for an inactive run")
-        subprocess.run(self.command(), capture_output=True, check=True, timeout=15)
+        if guard is None:
+            subprocess.run(self.command(), capture_output=True, check=True, timeout=15)
+            container = self.name
+        else:
+            container = guard.create(self.command())
         self.child = subprocess.Popen(
-            ["docker", "start", "--attach", "--interactive", self.name],
+            ["docker", "start", "--attach", "--interactive", container],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,

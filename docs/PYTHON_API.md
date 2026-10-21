@@ -168,6 +168,12 @@ present at the deadline keeps capacity reserved for a later recovery attempt.
 This replaces the earlier two-second competing-removal check that expired during
 concurrent container tests. Recovery's 30-second claim covers one cleanup attempt
 and its completion transaction. Cleanup never resubmits Python or an SDK call.
+Both containers also have durable creation intent. Recovery cannot release the
+run while either creation is unresolved, even if that container is currently
+absent. A late acknowledgement or observed container permits cleanup; it never
+restores the expired claim or replays the program. See
+[authoring recovery](AUTHORING.md#storage-authorization-and-recovery) for the
+operator limitation when a creation attempt remains unresolved.
 
 Per deployment, shop and identity, defaults allow 20 pending runs, one running
 run, 120 admissions per hour, 1,000 retained records and 512 MiB of reserved run
@@ -208,9 +214,10 @@ Existing bindings need explicit `code:run`, `code:read` and, if delegated,
 subject to those bindings; `shop:operate` still cannot author or publish source.
 A role alone gives no shop access. Rebuild worker and runtime images together.
 
-Stop old writers and back up before upgrade. Repository schema 7 adds durable
-Python runs atomically after the schema-6 operation migration, preserving the
-paired admission store. New backups include code history and require no queued
+Stop old writers and back up before upgrade. Repository schema 8 adds durable
+container launch records after the schema-7 Python-run migration, preserving the
+paired admission store. Settle running jobs first: migration preserves their
+unknown creation outcomes as unresolved intent. New backups include code history and require no queued
 or running code jobs. Stop/cancel or let runs settle before taking a backup.
 The backup format accepts the current database schema; keep the matching older
 runtime for restoring pre-upgrade archives before migrating them.

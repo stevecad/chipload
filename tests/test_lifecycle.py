@@ -19,7 +19,7 @@ class FixtureBuilder:
     seconds = 1
     environment = WorkerEnvironment("sha256:" + "a" * 64, "b" * 64, "c" * 64, "3.12.15")
 
-    def build(self, source, *, job_id=None):
+    def build(self, source, *, job_id=None, guard=None):
         shop = define_shop()
         if "Updated thermal example" in source.files[0].content:
             shop = shop.model_copy(update={"name": "Updated thermal example"})
@@ -41,7 +41,7 @@ class FixtureBuilder:
             status="succeeded" if all(t.passed for t in tests) else "failed",
         )
 
-    def remove(self, job_id):
+    def remove(self, job_id, *, guard=None):
         self.removed = job_id
 
 

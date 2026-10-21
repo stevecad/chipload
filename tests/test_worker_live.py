@@ -4,12 +4,14 @@ import json
 import os
 import subprocess
 import tempfile
+import threading
 import unittest
 import uuid
 from pathlib import Path
 from unittest.mock import patch
 
 from chipload.access import ACTIONS, Grant, Principal
+from chipload.launches import LaunchUncertain
 from chipload.lifecycle import BuildProcessor, Conflict, Repository, ShopService
 from chipload.project import SourceFile, SourceProject
 from chipload.sandbox import DockerBuilder, SandboxError, WorkerEnvironment
@@ -162,6 +164,98 @@ def define_shop():
             )
             self.assertNotEqual(found.returncode, 0)
             self.assertEqual(repository.claim_next(60)[0], second.id)
+
+    def test_recovery_retains_capacity_while_container_creation_is_pending(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Repository(Path(directory) / "queue.db")
+            service = ShopService(repository)
+            builder = DockerBuilder(self.environment, seconds=1)
+            processor = BuildProcessor(repository, builder)
+            source = self.source("import time\nwhile True: time.sleep(1)\n")
+            owner = Principal(subject="owner", grants=(Grant(shop_id=source.shop_id, actions=ACTIONS),))
+            saved = service.save_source(owner, source, expected_head=None)
+            first = service.request_build(owner, source.shop_id, saved.revision)
+            service.request_build(owner, source.shop_id, saved.revision)
+            entered, release = threading.Event(), threading.Event()
+            original = subprocess.run
+            errors = []
+
+            def docker(command, **kwargs):
+                if command[:2] == ["docker", "create"]:
+                    entered.set()
+                    if not release.wait(20):
+                        raise RuntimeError("test did not release creation")
+                return original(command, **kwargs)
+
+            def execute():
+                try:
+                    processor.run_next()
+                except Exception as error:
+                    errors.append(error)
+
+            with patch("chipload.sandbox.subprocess.run", side_effect=docker):
+                thread = threading.Thread(target=execute)
+                thread.start()
+                try:
+                    self.assertTrue(entered.wait(10))
+                    with repository.transaction() as db:
+                        db.execute("UPDATE builds SET deadline='2000-01-01T00:00:00+00:00' WHERE id=?", (first.id,))
+                    self.assertEqual(processor.recover_expired(), 0)
+                    self.assertEqual(service.get_build(owner, source.shop_id, first.id).state, "running")
+                    self.assertIsNone(repository.claim_next(60))
+                finally:
+                    release.set()
+                    thread.join(30)
+            self.assertFalse(thread.is_alive())
+            self.assertTrue(all(isinstance(error, Conflict) for error in errors), errors)
+            with repository.transaction() as db:
+                db.execute("UPDATE builds SET deadline='2000-01-01T00:00:00+00:00' WHERE id=?", (first.id,))
+            self.assertEqual(processor.recover_expired(), 1)
+            self.assertEqual(service.get_build(owner, source.shop_id, first.id).state, "failed")
+
+    def test_late_container_after_lost_create_reply_is_recovered_without_execution(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Repository(Path(directory) / "queue.db")
+            service = ShopService(repository)
+            builder = DockerBuilder(self.environment, seconds=1)
+            processor = BuildProcessor(repository, builder)
+            source = self.source("raise AssertionError('must not execute')")
+            owner = Principal(subject="owner", grants=(Grant(shop_id=source.shop_id, actions=ACTIONS),))
+            saved = service.save_source(owner, source, expected_head=None)
+            job = service.request_build(owner, source.shop_id, saved.revision)
+            self.addCleanup(builder.remove, job.id)
+            original, commands = subprocess.run, []
+
+            def lost(command, **kwargs):
+                if command[:2] == ["docker", "create"]:
+                    commands.append(command)
+                    raise subprocess.TimeoutExpired(command, 15)
+                return original(command, **kwargs)
+
+            def expire():
+                with repository.transaction() as db:
+                    db.execute("UPDATE builds SET deadline='2000-01-01T00:00:00+00:00' WHERE id=?", (job.id,))
+
+            with patch("chipload.launches.subprocess.run", side_effect=lost):
+                with self.assertRaises(LaunchUncertain):
+                    processor.run_next()
+                expire()
+                self.assertEqual(processor.recover_expired(), 0)
+            self.assertEqual(len(commands), 1)
+            self.assertEqual(service.get_build(owner, source.shop_id, job.id).state, "running")
+            # Model the daemon completing the already-issued request after the
+            # caller's timeout. The broker never retries this command.
+            original(commands[0], capture_output=True, check=True, timeout=15)
+            state = subprocess.check_output(
+                ["docker", "inspect", "--format", "{{.State.Status}}", "chipload-build-" + job.id],
+                text=True, timeout=5,
+            ).strip()
+            self.assertEqual(state, "created")
+            expire()
+            self.assertEqual(processor.recover_expired(), 1)
+            self.assertEqual(service.get_build(owner, source.shop_id, job.id).state, "failed")
+            with repository.connection() as db:
+                self.assertEqual(db.execute("SELECT settled FROM worker_launches").fetchone()[0], 1)
 
     def test_output_flood_is_bounded_and_removed(self):
         report = self.build(self.source("import os\nwhile True: os.write(1, b'x' * 65536)\n"))

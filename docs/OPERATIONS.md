@@ -174,7 +174,7 @@ the claim and deadline. Reconciliation uses that receipt or a revoked claim
 under the same writer lock to establish the outcome. This gives the simulator
 a provable boundary; it does not provide universal exactly-once physical effects.
 
-Repository schema 7 preserves bindings, jobs, simulation receipts, and resource
+Repository schema 8 preserves bindings, jobs, simulation receipts, and resource
 locks. Backups reject queued, running, or indeterminate operations. Before backup,
 stop new submissions, settle/cancel queued work, reconcile uncertain results,
 and stop separate executors. Restoring a database cannot roll back equipment or

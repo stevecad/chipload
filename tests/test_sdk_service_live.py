@@ -15,6 +15,7 @@ from unittest.mock import patch
 
 from server_support import IdentityFixture
 
+from chipload.containers import SandboxError
 from chipload.lifecycle import now
 from chipload.program_model import RunPython
 from chipload.program_runner import ProgramProcessor
@@ -308,6 +309,44 @@ Operations.call=interrupted
         self.assertFalse(errors, errors)
         self.assertGreaterEqual(time.monotonic() - started, 3)
         self.assert_removed(identifier)
+
+    def test_recovery_cannot_release_a_run_with_either_container_creation_pending(self):
+        for prefix in ("chipload-sdk-", "chipload-code-"):
+            with self.subTest(prefix=prefix):
+                job, _ = self.submit("result={'must_not_run':True}")
+                entered, release = threading.Event(), threading.Event()
+                original = subprocess.run
+
+                def expire():
+                    with self.repository.transaction() as db:
+                        db.execute("UPDATE python_runs SET deadline='2000-01-01T00:00:00+00:00' WHERE id=?", (job.id,))
+
+                def docker(command, **kwargs):
+                    if command[:2] == ["docker", "create"] and command[command.index("--name") + 1] == prefix + job.id:
+                        entered.set()
+                        if not release.wait(20):
+                            raise RuntimeError("test did not release creation")
+                    return original(command, **kwargs)
+
+                with patch("chipload.launches.subprocess.run", side_effect=docker):
+                    thread, errors = self.background()
+                    try:
+                        self.assertTrue(entered.wait(10))
+                        expire()
+                        self.assertEqual(self.processor.recover_expired(), 0)
+                        self.assertEqual(self.read(job).state, "running")
+                        self.assertFalse(self.read(job).calls)
+                    finally:
+                        release.set()
+                        thread.join(30)
+                self.assertFalse(thread.is_alive())
+                self.assertTrue(all(isinstance(error, SandboxError) for error in errors), errors)
+                expire()
+                self.assertEqual(self.processor.recover_expired(), 1)
+                result = self.read(job)
+                self.assertEqual(result.state, "interrupted")
+                self.assertIsNone(result.value)
+                self.assert_removed(job.id)
 
     def test_wrong_or_missing_repository_mount_cannot_initialize_or_migrate_storage(self):
         from chipload.lifecycle import Repository

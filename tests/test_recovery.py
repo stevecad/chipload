@@ -130,6 +130,20 @@ class RecoveryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "byte limit"):
             archive.unpack(target, self.root / "limit", max_bytes=1)
 
+    def test_launch_receipts_survive_backup_and_unresolved_intent_blocks_it(self):
+        receipt = ("chipload-build-" + "a" * 32, "builds", "a" * 32, "b" * 32, 1)
+        with self.repository.transaction() as db:
+            db.execute("INSERT INTO worker_launches VALUES(?,?,?,?,?)", receipt)
+        destination = self.root / "snapshot"
+        archive.snapshot_pair(self.data, destination)
+        with Repository(destination / "chipload.db").connection() as db:
+            self.assertEqual(tuple(db.execute("SELECT * FROM worker_launches").fetchone()), receipt)
+        # Even inconsistent/orphaned intent cannot disappear into a backup.
+        with self.repository.transaction() as db:
+            db.execute("UPDATE worker_launches SET settled=0")
+        with self.assertRaisesRegex(ValueError, "unresolved container creation"):
+            archive.snapshot_pair(self.data, self.root / "unresolved")
+
     def test_archive_rejects_traversal_links_duplicates_missing_data_and_changed_bytes(self):
         target = self.root / "plain.tar"
         archive.pack(self.contents(), target, {"backup_id": "a" * 32})

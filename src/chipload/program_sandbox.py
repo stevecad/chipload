@@ -129,10 +129,10 @@ class DockerProgramRunner:
         local_daemon()
         self.services = {}
 
-    def remove(self, identifier):
+    def remove(self, identifier, *, guard=None):
         if not re.fullmatch(r"[0-9a-f]{32}", identifier):
             raise ValueError("invalid Python run ID")
-        remove_containers("chipload-sdk-" + identifier, "chipload-code-" + identifier)
+        remove_containers("chipload-sdk-" + identifier, "chipload-code-" + identifier, guard=guard)
 
     def service_call(self, identifier, operation, principal, request, *, deadline, keep_running):
         service = self.services.get(identifier)
@@ -142,7 +142,7 @@ class DockerProgramRunner:
             operation, principal, request, deadline=deadline, keep_running=keep_running
         )
 
-    def run(self, identifier, request, dispatch, keep_running):
+    def run(self, identifier, request, dispatch, keep_running, *, guard=None):
         if not re.fullmatch(r"[0-9a-f]{32}", identifier) or identifier in self.services:
             raise ValueError("invalid or active Python run ID")
         name = "chipload-code-" + identifier
@@ -151,12 +151,16 @@ class DockerProgramRunner:
         service = SDKService(self.builder, self.database, self.host_data, self.identity, identifier)
         self.services[identifier] = service
         try:
-            service.start(keep_running)
+            service.start(keep_running, guard=guard)
             if not keep_running():
                 raise SandboxError("Python run is no longer active")
-            subprocess.run(command, capture_output=True, check=True, timeout=15)
+            if guard is None:
+                subprocess.run(command, capture_output=True, check=True, timeout=15)
+                container = name
+            else:
+                container = guard.create(command)
             return conversation(
-                ["docker", "start", "--attach", "--interactive", name],
+                ["docker", "start", "--attach", "--interactive", container],
                 request.model_dump(mode="json"),
                 dispatch,
                 keep_running,
@@ -164,7 +168,7 @@ class DockerProgramRunner:
             )
         finally:
             try:
-                self.remove(identifier)
+                self.remove(identifier, guard=guard)
             finally:
                 try:
                     service.close()

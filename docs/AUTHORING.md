@@ -288,6 +288,23 @@ concurrent removal triggers bounded inspection. An unavailable daemon or an
 inspection error does not establish absence. The same cleanup implementation
 serves hosted Python runs, sharing that budget between their two containers.
 
+Before creating a container, the broker records its name and claim in
+`worker_launches` while checking that the job is still active. Each name gets
+one creation attempt. An acknowledgement resolves the attempt; recovery can
+also resolve it by observing the actual container, recording that evidence,
+then removing it. Containers start by immutable Docker ID. A broker that resumes
+after its claim expires cannot initiate another creation or obtain fresh
+execution authority from a late acknowledgement.
+
+If creation is unresolved and the container is absent, recovery retains the
+job and capacity: a delayed request could still create it. The broker logs the
+job ID and continues processing other eligible jobs. This includes a crash
+between recording intent and issuing the request. No automatic clearing of
+such records is supplied; an operator recovery procedure that fences all old
+creators and outstanding daemon requests remains deployment work. Do not delete
+the intent or release capacity solely because a deadline elapsed or inspection
+reported absence.
+
 After a broker interruption, run:
 
 ```sh
@@ -384,6 +401,11 @@ gain no new operation actions automatically. See [OPERATIONS.md](OPERATIONS.md).
 Schema 6 then migrates atomically to schema 7, adding Python run records and call
 journals. Existing policies gain separate code capacity defaults; explicit bindings
 need the delegated `code:*` actions. See [Python automation](PYTHON_API.md).
+Schema 7 migrates atomically to schema 8, adding container launch records.
+Existing running jobs receive unresolved launch records because older code did
+not retain creation acknowledgements. Settle running jobs before upgrading;
+otherwise missing containers can require operator intervention. Queued jobs,
+publications, paired admission state and spent allowances remain intact.
 Before upgrading, stop old API/broker/executor processes and make a consistent backup.
 Do not run old code alongside the new schema. SQLite remains single-node
 storage; this does not establish safe use over a network filesystem or across

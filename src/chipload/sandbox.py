@@ -55,7 +55,7 @@ class WorkerEnvironment:
         return cls(image, sdk, dependencies, python)
 
 
-def exchange(command: list[str], payload: bytes, *, seconds: float) -> tuple[int, bytes, bytes]:
+def exchange(command: list[str], payload: bytes, *, seconds: float, keep_running=None) -> tuple[int, bytes, bytes]:
     """Bound stdin, output memory, and wall time without blocking on full pipes."""
     process = subprocess.Popen(
         command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
@@ -73,6 +73,8 @@ def exchange(command: list[str], payload: bytes, *, seconds: float) -> tuple[int
                 os.set_blocking(stream.fileno(), False)
                 selector.register(stream, events)
             while selector.get_map():
+                if keep_running is not None and not keep_running():
+                    raise SandboxError("worker claim is no longer active")
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise SandboxError("worker exceeded its wall-time limit")
@@ -168,13 +170,13 @@ class DockerBuilder:
             "chipload.worker",
         ]
 
-    def remove(self, job_id: str) -> None:
+    def remove(self, job_id: str, *, guard=None) -> None:
         if not re.fullmatch(r"[0-9a-f]{32}", job_id):
             raise ValueError("invalid worker job ID")
         name = f"chipload-build-{job_id}"
-        remove_containers(name)
+        remove_containers(name, guard=guard)
 
-    def build(self, project: SourceProject, *, job_id: str | None = None) -> BuildReport:
+    def build(self, project: SourceProject, *, job_id: str | None = None, guard=None) -> BuildReport:
         # Validate unchecked model copies before passing data across a boundary.
         project = SourceProject.model_validate(project.model_dump(mode="python"))
         job_id = job_id or uuid.uuid4().hex
@@ -185,11 +187,16 @@ class DockerBuilder:
         artifact = None
         tests = ()
         try:
-            subprocess.run(self.create_command(name), capture_output=True, check=True, timeout=15)
+            if guard is None:
+                subprocess.run(self.create_command(name), capture_output=True, check=True, timeout=15)
+                container = name
+            else:
+                container = guard.create(self.create_command(name))
             code, output, _ = exchange(
-                ["docker", "start", "--attach", "--interactive", name],
+                ["docker", "start", "--attach", "--interactive", container],
                 project.to_json(),
                 seconds=self.seconds,
+                keep_running=guard.active if guard else None,
             )
             if code != 0:
                 raise SandboxError(f"worker exited with status {code}")
@@ -240,7 +247,7 @@ class DockerBuilder:
             # Kill container descendants as well as the attached CLI on timeout.
             # Unconfirmed cleanup must propagate: a terminal report would
             # release the broker's capacity while this worker could still run.
-            self.remove(job_id)
+            self.remove(job_id, guard=guard)
         return BuildReport(
             source_revision=project.revision,
             worker_image=self.environment.image,

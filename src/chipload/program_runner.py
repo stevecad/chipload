@@ -1,5 +1,6 @@
 """Trusted Python runner: dispatch each SDK call with current scoped grants."""
 
+import logging
 import threading
 import time
 import uuid
@@ -7,6 +8,7 @@ from datetime import timedelta
 
 from .access import Forbidden, Principal, require
 from .artifact import canonical_json, digest
+from .launches import LaunchGuard, LaunchUncertain
 from .lifecycle import Conflict, ShopService, now
 from .operations import Operations
 from .program_model import MAX_CALLS, MAX_PROGRAM_RESULT, PROGRAM_RESERVATION, RunPython
@@ -188,6 +190,11 @@ class ProgramProcessor:
                 raise Conflict("Python run claim is no longer current")
             if current["deadline"] <= self.clock().isoformat():
                 raise Conflict("Python run claim has expired")
+            if db.execute(
+                "SELECT 1 FROM worker_launches WHERE kind='python_runs' AND job_id=? AND settled=0",
+                (row["id"],),
+            ).fetchone():
+                raise Conflict("container creation is unresolved")
             if (
                 len(payload)
                 + len(current["request"])
@@ -209,6 +216,7 @@ class ProgramProcessor:
         if selected is None:
             return False
         row, request = selected
+        guard = LaunchGuard(self.repository, "python_runs", row["id"], row["claim"], clock=self.clock)
         try:
             self.principal(row)
             result = self.runner.run(
@@ -218,13 +226,14 @@ class ProgramProcessor:
                     row, operation, body, deadline=deadline
                 ),
                 lambda: self.active(row["id"], row["claim"]),
+                guard=guard,
             )
             state = "failed" if "error" in result else "succeeded"
         except Forbidden:
             result, state = {"error": "Python execution grant is unavailable"}, "failed"
         except Exception:
             # Cleanup must be confirmed before releasing capacity or recording termination.
-            self.runner.remove(row["id"])
+            self.runner.remove(row["id"], guard=guard)
             result, state = (
                 {"error": "Python run interrupted; inspect recorded calls before further changes"},
                 "interrupted",
@@ -257,7 +266,12 @@ class ProgramProcessor:
                 )
                 if changed.rowcount != 1:
                     continue
-            self.runner.remove(old["id"])
+            guard = LaunchGuard(self.repository, "python_runs", old["id"], claim, clock=self.clock)
+            try:
+                self.runner.remove(old["id"], guard=guard)
+            except LaunchUncertain:
+                logging.getLogger(__name__).warning("Python creation remains unresolved: %s", old["id"])
+                continue
             row = dict(old) | {"claim": claim}
             self.finish(
                 row,
