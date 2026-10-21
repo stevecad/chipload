@@ -134,6 +134,10 @@ versioned semantic inputs to these same evaluation services. Listing queries
 require an exact profile and public revision; unknown bindings stay unknown and
 a changed publication returns 409. Public visibility and directory indexing are
 separate choices.
+Direct instance queries and the separate cloud supplier directory/relay have
+their own [federation contracts](FEDERATION.md#implemented-cloud-service).
+The cloud REST search works without an agent. Its owner grants, publication
+leases and outbound sessions are separate from this API's shop permissions.
 An offer response also includes the public `alternatives` assessments and,
 when supported or conditional, a `matching_alternative`. These references are
 assessment results; callable operations retain their separate authorization.

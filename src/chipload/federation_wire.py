@@ -25,7 +25,7 @@ from .limits import MAX_JSON_BYTES, bounded_json
 from .model import Model
 
 MAX_BODY_BYTES = MAX_JSON_BYTES - 4096
-MAX_JOB_BYTES = 384 * 1024
+MAX_JOB_BYTES = 3 * 1024**2
 
 
 def checked_origin(value):

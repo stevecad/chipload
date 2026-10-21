@@ -1,8 +1,10 @@
 # Communication between Chipload instances
 
-Status: implementation in progress. Listings and direct public instance queries
-are implemented. The directory, geographic supplier search, connector and cloud
-relay remain to be implemented against the acceptance criteria below.
+Status: implementation in progress. Listings, direct public instance queries,
+the directory, geographic supplier search and the cloud relay service are
+implemented. Managed connector credentials/lifecycle, hosted Python network
+composition and federation container packaging remain to be implemented against
+the acceptance criteria below.
 
 ## Implemented listing contract
 
@@ -11,7 +13,7 @@ Python projects can define `Listing`, `ListingField`, `ListingChoice`,
 disclosed coordinates belong to `Site.public_location`. Each listing selects a
 capability, workflow or offer and optionally a site. `visibility="public"`
 exposes it through ordinary catalog/list/item discovery; `indexed=True` separately
-opts it into future directory publication. Both default to private/off.
+opts it into directory publication. Both default to private/off.
 
 `SemanticRef(namespace=..., version=..., term=...)` identifies an exact term.
 Namespaces are bounded names, not URLs to fetch or proof of vocabulary ownership.
@@ -124,6 +126,106 @@ existing runtime and both TLS lifecycle checks passed against the same images.
 The peer container check is included in the CI `tls` profile; run it locally
 with `CHIPLOAD_TLS_TESTS=1` and the unittest command above selecting
 `test_peer_tls_live.py` after building worker, runtime and TLS images.
+
+## Implemented cloud service
+
+`chipload.cloud` serves the optional directory and public-query relay. It has
+its own operator-owned `CloudSettings`, stable `directory_id`, private SQLite
+state and paired request-accounting database. It uses the existing Keycloak JWT
+verifier and Host/Origin/proxy policies. Its `OwnerBinding` entries bind a
+verified subject to an instance ID, with independent `advertise` and `connect`
+permissions. Shop grants on a local Chipload API do not grant cloud ownership.
+Change bindings while stopped and restart the service; revoked owners' existing
+advertisements disappear from search.
+
+The `identity` field uses `ServerSettings` for issuer, audience, JWKS trust,
+hosts and database location. Its `bindings` must be empty and `instance_id` must
+be omitted; cloud ownership uses the separate fields above. Generate a directory
+ID once and preserve it with the state. Keep configuration owner-only and use an
+absolute database path in a dedicated private directory. Initialize fresh state
+explicitly, then serve behind an operator-configured HTTPS gateway:
+
+```sh
+uv run --extra server python -m chipload.cloud init --config /absolute/private/cloud.json
+uv run --extra server python -m chipload.cloud serve --config /absolute/private/cloud.json
+```
+
+The listener defaults to `127.0.0.1:8090`. Initialization is not a recovery
+command: restore the directory, accounting and admission files together if state
+is lost. Serving refuses missing accounting state. A private process lock enforces
+one serving process per state volume, since relay sessions are in memory. This
+checkpoint supplies the service and conventional Python client; managed cloud
+containers, enrollment credential provisioning and a connector daemon are still
+pending. These commands alone do not qualify a public deployment.
+
+| Route | Contract |
+| --- | --- |
+| `GET /.well-known/chipload-cloud` | Public protocol and directory identity. |
+| `POST /v1/suppliers/search` | Public `SupplierSearch`, returning a `SearchPage`. |
+| `GET /v1/instances/{instance}/publications/{shop}` | Owner reads the current publication receipt, including a withdrawal tombstone. |
+| `PUT /v1/instances/{instance}/publications/{shop}` | Owner submits an `Advertisement` with expected directory version and an exact public catalog. |
+| `POST /v1/instances/{instance}/publications/{shop}/withdraw` | Owner withdraws with expected version and a unique request ID. |
+| `POST /v1/instances/{instance}/relay/{open,poll,complete,close}` | Owner establishes a fenced outbound session, receives public queries and completes deliveries. |
+| `POST /v1/relay/query` | Public fixed peer-query envelope; waits for the connected destination's reply. |
+
+Advertisements carry a 30–300 second lease, source observation time, generation
+and revision. Before accepting a new version the cloud fetches the source
+catalog through its direct HTTPS origin or connected relay and verifies the
+same generation/revision. A source must have an operator-owned instance binding;
+public callers cannot enroll identities. Successful write retries return the
+original receipt without extending its lease. CAS versions and persistent
+withdrawal tombstones reject delayed writes and generation rollback after
+restart. Only public, explicitly indexed listings enter the search index.
+The advertisement JSON limit is 2 MiB; oversized catalogs are rejected rather
+than partially indexed. Global and per-instance publication/listing/field/choice
+caps bound storage; exhaustion returns a refusal without replacing the old head.
+
+Search matches an exact versioned profile and semantic fields/choices on the
+same offering. Heat treatment and nonphysical services use the same index.
+Literal quantity and other business inputs only establish that a field exists;
+the candidate must be evaluated at its supplier with those inputs. Search
+returns source generation/revision and expiry for that fresh query. It never
+asserts stock, business acceptance or equipment availability.
+
+Geographic results use disclosed site coordinates and reported accuracy. Distances
+are straight-line meters, with uncertainty reported separately. A radius requires
+an origin; geographic searches exclude missing locations unless requested, and
+never rank them as zero distance. Searches without an origin can discover
+unlocated services and return no distance. Pages contain at most 100 candidates; cursors bind the query and
+live advertisement snapshot. A changed snapshot returns 409 so callers can
+restart the search. Search covers this directory's active advertisements only.
+
+The relay carries the four public peer actions, not arbitrary HTTP or remote
+authoring. Sessions have persistent monotonic epochs and server-generated
+delivery IDs. Replacement, disconnect, expiry and restart fence old replies.
+Pending work is bounded globally, per destination and per requester; there is
+one long poll per session and no offline queue. Successful polls and completions
+renew the session lease; `RelaySession.expires_at` reports the initial lease.
+Polls accept `wait_seconds` from 1–10 (default 5); the Python client reserves
+three seconds of its transport budget for authentication and network overhead,
+and requires a budget of at least four seconds for polling. Queries retain their original
+request identity and deadline of at most 30 seconds. Destination errors and
+transport failures are refusals, never a fabricated `unsupported` domain answer.
+Relay completion bodies are capped at 3 MiB, smaller than direct reply limits.
+
+`CloudClient` from `chipload.cloud_client` validates directory/search/receipt and
+peer response identities using the same bounded HTTPS transport as `PeerClient`.
+Its optional token provider is used only for owner operations at the fixed cloud
+origin. Search and public relayed queries send no enrollment bearer token.
+`search(SupplierSearch(...))`, `catalog(instance_id, shop_id)` and
+`evaluate_listing(instance_id, shop_id, listing_id, query, expected_generation=...)`
+provide conventional Python access. Isolated hosted shop programs do not yet
+have these network calls; caller-scoped connector composition remains open.
+
+Focused tests are `test_directory.py`, `test_relay.py`, `test_cloud.py` and
+`test_cloud_client.py`, run with the ordinary unittest command above. They cover
+ownership/audience denials before body parsing, independent owner permissions,
+lease expiry, replay/withdrawal, same-offering geography/material matching,
+pagination fences, queue/session limits and restart. Actual HTTPS client tests
+show the nearest seller rejecting a small lot, a farther relay-only advertisement
+accepting it, equal direct/relayed evaluations, and direct queries surviving a
+cloud outage. Their outbound receiver is a test fixture; real connector
+credential lifecycle and the full multi-instance container drill remain open.
 
 ## Two ways to reach the same shop
 

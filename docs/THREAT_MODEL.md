@@ -50,8 +50,23 @@ validated and pinned while the original TLS hostname is verified. Private-origin
 exceptions belong to operator policy. `test_peers.py` and
 `test_federation_wire.py` exercise actual TLS, deadlines, generation fences and
 hostile replies. Serving this route adds no outbound peer authority to the API.
-The directory, connector and relay in [the federation design](FEDERATION.md)
-remain to be implemented.
+The separate cloud service verifies Keycloak subjects against explicit instance
+owner bindings before parsing enrollment bodies. New advertisements require
+proof of the current source catalog over direct HTTPS or the enrolled relay.
+Short leases, version CAS, persistent tombstones and generation checks prevent
+stale writes from silently renewing or resurrecting withdrawn listings. Search
+indexes only public opted-in offerings and matches semantics and coordinates
+on the same offering; candidates still require live supplier evaluation.
+The relay accepts only fixed public read actions with bounded queues, deadlines,
+fenced sessions and delivery identities. It has no offline queue or general HTTP
+tunnel. Cloud credentials are used only for private owner routes, never forwarded
+to suppliers. Directory/accounting state must be restored together; one process
+per volume is enforced for in-memory relay ownership. Cloud operators can see
+public advertisements and relayed queries: relay use adds that trusted party.
+`test_directory.py`, `test_relay.py`, `test_cloud.py` and actual HTTPS checks in
+`test_cloud_client.py` exercise these controls. Managed connector credentials,
+hosted network composition and federation container packaging in
+[the federation design](FEDERATION.md) remain to be implemented.
 
 ## Boundaries
 

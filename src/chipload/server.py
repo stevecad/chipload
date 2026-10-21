@@ -95,7 +95,8 @@ def challenge(settings: ServerSettings) -> str:
 class Boundary:
     """Bound requests before either protocol parser; verify identity once per HTTP request."""
 
-    def __init__(self, app, settings, verifier, operations):
+    def __init__(self, app, settings, verifier, operations, *, max_active=32,
+                 max_request_bytes=MAX_REQUEST_BYTES, authorize=None):
         self.app, self.settings, self.verifier, self.operations = (
             app,
             settings,
@@ -105,6 +106,9 @@ class Boundary:
         self.host = urlsplit(settings.resource_url).netloc
         self.origins = {settings.base_url, *settings.allowed_origins}
         self.active = 0
+        self.max_active = max_active
+        self.max_request_bytes = max_request_bytes
+        self.authorize = authorize
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
@@ -132,7 +136,7 @@ class Boundary:
             return await JSONResponse({"error": {"code": "invalid_origin"}}, 403)(
                 scope, receive, send
             )
-        if self.active >= 32:
+        if self.active >= self.max_active:
             return await JSONResponse(
                 {"error": {"code": "busy"}}, 503, headers={"Retry-After": "1"}
             )(scope, receive, send)
@@ -176,6 +180,8 @@ class Boundary:
                 principal = await run_in_threadpool(self.verifier.verify, token)
                 await run_in_threadpool(self.operations.limiter.identity, principal.subject)
             scope["chipload.principal"] = principal
+            if self.authorize is not None:
+                await run_in_threadpool(self.authorize, scope, principal)
             data = bytearray()
             if "content-length" in headers:
                 try:
@@ -186,7 +192,7 @@ class Boundary:
                     return await JSONResponse({"error": {"code": "invalid_length"}}, 400)(
                         scope, receive, send
                     )
-                if length > MAX_REQUEST_BYTES:
+                if length > self.max_request_bytes:
                     return await JSONResponse({"error": {"code": "request_too_large"}}, 413)(
                         scope, receive, send
                     )
@@ -196,7 +202,7 @@ class Boundary:
                     if message["type"] == "http.disconnect":
                         return
                     data.extend(message.get("body", b""))
-                    if len(data) > MAX_REQUEST_BYTES:
+                    if len(data) > self.max_request_bytes:
                         return await JSONResponse({"error": {"code": "request_too_large"}}, 413)(
                             scope, receive, send
                         )
@@ -258,7 +264,7 @@ class Boundary:
                 await send(message)
 
             await self.app(scope, replay, secured)
-        except (AuthenticationError, IdentityUnavailable, RateLimited, RequestCapacity) as error:
+        except (AuthenticationError, IdentityUnavailable, Forbidden, NotFound, RateLimited, RequestCapacity) as error:
             status, body = problem(error)
             response_headers = {"Cache-Control": "no-store", "Vary": "Authorization, Origin"}
             if isinstance(error, (AuthenticationError, IdentityUnavailable)):

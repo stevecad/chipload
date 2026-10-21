@@ -48,8 +48,12 @@ Direct public instance queries now have stable operator-owned IDs, typed HTTPS
 envelopes and publication generation/revision guards. Trusted clients validate
 and pin resolved addresses and verify TLS names inside bounded network processes.
 Actual HTTPS and supervised-service tests cover parity, withdrawal, duplicate
-local shop IDs and hostile responses. Cloud discovery, outbound connector/relay
-and hosted network composition remain open.
+local shop IDs and hostile responses. The optional cloud service now indexes
+leased offerings with exact semantics and site distances, and carries bounded
+public queries through authenticated outbound polling sessions. Actual HTTPS
+tests show nearest-supplier business rejection, direct/relay equivalence and
+direct queries during a cloud outage. Managed connector credentials/lifecycle,
+hosted network composition and federation container packaging remain open.
 
 - The repository has issue-driven contributor tooling and a legacy v0.1.0 data specification.
 - Local Compose infrastructure provides Keycloak, PostgreSQL, and OpenBao, with bootstrap and access-denial tests.
