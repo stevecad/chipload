@@ -141,6 +141,7 @@ Use its explicit subject/shop grants and its container settings path:
 ./scripts/build-worker
 ./scripts/build-runtime
 ./scripts/build-tls
+./scripts/build-secrets
 # Start the application as described in TLS.md. Provision the receiver and
 # OpenBao (SECRETS.md) on this network before starting its executor.
 docker network create --internal chipload-evidence

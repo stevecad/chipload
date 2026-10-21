@@ -21,6 +21,7 @@ import httpx2
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 from program_support import agent_call
+from secrets_support import script as secrets_stack
 from tls_support import ROOT, stack
 
 from chipload.execution import ExecutionService
@@ -28,8 +29,6 @@ from chipload.execution_model import AdapterBinding
 from chipload.lifecycle import Repository
 from chipload.remote_adapter import HttpAdapterConfig
 from examples.service_shop import project
-
-BAO_IMAGE = "ghcr.io/openbao/openbao:2.7.1@sha256:6d2b93856e3fcf7b18ad855a0b51eaba474dc8b79cf554379ea32034797d2acf"
 
 
 def write(path, value):
@@ -50,6 +49,9 @@ def port():
 )
 class RemoteAdapterLiveTests(unittest.IsolatedAsyncioTestCase):
     async def test_real_scoped_secrets_receipts_restart_and_network_containment(self):
+        bao_image = secrets_stack.image_environment.resolve_image(
+            secrets_stack.IMAGE, secrets_stack.IMAGE_SHA256
+        )
         with tempfile.TemporaryDirectory(prefix="chipload-adapter-") as temporary:
             root = Path(temporary)
             state, tls = root / "state", root / "adapter-tls"
@@ -185,7 +187,7 @@ audit "file" "file" {
                     f"type=bind,src={tls / 'certificates/identity.crt'},dst=/tls/bao.crt,readonly",
                     "--mount",
                     f"type=bind,src={tls / 'certificates/identity.key'},dst=/tls/bao.key,readonly",
-                    BAO_IMAGE,
+                    bao_image,
                     "server",
                 )
                 # Internal bridges do not publish ports. The Linux operator host can

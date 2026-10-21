@@ -1,7 +1,7 @@
 # Private OpenBao service
 
 `scripts/secrets-stack` runs a separate TLS OpenBao container on an existing
-internal adapter network. It uses pinned OpenBao 2.7.1, persistent Raft storage,
+internal adapter network. It builds OpenBao 2.7.1 with patched dependencies and uses persistent Raft storage,
 file audit logging, PGP-encrypted initialization material, and explicit threshold
 unsealing. It publishes no host ports and mounts no shop databases, application
 settings, Docker socket, or PGP private keys.
@@ -30,6 +30,7 @@ public keys alone do not establish independent human custody.
 
 ```sh
 uv sync --locked --extra server
+./scripts/build-secrets
 docker network create --internal chipload-evidence
 uv run --extra server python scripts/secrets-stack --state .local/secrets configure \
   --name chipload-secrets --network chipload-evidence --host bao \
@@ -47,6 +48,35 @@ its initialized/sealed state; a running TLS listener does not mean secrets are
 available. Container health is unsuccessful while sealed or uninitialized.
 No command automatically unseals the server. Use the same `--state` for every
 operation on this deployment.
+
+`build-secrets` verifies the exact upstream source archive and builds with Go
+1.27.3, `x/net` 0.60.0 and committed Go module checksums. It preserves the upstream
+UI with its frozen pnpm lock; package scripts and compilation run without network
+access. The Node toolchain is confined to the UI build stage. The runtime keeps
+the upstream entrypoint and includes the zlib fix, dependency notices, the
+compiled package graph and corresponding source with the changed module locks
+under `/usr/local/share/chipload/`. The binary reports `2.7.1+chipload.1`.
+Retained Go build metadata identifies the upstream release and marks the changed
+module locks, so binary scanners can still identify the OpenBao version.
+Version metadata follows the [upstream packaging guide](https://openbao.org/community/contributing/packaging/).
+
+The build reference hashes the recipe and locks. Startup checks its image labels
+and supplies an immutable image ID to Compose. Existing containers must carry the
+matching build and deployment labels and have been created by immutable ID.
+Neither a registry tag change nor an inherited environment variable selects a
+different build. Docker administrators and the local deployment owner remain
+trusted.
+
+The build helper reuses an existing image after verifying its labels and ID.
+Use `--rebuild` to explicitly rebuild the same inputs. A fresh build can change
+the image ID; retain the tested image with recovery records. Repeated development
+starts reuse the existing image and do not recreate OpenBao merely to rebuild it.
+
+Keep the image and matching checkout with recovery records. Existing private
+deployment state and archives retain their original image reference and Compose
+contract. Automatic migration from the earlier upstream-image packaging is not
+implemented; manage those deployments with their matching checkout. Do not edit
+the image field or replace initialized storage to upgrade.
 
 Initialization sends public PGP keys to OpenBao's
 [`sys/init` endpoint](https://openbao.org/docs/api/system/init/). OpenBao encrypts
@@ -419,7 +449,10 @@ Restore requires an absent destination directory and no container from the
 original Compose project. If the original host still exists, fence its service
 before bringing up a replacement; local checks cannot detect another Docker
 host. On a replacement host, recreate the same internal network and use the
-backed-up pinned image and Compose contract. The helper refuses an existing
+backed-up image build and Compose contract. Build it with `scripts/build-secrets`
+from the matching checkout or load the retained image. Archives from the earlier
+upstream-image packaging require that earlier checkout and pinned image.
+The helper refuses an existing
 destination, conflicting project, shared storage mounts, changed deployment
 contract, unauthenticated archive, links, unexpected paths, or altered contents.
 
@@ -462,6 +495,7 @@ replacement-host recovery need operator drills.
 ```sh
 ./scripts/build-runtime
 ./scripts/build-tls
+./scripts/build-secrets
 CHIPLOAD_SECRETS_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_secrets_stack_live.py' -v
 CHIPLOAD_SECRETS_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_secrets_recovery_live.py' -v
 CHIPLOAD_SECRETS_TESTS=1 uv run --extra server python -m unittest discover -s tests -p 'test_secrets_workload_live.py' -v

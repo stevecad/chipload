@@ -282,9 +282,19 @@ Remaining image findings need exposure review and applicable fixes.
 The ACME issuer now builds released lego with patched Go/HTTP and native
 dependencies, verified module locks and a compiled-package exclusion check.
 Its deployment helper checks the build reference and creates the account writer
-by immutable image ID. The binary audit retains the original findings, the
-patched issuer evidence and the unresolved OpenBao findings. Existing issuer
+by immutable image ID. The binary audit retains the original findings and
+patched issuer evidence. Existing issuer
 state remains tied to its original build; automatic image migration is not supplied.
+The OpenBao build now uses verified release source, patched Go/HTTP and zlib,
+frozen UI dependencies and compilation without network access. It retains release
+metadata, corresponding source and notices. Its dated scan has no remaining
+high/critical or named-symbol matches; the retained OpenPGP wildcard finding
+concerns packages excluded from compilation. Both development and private TLS
+startup verify the build and use immutable image IDs. Existing private secrets
+state and archives still require their matching checkout and deployment contract.
+Local validation passed all six secrets live checks, including real identity,
+credential rotation, storage-loss recovery and contained adapters. Development
+identity, scoped secret access and compiled UI asset checks also passed.
 Structural admission and deterministic work budgets are implemented;
 see `docs/SHOP_MODEL.md`. `docs/AUTHORING.md` records reproducible data-operation
 measurements. Immutable build/projection caching now reduces repeated-read cost

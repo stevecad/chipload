@@ -1143,7 +1143,7 @@
           ]
         }
       ],
-      "assessment": "Vulnerable symbols are present. Protocol, configuration and caller reachability have not been established for every match; retain these findings pending dependency updates and deployment-specific review.",
+      "assessment": "Baseline image with thirteen named-symbol advisory matches, superseded by openbao-patched below. Keep these original findings for comparison with the patched binary and its compiled-package exclusion check.",
       "wildcard_findings": [],
       "advisories_without_symbol_or_wildcard_records": [
         "GO-2026-5932"
@@ -1559,6 +1559,136 @@
         "openpgp_packages": []
       },
       "assessment": "The only remaining tool finding uses wildcard records for deprecated OpenPGP packages. The verified compilation graph contains none of those packages, and the build now rejects them. The binary SHA-256 equals the scanned binary from the earlier image before the final native-library patches; the final image is scanned separately for native packages. No named vulnerable symbols were reported by this dated Go database. This does not clear other deployment components."
+    },
+    {
+      "role": "openbao-patched",
+      "image": "sha256:dd19b5a5dcc6ea767d299669ccd2d15cc26a111964de5757e92cf021f4892571",
+      "path": "usr/bin/bao",
+      "sha256": "7598c665b3714e2fdff49c97de4c68faeab490f6778ed3d771c8a34677f5f755",
+      "inputs_sha256": {
+        "deploy/secrets/openbao.Dockerfile": "a4ce10a199d9bb9821e12558cf4c8deb0f434728ac1a63e7afdc43ea47b502e3",
+        "deploy/secrets/openbao.go.mod": "a5b909fb82e2e12b636f3f6c3ae671301038573e8d919080a56562847b1d11ea",
+        "deploy/secrets/openbao.go.sum": "5233741f7265f6d79f2e229c84de61d2660b46bdc8f1fb5496f384082e157bbb",
+        "LICENSE": "9895789293faf333929202534f828e148325f785d681f38275ccc6c003099630",
+        "scripts/build-secrets": "39b8e01dfe31f7812446a5742896759f7b6df80fee34abbf0e8f1563b1615398",
+        "scripts/secrets_environment.py": "c0aad12718f94352f5fc0db4e77b08314345d2899d55dffeaa3db90295eaaa25",
+        "scripts/secrets-stack": "a51d76e56a29e178c8c517f39c52f0c4c8180d8efd5e4b06259efb8e442910f8",
+        "scripts/dev-stack": "c5eba6df0043fc5189b8abe7a0c21e3311f9d48f043edd6b6409f8584480661a",
+        "deploy/secrets/compose.yaml": "3fdd0686a463f144ec20bb48c982667d040b7d5c8f262957d811d54e1411a707",
+        "compose.yaml": "c7f3864e9adf4783ea52471a25a34c5a2d4dfa106ead03ae687a97875c860f0b"
+      },
+      "upstream_source": {
+        "commit": "a5db72cef75c24b920ade02065b18dd8eb666bac",
+        "commit_date": "2026-10-01T13:32:54Z",
+        "url": "https://codeload.github.com/openbao/openbao/tar.gz/a5db72cef75c24b920ade02065b18dd8eb666bac",
+        "sha256": "c7d5fa39816bf5f7b1ad2edbc7a53c3f7e8a124ac4f6e2c8ff8366282d4f771f"
+      },
+      "scanner_config": {
+        "protocol_version": "v1.0.0",
+        "scanner_name": "govulncheck",
+        "scanner_version": "v1.9.0",
+        "db": "https://vuln.go.dev",
+        "db_last_modified": "2026-10-21T00:27:29Z",
+        "scan_level": "symbol",
+        "scan_mode": "binary"
+      },
+      "go_version": "go1.27.3",
+      "main_module": {
+        "path": "github.com/openbao/openbao/v2",
+        "version": "v2.7.1+dirty"
+      },
+      "raw_report_sha256": "09f6133b8c85fed458cc0cd2a1daf29709f01d1d08b7245a27d23354a9c5dcc9",
+      "raw_report_bytes": 1024156,
+      "symbol_findings": [],
+      "wildcard_findings": [
+        {
+          "osv": "GO-2026-5932",
+          "aliases": [],
+          "summary": "The golang.org/x/crypto/openpgp package is unmaintained, unsafe by design, and has known security issues",
+          "source": "https://pkg.go.dev/vuln/GO-2026-5932",
+          "record_count": 7,
+          "packages": [
+            "golang.org/x/crypto/openpgp",
+            "golang.org/x/crypto/openpgp/armor",
+            "golang.org/x/crypto/openpgp/clearsign",
+            "golang.org/x/crypto/openpgp/elgamal",
+            "golang.org/x/crypto/openpgp/errors",
+            "golang.org/x/crypto/openpgp/packet",
+            "golang.org/x/crypto/openpgp/s2k"
+          ],
+          "examples": [
+            {
+              "module": "golang.org/x/crypto",
+              "version": "v0.57.0",
+              "package": "golang.org/x/crypto/openpgp/s2k",
+              "function": "org/x/crypto/openpgp/s2k/*",
+              "receiver": "golang"
+            },
+            {
+              "module": "golang.org/x/crypto",
+              "version": "v0.57.0",
+              "package": "golang.org/x/crypto/openpgp",
+              "function": "org/x/crypto/openpgp/*",
+              "receiver": "golang"
+            },
+            {
+              "module": "golang.org/x/crypto",
+              "version": "v0.57.0",
+              "package": "golang.org/x/crypto/openpgp/packet",
+              "function": "org/x/crypto/openpgp/packet/*",
+              "receiver": "golang"
+            }
+          ]
+        }
+      ],
+      "package_or_module_findings": [
+        {
+          "osv": "GO-2026-5932",
+          "aliases": [],
+          "summary": "The golang.org/x/crypto/openpgp package is unmaintained, unsafe by design, and has known security issues",
+          "source": "https://pkg.go.dev/vuln/GO-2026-5932",
+          "record_count": 8,
+          "packages": [
+            "golang.org/x/crypto/openpgp",
+            "golang.org/x/crypto/openpgp/armor",
+            "golang.org/x/crypto/openpgp/clearsign",
+            "golang.org/x/crypto/openpgp/elgamal",
+            "golang.org/x/crypto/openpgp/errors",
+            "golang.org/x/crypto/openpgp/packet",
+            "golang.org/x/crypto/openpgp/s2k"
+          ],
+          "examples": [
+            {
+              "module": "golang.org/x/crypto",
+              "version": "v0.57.0"
+            },
+            {
+              "module": "golang.org/x/crypto",
+              "version": "v0.57.0",
+              "package": "golang.org/x/crypto/openpgp/armor"
+            },
+            {
+              "module": "golang.org/x/crypto",
+              "version": "v0.57.0",
+              "package": "golang.org/x/crypto/openpgp/clearsign"
+            }
+          ]
+        }
+      ],
+      "package_check": {
+        "image": "sha256:dd19b5a5dcc6ea767d299669ccd2d15cc26a111964de5757e92cf021f4892571",
+        "reference": "chipload-openbao:9303880cf60ff84dd47bc5350b48c1317a9c3e1019e8aea28e4f17671684bb8e",
+        "input_fingerprint": "9303880cf60ff84dd47bc5350b48c1317a9c3e1019e8aea28e4f17671684bb8e",
+        "binary_sha256": "7598c665b3714e2fdff49c97de4c68faeab490f6778ed3d771c8a34677f5f755",
+        "package_graph_sha256": "796dbabab4520ff0e61f58d1cae8682c990eb408db1007743c5cace9922ee86d",
+        "compiled_package_count": 1816,
+        "openpgp_packages": [],
+        "build_info_sha256": "8e9fb7a47ea9aa3eeb7766d2f21be48a10b0c88c0ac2ff3ee1de5c065d98bffe",
+        "source_archive_sha256": "cbb6738b760c43196b11b95f91073a4d5cf4b717a8ea1785c552c3e475a764d8",
+        "source_file_count": 5389,
+        "source_matches_upstream_except_committed_locks": true
+      },
+      "assessment": "No named vulnerable symbols were reported by this dated Go database. The remaining tool records describe deprecated OpenPGP packages using package/module records and wildcard symbols. The verified compiled package graph contains none of those packages, and the build rejects them. Corresponding source matches the upstream archive except for the committed Go dependency locks. Main-module metadata retains v2.7.1+dirty so the release remains identifiable. This does not clear other deployment components."
     }
   ],
   "baseline_revision": "06a22f1fd83ecfd41501d7bdfd09d3d17cbf6e4d"

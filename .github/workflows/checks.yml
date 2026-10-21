@@ -89,5 +89,8 @@ jobs:
       - name: Build TLS images
         if: matrix.profile != 'python'
         run: ./scripts/build-tls
+      - name: Build OpenBao image
+        if: matrix.profile == 'secrets'
+        run: ./scripts/build-secrets
       - name: Run live profile without skipped checks
         run: uv run --extra server python scripts/check-live "$CI_PROFILE"

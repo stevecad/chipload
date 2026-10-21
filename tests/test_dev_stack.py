@@ -9,8 +9,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from secrets_environment_support import ROOT
+
 loader = importlib.machinery.SourceFileLoader(
-    "dev_stack", str(Path(__file__).resolve().parents[1] / "scripts/dev-stack")
+    "dev_stack", str(ROOT / "scripts/dev-stack")
 )
 spec = importlib.util.spec_from_loader(loader.name, loader)
 stack = importlib.util.module_from_spec(spec)

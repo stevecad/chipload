@@ -5,7 +5,8 @@ import importlib.util
 import subprocess
 from types import SimpleNamespace
 
-from recovery_support import ROOT, archive
+from recovery_support import archive
+from secrets_environment_support import ROOT
 
 loader = importlib.machinery.SourceFileLoader(
     "secrets_stack_script", str(ROOT / "scripts/secrets-stack")

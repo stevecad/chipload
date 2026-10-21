@@ -66,6 +66,7 @@ Chipload is becoming a platform for software-defined shops. Read [ROADMAP.md](RO
 - `tests/test_agent_work.py`: workflow integration tests using temporary Git repositories and a fake `gh`; tests do not contact GitHub.
 - `compose.yaml`, `deploy/`: local Keycloak, PostgreSQL, OpenBao configuration, imported realm, and example workload policy. Images are pinned by version and digest.
 - `scripts/dev-stack`: local stack bootstrap, persistent OpenBao initialization/unseal, and restricted AppRole provisioning.
+- `scripts/build-secrets`, `secrets_environment.py`, `deploy/secrets/openbao.*`: verified OpenBao source build, dependency locks, offline compilation, retained UI and immutable image selection shared by development and the private TLS service.
 - `scripts/secrets-stack`, `deploy/secrets/`, `docs/SECRETS.md`, `tests/test_secrets_stack*.py`: separate TLS OpenBao deployment, PGP-encrypted threshold bootstrap, explicit unsealing, audit storage, certificate reload and initialized-store checks. Keep decrypted shares and PGP private keys outside service state; never replay uncertain initialization.
 - `scripts/secrets-recovery`, `tests/test_secrets_recovery*.py`: encrypted offline backup of the single-node OpenBao deployment and atomic restore into fresh state. Preserve the original node/cluster identity and quorum, stop the owned container before copying, gate startup after interrupted backup, and authenticate archives before extraction.
 - `scripts/secrets-workload`, `tests/test_secrets_workload*.py`: operator-only AppRole/policy provisioning, exact-path verification, SecretID rotation and revocation. Journal the replacement before issuance; verify/install it before retiring the previous credential. Keep operator tokens outside service/workload state, refuse configuration drift, block backups during pending changes, and preserve nonsecret workload receipts in recovery archives.
@@ -144,6 +145,14 @@ compilation, dependency notices and the image-input fingerprint intact. Resolve
 and verify the build reference before creating a container, then create by its
 immutable ID. Issuer state and backups retain their build reference; do not
 silently rewrite it or replace an existing account writer during an image update.
+
+The OpenBao build also verifies its upstream source archive and frozen UI lock.
+Keep package scripts and compilation offline, preserve dependency notices and
+corresponding source, and verify the build before exposing persistent secret
+storage to its immutable image ID. Existing private deployments and recovery
+archives retain their original image/Compose contract; changing image packaging
+does not authorize rewriting that state. Build with `scripts/build-secrets`
+before the secrets live profile; `dev-stack up` performs the cached build itself.
 
 Recovery is an operator command, never an HTTP/MCP shop action. Back up the paired SQLite stores and identity/configuration state together while writers are stopped. Authenticate encrypted archives before using plaintext. Restore only into fresh state and a new PostgreSQL volume; retain the incomplete marker across failure and reject application startup until restore finishes. Preserve policy generations, spent request credit, subjects, signing keys, publication generations, and observation timestamps. Use the shared deployment operation lock, retain private modes, and never clean up resources belonging to another project.
 

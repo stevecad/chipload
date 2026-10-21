@@ -90,7 +90,12 @@ With Docker Engine and Docker Compose installed, start the development stack:
 ./scripts/dev-stack status
 ```
 
-The first command generates random credentials in an ignored `.env`, starts the containers, imports a `chipload` Keycloak realm, and initializes and unseals persistent OpenBao storage. Images are pinned by version and digest. Docker downloads the images on first use; allow a few minutes for Keycloak's initial database migration.
+The first command generates random credentials in an ignored `.env`, builds the
+patched OpenBao image, starts the containers, imports a `chipload` Keycloak realm,
+and initializes and unseals persistent OpenBao storage. Base images and source
+inputs are pinned. The first OpenBao build and Keycloak database migration take
+several minutes; subsequent starts reuse the verified image. See
+[the secrets guide](docs/SECRETS.md) for the build inputs and private TLS service.
 
 | Service | Local address | Purpose |
 | --- | --- | --- |
@@ -113,7 +118,10 @@ The bootstrap writes owner-only files under ignored `.local/dev-stack/`:
 
 OpenBao data, audit logs, and Keycloak data use named volumes. Run `./scripts/dev-stack down` to stop the stack without deleting them. Run `up` again to resume and unseal it. Preserve `.env` and `.local/dev-stack/` alongside the volumes: losing those files can require credential recovery. The script refuses to overwrite initialized OpenBao storage when recovery material is missing. Changing `.env` passwords after initialization does not rotate existing database/admin credentials.
 
-OpenBao's audit device is declared in `deploy/openbao/config.hcl`. After editing that file, run `docker compose restart openbao` and `./scripts/dev-stack up` to reload it and unseal the server.
+OpenBao's audit device is declared in `deploy/openbao/config.hcl`. After editing
+that file, run `./scripts/dev-stack down` and `./scripts/dev-stack up` to restart
+the development services and unseal OpenBao. Use the helper for Compose commands;
+it supplies the reviewed OpenBao image and preserves the existing volumes.
 
 This is a local development stack. It uses HTTP, Keycloak development mode, a single OpenBao node, disabled memory locking, and one locally stored unseal share. Production deployment needs TLS with stable issuers, production Keycloak configuration, separately secured recovery/auto-unseal, protected backups, and independent workload identities for each shop. This Compose file does not claim production readiness.
 

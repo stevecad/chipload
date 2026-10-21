@@ -3,6 +3,7 @@
 import base64
 import json
 import os
+import re
 import secrets
 import subprocess
 import tempfile
@@ -12,6 +13,8 @@ from urllib.error import HTTPError
 from urllib.parse import urlencode
 from urllib.request import ProxyHandler, Request, build_opener
 
+from secrets_environment_support import environment
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -19,9 +22,11 @@ ROOT = Path(__file__).resolve().parents[1]
 class LiveStackTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        reference, _ = environment.specification(ROOT)
         config = json.loads(subprocess.check_output(
             ["docker", "compose", "--project-directory", str(ROOT), "config", "--format", "json"],
             text=True,
+            env={**os.environ, "CHIPLOAD_OPENBAO_IMAGE": reference},
         ))
         cls.config = config
         cls.bao = "http://127.0.0.1:" + str(config["services"]["openbao"]["ports"][0]["published"])
@@ -153,6 +158,20 @@ class LiveStackTests(unittest.TestCase):
         denied.exception.close()
 
     def test_openbao_workload_can_only_read_its_shop(self):
+        opener = build_opener(ProxyHandler({}))
+        with opener.open(self.bao + "/ui/", timeout=15) as response:
+            self.assertEqual(response.status, 200)
+            self.assertEqual(response.headers.get_content_type(), "text/html")
+            page = response.read(2 * 1024 * 1024 + 1)
+        self.assertLessEqual(len(page), 2 * 1024 * 1024)
+        assets = re.findall(rb'src="(/ui/assets/[^"?#]+\.js)"', page)
+        self.assertTrue(assets, "OpenBao must serve its compiled UI and JavaScript assets")
+        for asset in assets:
+            with opener.open(self.bao + asset.decode("ascii"), timeout=15) as response:
+                self.assertEqual(response.status, 200)
+                self.assertIn(response.headers.get_content_type(), {"text/javascript", "application/javascript"})
+                self.assertTrue(response.read(1))
+
         suffix = "smoke-" + secrets.token_hex(8)
         paths = [f"shops/example/{suffix}", f"shops/another-shop/{suffix}"]
         for path in paths:

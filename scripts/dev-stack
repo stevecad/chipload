@@ -4,17 +4,19 @@
 import argparse
 import json
 import os
-from pathlib import Path
 import secrets
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import ProxyHandler, Request, build_opener
 
+import secrets_environment as image_environment
 
 ROOT = Path(__file__).resolve().parents[1]
 STATE = ROOT / ".local" / "dev-stack"
+IMAGE, IMAGE_SHA256 = image_environment.specification(ROOT)
 
 
 class StackError(Exception):
@@ -51,10 +53,12 @@ def ensure_env():
 
 
 def compose(*args, capture=False):
+    image = image_environment.resolve_image(IMAGE, IMAGE_SHA256) if args[0] == "up" else IMAGE
     result = subprocess.run(
         ["docker", "compose", "--project-directory", str(ROOT),
          "--file", str(ROOT / "compose.yaml"), *args],
         text=True, capture_output=capture,
+        env={**os.environ, "CHIPLOAD_OPENBAO_IMAGE": image},
     )
     if result.returncode:
         # config can include secrets: never echo captured output.
@@ -140,6 +144,7 @@ def main():
     args = parser.parse_args()
     if args.command == "up":
         ensure_env()
+        subprocess.run([str(ROOT / "scripts/build-secrets")], check=True)
         config = json.loads(compose("config", "--format", "json", capture=True))
         compose("up", "--detach", "--wait", "--wait-timeout", "180")
         bao_port = config["services"]["openbao"]["ports"][0]["published"]

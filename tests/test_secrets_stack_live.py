@@ -48,6 +48,11 @@ class SecretsLiveTests(unittest.TestCase):
                 )
                 value, _, _, container = script.deployment(state)
                 config, host = container["Config"], container["HostConfig"]
+                self.assertEqual(config["Image"], container["Image"])
+                self.assertRegex(config["Image"], r"^sha256:[a-f0-9]{64}$")
+                self.assertEqual(
+                    config["Labels"]["org.chipload.secrets-sha256"], script.IMAGE_SHA256
+                )
                 self.assertEqual(config["User"], f"{os.getuid()}:{os.getgid()}")
                 self.assertTrue(host["ReadonlyRootfs"])
                 self.assertEqual(host["CapDrop"], ["ALL"])

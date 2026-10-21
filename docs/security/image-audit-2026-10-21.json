@@ -6,7 +6,7 @@
     "archive_sha256": "c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0",
     "database_updated_at": "2026-10-21T07:13:45.702547343Z"
   },
-  "scope": "Version-based image findings; high/critical entries are retained for review. Gateway and issuer include their remaining unknown-severity finding and a compiled-package exclusion check. Counts are package/advisory matches, not distinct CVEs or confirmed exploitable paths. This is not a release clearance. The test_ca image is a disposable test dependency; cadquery-worker is optional.",
+  "scope": "Version-based image findings; high/critical entries are retained for review. Gateway, issuer and OpenBao include their remaining unknown-severity finding and a compiled-package exclusion check. Counts are package/advisory matches, not distinct CVEs or confirmed exploitable paths. This is not a release clearance. The test_ca image is a disposable test dependency; cadquery-worker is optional.",
   "inputs_sha256": {
     "uv.lock": "ea2aa8c2d7a44a998fdc51202718a31e33a790efe1b0ff18a57ed5f48a3eb704",
     "deploy/worker/Dockerfile": "e4458e6b4976f9a3826f4a2205f5f129236ea138797d2bed9e1f59b1ca2c1246",
@@ -17,14 +17,23 @@
     "deploy/worker/cadquery.txt": "dea58e89a8fcfcf3ce05f2bd9869b2683ea073aaee7ad8a3c3cc2ebca59bb5a2",
     "deploy/tls/keycloak.Dockerfile": "c32f28b83ccab83658a6d9d0945c7f32bd8ecea5e80dabc31bc94651e8cb2738",
     "deploy/tls/compose.yaml": "b55edb9b94ca361733f8ca2e274a5485aded7aa6bcd537f205170a696f9dca31",
-    "deploy/secrets/compose.yaml": "9c282baf31df205a554743e18abf79684e7d149434488784e5df099f11fc9dc3",
+    "deploy/secrets/compose.yaml": "3fdd0686a463f144ec20bb48c982667d040b7d5c8f262957d811d54e1411a707",
     "deploy/acme/images.json": "d5c5a7a45e476dc4f8c60ad45546eb1d61b2d9d34eaf132eea316e2da408af11",
     "deploy/acme/issuer.Dockerfile": "626c7cd00217906715b5ddfa14c16f6fa17627cd44bbd37c1ba2a466f381b0c9",
     "deploy/acme/issuer.go.mod": "63708d54e7904d0c75ea7c9505f78864e735d3e28f9b3ec7650d1dc27aa38040",
     "deploy/acme/issuer.go.sum": "d4b8b007b569d5c77e64fc1c48b03d473ab971fdbbed55adf8a38d65670957f0",
     "scripts/acme-images": "26bb94c54d174bad8fed4f7aaa59e4100bb0df65603137ec3f6ec639cc142bb5",
     "scripts/acme_environment.py": "cef0825fc2ec88116fffee8fdc9f4e0ae902481df83a10e53b100fd178e1cf2e",
-    "scripts/tls-acme": "b2665d85d3a93987dee549b56615396be042697c84f6a0a4322263676ffc4413"
+    "scripts/tls-acme": "b2665d85d3a93987dee549b56615396be042697c84f6a0a4322263676ffc4413",
+    "deploy/secrets/openbao.Dockerfile": "a4ce10a199d9bb9821e12558cf4c8deb0f434728ac1a63e7afdc43ea47b502e3",
+    "deploy/secrets/openbao.go.mod": "a5b909fb82e2e12b636f3f6c3ae671301038573e8d919080a56562847b1d11ea",
+    "deploy/secrets/openbao.go.sum": "5233741f7265f6d79f2e229c84de61d2660b46bdc8f1fb5496f384082e157bbb",
+    "LICENSE": "9895789293faf333929202534f828e148325f785d681f38275ccc6c003099630",
+    "scripts/build-secrets": "39b8e01dfe31f7812446a5742896759f7b6df80fee34abbf0e8f1563b1615398",
+    "scripts/secrets_environment.py": "c0aad12718f94352f5fc0db4e77b08314345d2899d55dffeaa3db90295eaaa25",
+    "scripts/secrets-stack": "a51d76e56a29e178c8c517f39c52f0c4c8180d8efd5e4b06259efb8e442910f8",
+    "scripts/dev-stack": "c5eba6df0043fc5189b8abe7a0c21e3311f9d48f043edd6b6409f8584480661a",
+    "compose.yaml": "c7f3864e9adf4783ea52471a25a34c5a2d4dfa106ead03ae687a97875c860f0b"
   },
   "images": [
     {
@@ -2250,61 +2259,40 @@
     },
     {
       "role": "openbao",
-      "image": "ghcr.io/openbao/openbao:2.7.1@sha256:6d2b93856e3fcf7b18ad855a0b51eaba474dc8b79cf554379ea32034797d2acf",
-      "scanned_at": "2026-10-21T08:14:37.178394362-05:00",
+      "image": "sha256:dd19b5a5dcc6ea767d299669ccd2d15cc26a111964de5757e92cf021f4892571",
+      "scanned_at": "2026-10-21T10:23:42.835394249-05:00",
       "counts": {
-        "MEDIUM": 14,
-        "UNKNOWN": 1,
-        "HIGH": 5,
-        "LOW": 1
+        "UNKNOWN": 1
       },
       "findings": [
         {
           "target": "usr/bin/bao",
-          "VulnerabilityID": "CVE-2026-78669",
-          "PkgName": "golang.org/x/net",
-          "InstalledVersion": "v0.58.0",
-          "FixedVersion": "0.60.0",
-          "Severity": "HIGH",
-          "Status": "fixed"
-        },
-        {
-          "target": "usr/bin/bao",
-          "VulnerabilityID": "CVE-2026-111943",
-          "PkgName": "stdlib",
-          "InstalledVersion": "v1.27.1",
-          "FixedVersion": "1.26.10, 1.27.3",
-          "Severity": "HIGH",
-          "Status": "fixed"
-        },
-        {
-          "target": "usr/bin/bao",
-          "VulnerabilityID": "CVE-2026-78667",
-          "PkgName": "stdlib",
-          "InstalledVersion": "v1.27.1",
-          "FixedVersion": "1.26.9, 1.27.2",
-          "Severity": "HIGH",
-          "Status": "fixed"
-        },
-        {
-          "target": "usr/bin/bao",
-          "VulnerabilityID": "CVE-2026-78669",
-          "PkgName": "stdlib",
-          "InstalledVersion": "v1.27.1",
-          "FixedVersion": "1.26.9, 1.27.2",
-          "Severity": "HIGH",
-          "Status": "fixed"
-        },
-        {
-          "target": "usr/bin/bao",
-          "VulnerabilityID": "CVE-2026-97031",
-          "PkgName": "stdlib",
-          "InstalledVersion": "v1.27.1",
-          "FixedVersion": "1.26.9, 1.27.2",
-          "Severity": "HIGH",
-          "Status": "fixed"
+          "VulnerabilityID": "GO-2026-5932",
+          "PkgName": "golang.org/x/crypto",
+          "InstalledVersion": "v0.57.0",
+          "FixedVersion": null,
+          "Severity": "UNKNOWN",
+          "Status": "affected"
         }
-      ]
+      ],
+      "raw_report_sha256": "a93e5d31b53dbec535288699af969229bed15df2ed7837d7d604c292c2817c31",
+      "package_check": {
+        "advisory": "GO-2026-5932",
+        "excluded_package_prefix": "golang.org/x/crypto/openpgp",
+        "build_fails_if_present": true,
+        "package_graph_in_image": "/usr/local/share/chipload/openbao-packages.txt",
+        "image": "sha256:dd19b5a5dcc6ea767d299669ccd2d15cc26a111964de5757e92cf021f4892571",
+        "reference": "chipload-openbao:9303880cf60ff84dd47bc5350b48c1317a9c3e1019e8aea28e4f17671684bb8e",
+        "input_fingerprint": "9303880cf60ff84dd47bc5350b48c1317a9c3e1019e8aea28e4f17671684bb8e",
+        "binary_sha256": "7598c665b3714e2fdff49c97de4c68faeab490f6778ed3d771c8a34677f5f755",
+        "package_graph_sha256": "796dbabab4520ff0e61f58d1cae8682c990eb408db1007743c5cace9922ee86d",
+        "compiled_package_count": 1816,
+        "openpgp_packages": [],
+        "build_info_sha256": "8e9fb7a47ea9aa3eeb7766d2f21be48a10b0c88c0ac2ff3ee1de5c065d98bffe",
+        "source_archive_sha256": "cbb6738b760c43196b11b95f91073a4d5cf4b717a8ea1785c552c3e475a764d8",
+        "source_file_count": 5389,
+        "source_matches_upstream_except_committed_locks": true
+      }
     },
     {
       "role": "postgres",

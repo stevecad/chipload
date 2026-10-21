@@ -36,6 +36,7 @@ uv sync --locked --extra server
 ./scripts/build-worker
 ./scripts/build-runtime
 ./scripts/build-tls
+./scripts/build-secrets
 uv run --extra server python scripts/check-live python
 uv run --extra server python scripts/check-live tls
 uv run --extra server python scripts/check-live recovery

@@ -138,8 +138,15 @@ baseline. The rebuilt [issuer](ACME.md) uses the patched Go/HTTP dependencies an
 native packages. Its only remaining scanner finding is the OpenPGP wildcard
 advisory; the build verifies that none of those packages are compiled. The audit
 separates wildcard records from named symbols and records the final binary hash
-and package graph check. OpenBao still needs dependency updates and exposure
-review. Named-symbol presence alone does not establish reachability from a shop caller.
+and package graph check. The rebuilt [OpenBao service](SECRETS.md) uses Go 1.27.3,
+`x/net` 0.60.0 and the zlib fix, preserving its upstream release metadata for
+scanners. Its thirteen previous named-symbol matches are absent in the updated
+binary; the remaining version-based OpenPGP finding concerns packages excluded
+from compilation. The audit verifies the source archive against upstream plus
+the committed module locks. Startup verifies build labels and passes an immutable
+image ID to Compose. These results do not clear the other image findings or the
+remaining operational qualification. Named-symbol presence alone does not
+establish reachability from a shop caller.
 
 ## Remaining deployment work
 
