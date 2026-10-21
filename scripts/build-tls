@@ -23,6 +23,11 @@ def main():
             paths = [context / "Dockerfile", context / "LICENSE"]
             if role == "keycloak":
                 paths.append(context / "keycloak-entrypoint.sh")
+            else:
+                for suffix in ("mod", "sum"):
+                    name = f"gateway.go.{suffix}"
+                    shutil.copyfile(root / "deploy/tls" / name, context / name)
+                    paths.append(context / name)
             fingerprint = hashlib.sha256(b"".join(path.read_bytes() for path in paths)).hexdigest()
             subprocess.run(
                 [

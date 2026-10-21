@@ -18,7 +18,7 @@ import httpx
 import httpx2
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
-from program_support import agent_call
+from program_support import AdmissionRetryTransport, agent_call
 from tls_support import ROOT, stack
 
 from chipload.lifecycle import Repository
@@ -363,7 +363,10 @@ script.install(Path(sys.argv[2]), certificates=Path(sys.argv[3]) / 'certificates
                             await untrusted.get(base + "/healthz")
 
                     async with httpx2.AsyncClient(
-                        verify=context, headers=headers, trust_env=False
+                        headers=headers, trust_env=False,
+                        transport=AdmissionRetryTransport(httpx2.AsyncHTTPTransport(
+                            verify=context, trust_env=False,
+                        )),
                     ) as transport:
                         async with Client(
                             streamable_http_client(

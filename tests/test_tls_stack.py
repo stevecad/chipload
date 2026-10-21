@@ -179,6 +179,8 @@ class TLSStackTests(unittest.TestCase):
             paths = [stack.ROOT / f"deploy/tls/{role}.Dockerfile", stack.ROOT / "LICENSE"]
             if role == "keycloak":
                 paths.append(stack.ROOT / "deploy/tls/keycloak-entrypoint.sh")
+            else:
+                paths.extend(stack.ROOT / "deploy/tls" / f"gateway.go.{suffix}" for suffix in ("mod", "sum"))
             labels.append(
                 json.dumps(
                     {

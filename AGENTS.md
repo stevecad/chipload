@@ -126,6 +126,13 @@ Keep HTTP admission ahead of token verification and body parsing. Use the connec
 
 Keep TLS and identity state private and outside images/source bundles. Verify both CA chains and hostnames; use the configured issuer/resource audience even when the internal JWKS port differs. The generated agent is bound to one shop; a Keycloak role alone is insufficient. Never recreate credentials over an existing identity database, silently reinitialize missing state, or expose the administration listener publicly. Test failure of identity trust as well as successful authentication. The separate ACME helper supplies certificate acquisition and renewal; HTTPS adapters require a separately provisioned TLS OpenBao service on their private network.
 
+The gateway builds released Caddy source with a pinned Go toolchain and the
+reviewed `deploy/tls/gateway.go.mod`/`gateway.go.sum`. Preserve checksum checks,
+compilation without network access, dependency notices and startup fingerprint
+coverage when updating it. Image pins require advisory review as well as
+functional tests; a fixed application version can still contain vulnerable
+runtime libraries.
+
 Recovery is an operator command, never an HTTP/MCP shop action. Back up the paired SQLite stores and identity/configuration state together while writers are stopped. Authenticate encrypted archives before using plaintext. Restore only into fresh state and a new PostgreSQL volume; retain the incomplete marker across failure and reject application startup until restore finishes. Preserve policy generations, spent request credit, subjects, signing keys, publication generations, and observation timestamps. Use the shared deployment operation lock, retain private modes, and never clean up resources belonging to another project.
 
 Validate candidate TLS material before modifying active files, and persist private staged bytes and update intent before installation. Resume that same bundle; use an explicit validated replacement if it expires. Block startup, backups and conflicting identity/credential operations while installation is incomplete. Recreate individual-file mounts and verify served certificates before recording live activation. Offline restore can retain expired TLS material; startup must reject it until the owner installs a valid replacement. Preserve certificate receipts in recovery archives and test actual process interruption and CA replacement with the TLS live checks.

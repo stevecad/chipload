@@ -445,6 +445,8 @@ def check_tls_images(images):
         paths = [ROOT / f"deploy/tls/{role}.Dockerfile", ROOT / "LICENSE"]
         if role == "keycloak":
             paths.append(ROOT / "deploy/tls/keycloak-entrypoint.sh")
+        else:
+            paths.extend(ROOT / "deploy/tls" / f"gateway.go.{suffix}" for suffix in ("mod", "sum"))
         expected = hashlib.sha256(b"".join(path.read_bytes() for path in paths)).hexdigest()
         labels = (
             json.loads(

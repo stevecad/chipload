@@ -1,4 +1,4 @@
-FROM docker:29.9.1-cli@sha256:6fae2214c3121a28d5aa639d09032f61310b7c9c75ffbad1025f261a1b621800 AS docker-cli
+FROM docker:29.9.2-cli@sha256:5a4ab11c9176a7d5b8d3ae23d47a248b0fb42d4f928dc183ce262bae11bdea65 AS docker-cli
 
 FROM python:3.12.15-slim-trixie@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 AS base
 ENV PYTHONUNBUFFERED=1

@@ -8,9 +8,29 @@ IPv4 address with supplied deployment certificates. Administration always binds
 to `127.0.0.1`.
 
 This is a tested deployment building block. Site DNS/firewall routing, certificate
-provider qualification, production OpenBao delivery, operator-account lifecycle,
-off-host disaster recovery, deployment load testing and stronger worker-host
-isolation remain deployment gates. The default configuration stays local.
+provider qualification, operator-account lifecycle, off-host disaster recovery
+and representative load measurements remain deployment gates. The separate
+[OpenBao service](SECRETS.md) provides private TLS and scoped adapter credentials.
+The [deployment design](../ROADMAP.md#self-hosted-and-hosted-deployments) describes
+host isolation for self-hosted shops and hosted customers. The default
+configuration stays local.
+
+The gateway compiles the released Caddy 2.11.7 entrypoint with pinned Go 1.26.10
+and `golang.org/x/net` 0.60.0. Its original binary predates fixes for
+[HTTP/2 resource exhaustion](https://github.com/golang/go/issues/81742),
+[TLS memory exhaustion](https://pkg.go.dev/vuln/GO-2026-6607) and
+[HTTP Range processing](https://pkg.go.dev/vuln/GO-2026-6609).
+`deploy/tls/gateway.go.mod` and `gateway.go.sum` record the dependency selection
+and checksums. The build verifies downloads, compiles without network access and
+rejects changed locks. The Go toolchain stays in the build stage; the resulting
+image retains the unprivileged gateway configuration and dependency license
+notices. Its native zlib package is pinned to Alpine's patched `1.3.2-r1`.
+The build records the compiled package graph and rejects the deprecated
+`golang.org/x/crypto/openpgp` packages covered by
+[GO-2026-5932](https://pkg.go.dev/vuln/GO-2026-5932). A module-version scanner can
+still report that advisory because other `x/crypto` packages are used; inspect
+`/usr/local/share/chipload/gateway-packages.txt` in the image for package coverage.
+Updating either lock changes the image fingerprint checked at startup.
 
 ## Start locally
 

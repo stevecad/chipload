@@ -43,10 +43,11 @@ CLI base images are pinned by digest. Installation accepts hash-locked binary
 wheels. Image IDs are saved in `.local/worker-image`, `.local/api-image`, and
 `.local/broker-image`, plus `.local/executor-image` for the separate executor.
 Startup checks image roles, SDK fingerprint, and dependency lock against the
-checkout. Rebuild these images after SDK/lock changes.
+checkout. Rebuild these images after SDK, lock, image recipe or version-pin
+changes, then apply them through the deployment's maintenance procedure.
 Images carry Chipload's MIT license. The broker also includes the Docker CLI
-29.9.1 [license](https://github.com/docker/cli/blob/v29.9.1/LICENSE) and
-[notice](https://github.com/docker/cli/blob/v29.9.1/NOTICE) under
+29.9.2 [license](https://github.com/docker/cli/blob/v29.9.2/LICENSE) and
+[notice](https://github.com/docker/cli/blob/v29.9.2/NOTICE) under
 `/usr/local/share/licenses/`; Python wheels retain their package metadata.
 
 Edit `.local/runtime.json` before startup. Keep `database` set to

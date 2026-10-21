@@ -16,7 +16,7 @@ import httpx
 import httpx2
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
-from program_support import agent_call
+from program_support import AdmissionRetryTransport, agent_call
 from tls_support import ROOT
 
 from chipload.execution import ExecutionService
@@ -88,7 +88,10 @@ class ExecutionLiveTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(authenticated.status_code, 200)
                     headers = {"Authorization": "Bearer " + authenticated.json()["access_token"]}
                     async with httpx2.AsyncClient(
-                        verify=context, headers=headers, trust_env=False
+                        headers=headers, trust_env=False,
+                        transport=AdmissionRetryTransport(httpx2.AsyncHTTPTransport(
+                            verify=context, trust_env=False,
+                        )),
                     ) as transport:
                         async with Client(
                             streamable_http_client(

@@ -9,6 +9,7 @@ import json
 import uuid
 
 import httpx
+import httpx2
 from mcp_types import CallToolResult
 
 from chipload.program_runner import ProgramProcessor
@@ -30,6 +31,49 @@ try:
 except ServiceError as error:
     result = {'ok': False, 'status': error.status, 'detail': error.detail}
 """
+
+
+class AdmissionRetryTransport(httpx2.AsyncBaseTransport):
+    """Functional fixtures can wait for an explicit pre-admission refusal.
+
+    Preserve the exact request, including its durable key. Never retry a lost
+    response, an application error or an arbitrary HTTP 503. Load benchmarks
+    use their ordinary transports so refusals remain part of their results.
+    """
+
+    def __init__(self, transport):
+        self.transport = transport
+
+    async def handle_async_request(self, request):
+        await request.aread()
+        for attempt in range(4):
+            response = await self.transport.handle_async_request(request)
+            if response.status_code != 503 or attempt == 3:
+                return response
+            try:
+                body = json.loads(await response.aread())
+                error = body["error"]
+                detail = error["data"]["error"]
+                delay = detail["retry_after"]
+                refused = (
+                    body["jsonrpc"] == "2.0"
+                    and body["id"] is None
+                    and error["code"] == error["data"]["status"] == 503
+                    and detail["code"] == "request_capacity"
+                    and type(delay) is int
+                    and 1 <= delay <= 5
+                    and response.headers.get("Retry-After") == str(delay)
+                )
+            except (ValueError, KeyError, TypeError):
+                return response
+            if not refused:
+                return response
+            await response.aclose()
+            await asyncio.sleep(delay)
+        raise AssertionError("unreachable")
+
+    async def aclose(self):
+        await self.transport.aclose()
 
 
 class FixtureRunner:

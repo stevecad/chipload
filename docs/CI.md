@@ -21,6 +21,13 @@ expected failures and test failures all fail the selected profile. The ordinary
 test command intentionally skips opt-in integration tests; its success alone
 does not establish container coverage.
 
+The TLS lifecycle and operation fixtures use a bounded transport retry when the
+server explicitly refuses MCP admission with `request_capacity`, a null request
+ID and matching retry metadata. They preserve the exact request and durable key.
+Connection failures, lost replies, application errors and arbitrary HTTP 503s
+are not retried. Dedicated tests verify those distinctions and the retry bound.
+Load benchmarks use their ordinary transports and continue to count refusals.
+
 To run the same profiles locally, install Docker Engine 29 with Compose, GnuPG 2.4+,
 Python 3.12+ and `uv`, then run:
 

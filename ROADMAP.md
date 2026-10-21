@@ -271,7 +271,12 @@ Cover authorization on every entry point, malicious source and dependencies, tra
 Bound model graph complexity and the CPU/memory spent validating worker output and evaluating published data, in addition to limiting source containers. Request-byte limits alone do not bound graph-processing cost. Exercise per-identity/shop quotas and fair queueing under adversarial workloads before internet deployment.
 
 **Progress:** `docs/THREAT_MODEL.md` records the implemented authority boundaries,
-test evidence and remaining deployment work. Structural admission and deterministic work budgets are implemented;
+test evidence and remaining deployment work. Its dated dependency audit records
+image identities and remaining advisory matches. The gateway now compiles
+released Caddy with pinned patched Go/HTTP dependencies, verified module locks
+and a check excluding deprecated OpenPGP packages; the broker's Docker CLI is
+also patched. Remaining image findings need exposure review and applicable fixes.
+Structural admission and deterministic work budgets are implemented;
 see `docs/SHOP_MODEL.md`. `docs/AUTHORING.md` records reproducible data-operation
 measurements. Immutable build/projection caching now reduces repeated-read cost
 under memory and concurrency budgets, with publication/corruption/withdrawal

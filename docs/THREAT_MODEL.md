@@ -94,6 +94,25 @@ permissions. This does not independently verify a shop's declarations or stop
 already-dispatched work. Restoring an older backup requires reconciliation of
 revocations recorded after that snapshot.
 
+## Dependency audit checkpoint
+
+The [2026-10-21 Python audit](security/python-audit-2026-10-21.json) queried OSV
+for 77 locked PyPI package/version pairs, including the optional CadQuery lock,
+and returned no matching advisories. That query does not cover native libraries
+or operating-system packages. The [image audit](security/image-audit-2026-10-21.json)
+records Trivy 0.76.1's database time, exact image identities, input hashes,
+severity counts and remaining high/critical matches. These are version matches
+requiring exposure review, not confirmed exploitable paths or release clearance.
+
+The gateway now builds Caddy with patched Go and HTTP/2 dependencies and installs
+the pinned zlib fix. Its remaining scanner match is GO-2026-5932: the build checks
+the actual package graph and refuses any deprecated `x/crypto/openpgp` package.
+The Docker CLI now uses Go 1.26.10 as well. See [the gateway build](TLS.md).
+The report retains outstanding matches in base utilities, private identity/secrets
+infrastructure, the certificate client, optional geometry libraries and the test
+CA. Their fixes and reachability still need review; no broad suppression or
+zero-vulnerability claim applies to the deployment.
+
 ## Remaining deployment work
 
 - Qualify a public edge: exposure, TLS renewal, traffic policy, sustained/adversarial
