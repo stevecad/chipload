@@ -107,6 +107,7 @@ consistent backup; schema migration is not a rolling-upgrade protocol.
 | --- | --- | --- |
 | API | Shop databases and read-only settings; no Docker socket or CLI; outbound network for JWKS | Non-root, read-only image, no Linux capabilities, no privilege escalation, 1 CPU, 1 GiB memory with no additional swap, 128 processes |
 | Broker | Shop databases, read-only settings and Docker Unix socket; no IP network or OpenBao credentials | 1 CPU, 512 MiB memory with no additional swap, 128 processes; same filesystem/capability restrictions; starts separately constrained workers |
+| Python SDK service | Only paired repository storage, mounted separately for each Python run; no network, settings or Docker socket | Repository owner's non-root UID/GID, read-only image, 1 CPU, 256 MiB memory/address space, 64 file descriptors, CPU/wall deadlines |
 | Source worker | Stdin source bundle, bounded temporary storage; no host mounts or network | Existing worker boundary: non-root, 1 CPU, 256 MiB, 64 processes, execution/output deadlines |
 
 API and broker `/tmp` mounts are limited to 32 MiB with `noexec`, `nosuid`, and
@@ -150,4 +151,4 @@ exercise actual Keycloak tokens and OpenBao access denials.
 Only test-owned containers and temporary data are removed. The SDK's existing
 worker and lifecycle live tests remain required when those boundaries change.
 
-The broker also processes [Python automation runs](PYTHON_API.md) in separate restricted workers. It mounts `/etc/chipload/settings.json` read-only to recheck explicit grants before each SDK call. Code and build loops have separate capacity; code cannot inherit the broker's filesystem or Docker socket. On shutdown the code loop terminates its worker and records interruption; completed SDK calls remain committed.
+The broker also processes [Python automation runs](PYTHON_API.md) in separate restricted workers. It mounts `/etc/chipload/settings.json` read-only to recheck explicit grants before each SDK call, then sends the scoped call to a separate SDK service container. Compose supplies the host data directory through `--service-data`; only repository files may occupy that directory. Code and build loops have separate capacity; code cannot inherit the broker's filesystem or Docker socket. On shutdown or recovery, both the code and SDK service containers must be removed before the run settles; completed SDK calls remain committed.

@@ -144,6 +144,24 @@ cleanup have additional bounded timeouts; this is not a realtime execution
 service. Raw stdout protocol violations fail the run. Output remains untrusted
 user-authored data, never an authoritative acceptance report.
 
+Each hosted run has a separate trusted SDK service container. Python's SDK calls
+are mediated by the broker with the current caller scope, then executed in that
+container. It mounts only the dedicated repository directory and has no network,
+Docker socket, settings file or secret mount. It runs as the non-root repository
+owner with a read-only image, 256 MiB of memory/address space, one CPU, 64 file
+descriptors and the source worker's process/capability restrictions. It retains
+up to 32 MiB of immutable cache for that run. Database access still makes this
+service trusted implementation code; shop Python never executes there.
+
+An SDK call has a two-second CPU budget (plus less than one second of rounding)
+and a five-second wall deadline, shortened by the Python program's remaining
+wall budget. Cancellation, shutdown and claim fencing are checked while waiting
+for the service response. A service watchdog also stops blocked calls and exits
+an idle orphan after 60 seconds. A failed or missing SDK response interrupts the
+program and leaves its call journal entry `started`; the engine never resends
+the call. Recovery confirms removal of both the code and SDK service containers
+before releasing running capacity. A cleanup failure keeps the run unsettled.
+
 Per deployment, shop and identity, defaults allow 20 pending runs, one running
 run, 120 admissions per hour, 1,000 retained records and 512 MiB of reserved run
 storage. These are separate from build capacity, so a program can wait for its
@@ -151,7 +169,7 @@ build. Each retained run reserves 1,114,112 bytes. Operator quota fields are
 `pending_programs`, `running_programs`, `programs_per_hour`, `retained_programs`
 and `program_bytes`. Storage limits require operator action; no automatic record
 purge recycles request keys. Expired queued runs terminate; expired running jobs
-release capacity only after their container is removed. Recovery never reruns
+release capacity only after both containers are removed. Recovery never reruns
 interrupted code.
 
 ## Deployment and upgrade
@@ -162,6 +180,21 @@ bindings for each SDK call. The packaged runtime mounts the same settings file
 read-only into API and broker. Recreate both containers after replacing a bind
 mounted settings file; the API loads its own bindings at startup. The broker
 runs one code loop alongside its build loop; `--once` processes at most one job.
+
+The database parent directory must be private, owned by the service user, and
+contain only the shop database, its `.admission` partner and their SQLite journal
+files. The host API example uses `.local/data/chipload.db`; run the broker with
+the matching `--database` argument. For a containerized broker,
+`--service-data` supplies the directory's absolute path on the Docker host; the
+shipped Compose files supply it automatically. The service checks the repository
+pair identity before accepting calls. Remote Docker daemons are rejected for this
+path because the database mount and SQLite storage must be local.
+
+For an existing repository in a directory shared with settings or secrets, stop
+all writers and use the [paired-store recovery procedure](AUTHORING.md#storage-authorization-and-recovery)
+to place its databases in a dedicated directory. Update the API settings and
+broker/operator database paths together. No command silently relocates a database
+or initializes a substitute when the service mount is missing or mismatched.
 
 Existing bindings need explicit `code:run`, `code:read` and, if delegated,
 `code:cancel` actions. `shop:admin` and `shop:operate` roles permit these actions,
@@ -177,3 +210,36 @@ runtime for restoring pre-upgrade archives before migrating them.
 
 These controls are a development baseline. Public edge exposure, stronger
 isolation and deployment load/security qualification remain unfinished.
+
+## Measure batched calls
+
+```sh
+./scripts/build-worker
+uv run python scripts/benchmark-python --calls 1 --runs 3
+uv run python scripts/benchmark-python --calls 10 --runs 3
+uv run python scripts/benchmark-python --calls 10 --runs 3 --large-catalog
+```
+
+This benchmark evaluates the synthetic 17-step workflow used by
+`benchmark-data`, through actual code and SDK service containers. Each program
+has a fresh service cache. Every result and completed call journal is checked;
+any refusal or interruption fails the benchmark. Admission uses default policy.
+Temporary storage and only the benchmark's own containers are removed.
+
+Measurements on 2026-10-20, on a shared Linux x86-64 development host with 16
+logical CPUs, used Python 3.14.6 for the broker/client and 3.12.15 in the restricted
+containers. Three runs per case produced:
+
+| Workload | Calls per program | Median complete run | Completed SDK calls/s |
+| --- | ---: | ---: | ---: |
+| Compact | 1 | 6.88 s | 0.137 |
+| Compact | 10 | 7.38 s | 1.344 |
+| Large catalog | 10 | 9.23 s | 1.115 |
+
+These times include creation and cleanup of both containers, service startup,
+SQLite, grants and durable call journals. They exclude HTTP/TLS/JWT and source
+builds. Container lifecycle cost dominates short programs, so compose related
+SDK calls in one program when their workflow permits it. This is a small
+component measurement under concurrent development activity, not sustained
+deployment capacity or a latency guarantee. Reducing container lifecycle cost
+without weakening cancellation, claim fencing or cleanup is further work.

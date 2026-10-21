@@ -33,14 +33,14 @@ class ProgramLiveTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
-        self.identity = IdentityFixture(temporary.name)
+        self.identity = IdentityFixture(Path(temporary.name) / "data")
         self.addCleanup(self.identity.client.close)
         self.operations = self.identity.operations()
         self.owner = self.identity.settings.bindings[0]
         self.repository = self.operations.service.repository
-        self.runner = DockerProgramRunner(self.environment)
+        self.runner = DockerProgramRunner(self.environment, self.repository)
         self.processor = ProgramProcessor(
-            self.repository, self.runner, lambda _: self.owner, operations=self.operations
+            self.repository, self.runner, lambda _: self.owner
         )
         self.service = self.operations.programs
 

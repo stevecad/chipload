@@ -13,7 +13,7 @@ from .service_errors import problem
 from .service_pool import MAX_INPUT, MAX_OUTPUT
 
 
-def main():
+def main(*, activity=None, configuration=None):
     incoming, outgoing = sys.stdin.buffer, sys.stdout.buffer
 
     def read():
@@ -22,6 +22,8 @@ def main():
             raise EOFError()
         if len(line) > MAX_INPUT or not line.endswith(b"\n"):
             raise ValueError("invalid service frame")
+        if activity:
+            activity(True)
         frame = bounded_json(line, max_bytes=MAX_INPUT)
         if (
             not isinstance(frame, dict)
@@ -46,11 +48,20 @@ def main():
             raise ValueError("service output too large")
         outgoing.write(data)
         outgoing.flush()
+        if activity:
+            activity(False)
 
     identifier, config = read()
+    if configuration:
+        configuration(config)
     operations = Operations(
         ShopService(Repository(config["database"], cache_bytes=config["cache_bytes"]))
     )
+    if (
+        configuration
+        and operations.service.repository.admission.identity != config["admission_identity"]
+    ):
+        raise ValueError("SDK service repository identity mismatch")
     send(200, {"ready": True})
     while True:
         try:

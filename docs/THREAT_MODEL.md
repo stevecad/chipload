@@ -30,6 +30,7 @@ may still supply malicious or accidentally expensive source and data.
 | Service workers | Trusted Chipload code with the API container's database, filesystem and network authority. CPU, address-space, wall-time and IPC limits contain resource failures. They do not execute shop Python. |
 | Build/Python broker | Trusted infrastructure with database access, read-only grant settings and the Docker socket. It has no IP network. Docker daemon access grants host authority; container restrictions do not remove that authority. |
 | Source and Python workers | Untrusted code in disposable containers with no network or host mounts. The broker validates artifacts; hosted Python SDK calls travel through bounded mediation using the caller's admitted grants intersected with current settings. |
+| Python SDK service | Trusted domain implementation in one separate container per Python run. It has database authority but no Docker socket, settings, secret mounts or network. CPU/memory/wall limits, cancellation and recovery bound its work; shop Python never executes there. |
 | Operation executor | Separate trusted adapter process/container with one pinned binding and restricted network access. A live adapter obtains its own scoped OpenBao credential. It cannot infer permission from Python source alone. |
 | Keycloak / OpenBao | External identity and secret authorities. Chipload validates identity claims and enforces its own bindings. Adapter secrets are confined to the configured executor and receiver path. |
 | Recovery tools | Operator-only host commands with private deployment state and encrypted archives. They are not shop REST or MCP operations. |
@@ -56,8 +57,10 @@ a filesystem or network namespace inside the API container.
 These tests establish behavior for their stated fixtures and failure cases. They
 do not demonstrate resistance to every kernel, interpreter, dependency or
 distributed denial-of-service attack. The broker validates build output within
-its own container budget; mediated SDK dispatch still runs in that broker process.
-The service-worker per-call boundary currently covers REST/MCP domain dispatch.
+its own container budget. Hosted SDK service calls run in separate containers;
+the broker retains grant checks, admission, call journals and Docker supervision.
+Those service containers still have authority over the entire mounted repository,
+so their trusted implementation must enforce the caller's shop/action grants.
 
 ## Remaining deployment work
 

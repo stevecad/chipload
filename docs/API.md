@@ -18,18 +18,20 @@ uv sync --locked --extra server
 ./scripts/dev-stack up
 ./scripts/build-worker
 cp deploy/api/settings.example.json .local/server.json
+chmod 600 .local/server.json
 uv run --extra server python -m chipload.server --config .local/server.json
 ```
 
 In another terminal:
 
 ```sh
-chmod 600 .local/server.json
-uv run python -m chipload.broker --settings .local/server.json
+uv run python -m chipload.broker --database .local/data/chipload.db --settings .local/server.json
 ```
 
-The server and broker default to `.local/chipload.db`. The broker requires Docker
-access and `.local/worker-image`; the server requires neither. With `--settings`, each broker runs a Python loop alongside its build loop.
+The example settings use `.local/data/chipload.db`. Keep this directory dedicated
+to the paired database files and their journals; settings and secrets stay outside
+it. The broker requires local Docker access and `.local/worker-image`; the server
+requires neither. With `--settings`, each broker runs a Python loop alongside its build loop.
 Python programs have separate capacity and can wait for a build. Each broker
 recovers expired claims and processes one build at a time. Multiple brokers share atomic
 dispatch and running-job limits in the database. Eligible shops rotate by their
@@ -46,7 +48,11 @@ graceful request completion during shutdown.
 
 Use the [local authoring walkthrough](AUTHORING.md) to publish an example before
 trying anonymous discovery. Publication through that CLI and through the network
-interfaces selects the same database record.
+interfaces selects the same database record when they use the same database.
+Pass `--database .local/data/chipload.db` to the walkthrough's `chipload.local`
+commands for this setup. CLI defaults remain `.local/chipload.db`; existing data
+is never moved automatically. See [Python deployment](PYTHON_API.md#deployment-and-upgrade)
+before enabling hosted Python against an existing repository.
 
 ```sh
 curl --fail http://localhost:8088/v1/shops/thermal-example/catalog

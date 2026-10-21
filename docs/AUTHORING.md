@@ -9,6 +9,12 @@ see [API.md](API.md). Production process supervision remains deployment work.
 
 ## Try the workflow
 
+These commands use the local CLI's `.local/chipload.db` default. To share the
+repository with the [host API example](API.md#start-the-services), add
+`--database .local/data/chipload.db` immediately after `chipload.local` in each
+command. Hosted Python requires a dedicated database directory, with settings
+and secrets stored outside it.
+
 Install the SDK dependencies, build the worker environment, and export the
 fictional heat-treatment project:
 
@@ -210,6 +216,12 @@ the subcommand to select another repository; its capacity store is always
 `PATH.admission`. A persistent identity pairs the files. Missing or mismatched
 capacity storage stops startup and request admission; it is never silently
 recreated with fresh allowances.
+
+The [hosted Python service](PYTHON_API.md#deployment-and-upgrade) mounts this
+directory into a trusted SDK service container. Its directory admission rejects
+unrelated files, symlinks and permissive ownership/modes. Configure matching
+database paths across API, broker and local operator commands; the host API
+template uses `.local/data/chipload.db` for this purpose.
 
 This is single-node storage. SQLite transactions preserve source revisions,
 build states, publication history, and an audit trail. The separate capacity

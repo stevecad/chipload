@@ -24,6 +24,11 @@ def main():
         "--settings", type=Path, help="operator-owned settings enabling scoped Python runs"
     )
     parser.add_argument(
+        "--service-data",
+        type=Path,
+        help="repository directory on the Docker host, when it differs from --database's parent",
+    )
+    parser.add_argument(
         "--once", action="store_true", help="recover and process at most one queued job"
     )
     args = parser.parse_args()
@@ -48,7 +53,9 @@ def main():
         principal_for("")  # Validate the file and database before starting either loop.
         programs = ProgramProcessor(
             processor.repository,
-            DockerProgramRunner(processor.builder.environment),
+            DockerProgramRunner(
+                processor.builder.environment, processor.repository, host_data=args.service_data
+            ),
             principal_for,
             stopping=stopping,
         )

@@ -1,6 +1,7 @@
 """Trusted Python runner: dispatch each SDK call with current scoped grants."""
 
 import threading
+import time
 import uuid
 from datetime import timedelta
 
@@ -27,6 +28,7 @@ class ProgramProcessor:
     ):
         self.repository, self.runner, self.principal_for = repository, runner, principal_for
         self.stopping, self.clock = stopping or threading.Event(), clock
+        self.contained_service = operations is None
         self.operations = operations or Operations(ShopService(repository))
 
     def claim_next(self):
@@ -77,7 +79,7 @@ class ProgramProcessor:
     def active(self, identifier, claim):
         if self.stopping.is_set():
             return False
-        with self.repository.connection() as db:
+        with self.repository.connection(timeout=0.1) as db:
             row = db.execute(
                 "SELECT state,claim,deadline,cancel_requested FROM python_runs WHERE id=?",
                 (identifier,),
@@ -99,7 +101,7 @@ class ProgramProcessor:
         who = intersect(ceiling, self.principal_for(row["actor"]))
         return require(who, row["shop_id"], "code:run")
 
-    def dispatch(self, row, operation, request):
+    def dispatch(self, row, operation, request, *, deadline=None):
         if not self.active(row["id"], row["claim"]):
             raise SandboxError("Python run is no longer active")
         if (
@@ -138,7 +140,19 @@ class ProgramProcessor:
             )
         try:
             self.operations.limiter.identity(who.subject)
-            value = self.operations.call(operation, who, request)
+            if self.contained_service:
+                value = self.runner.service_call(
+                    row["id"],
+                    operation,
+                    who,
+                    request,
+                    deadline=deadline if deadline is not None else time.monotonic() + 5,
+                    keep_running=lambda: self.active(row["id"], row["claim"]),
+                )
+            else:
+                # Trusted test/service injection; the packaged broker always
+                # uses the contained service supplied by DockerProgramRunner.
+                value = self.operations.call(operation, who, request)
             answer = {"ok": True, "value": value}
             entry["state"] = "returned"
             if isinstance(value, dict):
@@ -147,6 +161,8 @@ class ProgramProcessor:
                     for key in ("id", "revision", "build_id", "generation", "state")
                     if isinstance(value.get(key), (str, int)) and len(str(value[key])) <= 100
                 }
+        except SandboxError:
+            raise  # Preserve the started journal entry for an ambiguous call.
         except Exception as error:
             answer = refusal(error)
             entry["state"], entry["status"] = "error", answer["status"]
@@ -198,7 +214,9 @@ class ProgramProcessor:
             result = self.runner.run(
                 row["id"],
                 request,
-                lambda operation, body: self.dispatch(row, operation, body),
+                lambda operation, body, *, deadline=None: self.dispatch(
+                    row, operation, body, deadline=deadline
+                ),
                 lambda: self.active(row["id"], row["claim"]),
             )
             state = "failed" if "error" in result else "succeeded"

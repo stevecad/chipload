@@ -11,9 +11,10 @@ Service workers execute trusted Chipload implementation code. They share the
 API container's filesystem and network authority, including access to the shop
 and admission databases. This boundary contains resource exhaustion and allows
 termination of stuck service work; it is not a sandbox for untrusted Python or
-a defense against a compromised service implementation. The broker's mediated
-Python SDK calls still execute in the broker process. Source workers and
-operation executors retain their separate containment boundaries.
+a defense against a compromised service implementation. Hosted Python SDK calls
+use a separate [service container for each run](PYTHON_API.md), with database
+access and no Docker socket, settings or network. Source workers and operation
+executors retain their separate containment boundaries.
 
 ## Limits and lifecycle
 

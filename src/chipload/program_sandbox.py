@@ -5,12 +5,14 @@ import re
 import selectors
 import subprocess
 import time
+from pathlib import Path
 
 from .artifact import canonical_json
 from .limits import MAX_JSON_BYTES
 from .program_model import MAX_PROGRAM_LOG, MAX_PROGRAM_RESULT
 from .project import unique_json
 from .sandbox import DockerBuilder, SandboxError
+from .sdk_service import SDKService, data_directory, local_daemon
 
 MAX_RPC_REQUEST = 3 * 1024**2
 MAX_RPC_TOTAL = 32 * 1024**2
@@ -71,7 +73,9 @@ def conversation(command, payload, dispatch, keep_running, seconds):
                                 "operation",
                                 "request",
                             }:
-                                answer = dispatch(message["operation"], message["request"])
+                                answer = dispatch(
+                                    message["operation"], message["request"], deadline=deadline
+                                )
                                 pending = canonical_json(answer) + b"\n"
                                 total += len(pending)
                                 if len(pending) > MAX_JSON_BYTES or total > MAX_RPC_TOTAL:
@@ -111,26 +115,77 @@ def conversation(command, payload, dispatch, keep_running, seconds):
 
 
 class DockerProgramRunner:
-    def __init__(self, environment):
+    def __init__(self, environment, repository, *, host_data=None):
+        if os.getuid() == 0:
+            raise ValueError("run the Python broker as the non-root repository owner")
         self.builder = DockerBuilder(environment)
         self.environment = environment
+        self.database, self.identity = repository.path, repository.admission.identity
+        root = data_directory(self.database)
+        self.host_data = Path(host_data).absolute() if host_data else root
+        if self.host_data == Path("/") or any(c in str(self.host_data) for c in (",", "\n", "\r")):
+            raise ValueError("invalid SDK service host data directory")
+        local_daemon()
+        self.services = {}
 
     def remove(self, identifier):
         if not re.fullmatch(r"[0-9a-f]{32}", identifier):
             raise ValueError("invalid Python run ID")
-        result = subprocess.run(
-            ["docker", "rm", "--force", "chipload-code-" + identifier],
-            capture_output=True,
-            timeout=15,
+        errors = []
+        for prefix in ("chipload-sdk-", "chipload-code-"):
+            try:
+                result = subprocess.run(
+                    ["docker", "rm", "--force", prefix + identifier],
+                    capture_output=True,
+                    timeout=15,
+                )
+                if result.returncode and b"No such container" not in result.stderr:
+                    # Concurrent recovery and the original broker may both
+                    # remove this name. A lost response or 'removal in progress'
+                    # is settled only by observing absence, never by replaying work.
+                    deadline = time.monotonic() + 2
+                    while time.monotonic() < deadline:
+                        inspected = subprocess.run(
+                            ["docker", "container", "inspect", prefix + identifier],
+                            capture_output=True,
+                            timeout=2,
+                        )
+                        if inspected.returncode:
+                            if (
+                                b"No such container" in inspected.stderr
+                                or b"No such object" in inspected.stderr
+                            ):
+                                break
+                            errors.append(prefix)
+                            break
+                        time.sleep(0.05)
+                    else:
+                        errors.append(prefix)
+            except (OSError, subprocess.TimeoutExpired):
+                errors.append(prefix)
+        if errors:
+            raise SandboxError("could not confirm removal of Python run containers")
+
+    def service_call(self, identifier, operation, principal, request, *, deadline, keep_running):
+        service = self.services.get(identifier)
+        if service is None:
+            raise SandboxError("SDK service is not attached to this run")
+        return service.call(
+            operation, principal, request, deadline=deadline, keep_running=keep_running
         )
-        if result.returncode and b"No such container" not in result.stderr:
-            raise SandboxError("could not remove Python worker")
 
     def run(self, identifier, request, dispatch, keep_running):
+        if not re.fullmatch(r"[0-9a-f]{32}", identifier) or identifier in self.services:
+            raise ValueError("invalid or active Python run ID")
         name = "chipload-code-" + identifier
         command = self.builder.create_command(name)
         command[-1] = "chipload.program_worker"
+        service = SDKService(self.builder, self.database, self.host_data, self.identity, identifier)
+        self.services[identifier] = service
         try:
+            service.start(keep_running)
+            if not keep_running():
+                raise SandboxError("Python run is no longer active")
             subprocess.run(command, capture_output=True, check=True, timeout=15)
             return conversation(
                 ["docker", "start", "--attach", "--interactive", name],
@@ -140,4 +195,10 @@ class DockerProgramRunner:
                 request.seconds,
             )
         finally:
-            self.remove(identifier)
+            try:
+                self.remove(identifier)
+            finally:
+                try:
+                    service.close()
+                finally:
+                    self.services.pop(identifier, None)

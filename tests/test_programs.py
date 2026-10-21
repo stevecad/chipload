@@ -244,6 +244,21 @@ class ProgramTests(unittest.TestCase):
         self.assertEqual(next_row["id"], two.id)
         self.assertEqual(len(self.read(one).calls), 64)
 
+    def test_recovery_keeps_running_capacity_when_container_cleanup_is_unconfirmed(self):
+        first = self.service.submit(self.owner, self.request())
+        self.processor.claim_next()
+        second = self.service.submit(self.owner, self.request("following"))
+        self.at += timedelta(minutes=2)
+        with patch.object(self.runner, "remove", side_effect=SandboxError("cleanup unavailable")):
+            with self.assertRaises(SandboxError):
+                self.processor.recover_expired()
+        self.assertEqual(self.read(first).state, "running")
+        self.assertIsNone(self.processor.claim_next())
+        self.at += timedelta(seconds=31)
+        self.assertEqual(self.processor.recover_expired(), 1)
+        self.assertEqual(self.read(first).state, "interrupted")
+        self.assertEqual(self.processor.claim_next()[0]["id"], second.id)
+
     def test_schema_six_migrates_atomically_without_resetting_admission(self):
         with self.repository.transaction() as db:
             db.execute("DROP TABLE python_runs")

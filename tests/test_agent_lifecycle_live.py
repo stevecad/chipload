@@ -33,7 +33,7 @@ class AgentLifecycleLiveTests(unittest.IsolatedAsyncioTestCase):
             sock = socket.socket()
             sock.bind(("127.0.0.1", 0))
             base = f"http://127.0.0.1:{sock.getsockname()[1]}"
-            identity = IdentityFixture(directory, base=base)
+            identity = IdentityFixture(Path(directory) / "data", base=base)
             operations = Operations(ShopService(Repository(identity.settings.database)))
             app = create_app(identity.settings, operations=operations, verifier=identity.verifier)
             server = uvicorn.Server(

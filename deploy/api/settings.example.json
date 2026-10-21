@@ -1,6 +1,6 @@
 {
   "mode": "development",
-  "database": ".local/chipload.db",
+  "database": ".local/data/chipload.db",
   "data_cache_bytes": 33554432,
   "resource_url": "http://localhost:8088/mcp",
   "issuer": "http://localhost:8080/realms/chipload",

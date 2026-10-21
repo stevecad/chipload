@@ -1,0 +1,91 @@
+#!/usr/bin/env python3
+"""Measure batched Python SDK calls through the real isolated container pair."""
+
+import argparse
+import json
+import platform
+import runpy
+import statistics
+import tempfile
+import time
+import uuid
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--calls", type=int, default=10)
+    parser.add_argument("--runs", type=int, default=3)
+    parser.add_argument("--large-catalog", action="store_true")
+    args = parser.parse_args()
+    if not 1 <= args.calls <= 32 or not 1 <= args.runs <= 5:
+        parser.error("calls must be 1–32 and runs 1–5")
+    from chipload.access import ACTIONS, Grant, Principal
+    from chipload.lifecycle import Repository
+    from chipload.program_model import RunPython
+    from chipload.program_runner import ProgramProcessor
+    from chipload.program_sandbox import DockerProgramRunner
+    from chipload.programs import ProgramService
+    from chipload.sandbox import WorkerEnvironment
+
+    fixture = runpy.run_path(str(ROOT / "scripts/benchmark-data"))
+    artifact, query, at = fixture["workload"](args.large_catalog)
+    environment = WorkerEnvironment.inspect((ROOT / ".local/worker-image").read_text().strip())
+    elapsed = []
+    with tempfile.TemporaryDirectory(prefix="chipload-python-benchmark-") as temporary:
+        database = Path(temporary) / "data/chipload.db"
+        fixture["seed"](database, artifact, query, at)
+        repository = Repository(database)
+        owner = Principal(
+            subject="benchmark", grants=(Grant(shop_id="benchmark", actions=ACTIONS),)
+        )
+        runner = DockerProgramRunner(environment, repository)
+        processor = ProgramProcessor(repository, runner, lambda _: owner)
+        programs = ProgramService(repository)
+        for _ in range(args.runs):
+            request = RunPython(
+                shop_id="benchmark",
+                request_key=uuid.uuid4().hex,
+                code="result=[client.shop('benchmark').evaluate(inputs['query'])['outcome'] for _ in range(inputs['calls'])]",
+                inputs={"query": query.model_dump(mode="json"), "calls": args.calls},
+            )
+            start = time.perf_counter()
+            job = programs.submit(owner, request)
+            try:
+                if not processor.run_next():
+                    raise RuntimeError("benchmark run was not dispatched")
+                result = programs.read(owner, job.shop_id, job.id)
+                if (
+                    result.state != "succeeded"
+                    or result.value != ["supported"] * args.calls
+                    or len(result.calls) != args.calls
+                    or any(call.state != "returned" for call in result.calls)
+                ):
+                    raise RuntimeError("benchmark did not return every expected domain result")
+                elapsed.append(time.perf_counter() - start)
+            finally:
+                runner.remove(job.id)
+    print(
+        json.dumps(
+            {
+                "client_python": platform.python_version(),
+                "platform": platform.platform(),
+                "worker_image": environment.image,
+                "worker_python": environment.python_version,
+                "workload": "large-catalog" if args.large_catalog else "compact",
+                "calls_per_run": args.calls,
+                "runs": args.runs,
+                "run_seconds": [round(value, 3) for value in elapsed],
+                "median_run_seconds": round(statistics.median(elapsed), 3),
+                "completed_sdk_calls_per_second": round(args.calls * args.runs / sum(elapsed), 3),
+                "scope": "Two actual restricted containers per run, fresh service cache, SQLite, grants, journals and cleanup. Excludes HTTP/TLS/JWT and source builds. Default admission policy; failures stop the benchmark.",
+            },
+            indent=2,
+        )
+    )
+
+
+if __name__ == "__main__":
+    main()

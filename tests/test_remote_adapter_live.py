@@ -512,7 +512,16 @@ audit "file" "file" {
                             await bao("PUT", "sys/unseal", {"key": initialized["keys_base64"][0]})
                             # A stalled receiver cannot prevent graceful executor shutdown.
                             write(control, json.dumps({"token": bearer, "behavior": "stall"}))
-                            stalled = await call("operation_submit", request("stalled"))
+                            # Observe the short running interval immediately;
+                            # a completed Python run also waits for container cleanup.
+                            admitted = await rest.post(
+                                base
+                                + "/v1/shops/service-example/operations/request-evidence-review/executions",
+                                json=request("stalled"),
+                                headers=headers,
+                            )
+                            self.assertEqual(admitted.status_code, 202, admitted.text)
+                            stalled = admitted.json()
                             await read(stalled, "running")
                             start = time.monotonic()
                             await run(*executor_cli, "down")

@@ -148,7 +148,8 @@ class ServicePool:
         with slot.guard:
             return slot.process is None or slot.process.poll() is not None
 
-    def exchange(self, process, message, deadline):
+    @staticmethod
+    def exchange(process, message, deadline, *, keep_running=None):
         identifier = uuid.uuid4().hex
         payload = canonical_json({"id": identifier, "body": message}) + b"\n"
         if len(payload) > MAX_INPUT:
@@ -159,6 +160,8 @@ class ServicePool:
             selector.register(process.stdin, selectors.EVENT_WRITE)
             selector.register(process.stdout, selectors.EVENT_READ)
             while True:
+                if keep_running is not None and not keep_running():
+                    raise InterruptedError("service call cancelled or fenced")
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise TimeoutError()
