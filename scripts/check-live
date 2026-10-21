@@ -51,6 +51,7 @@ def main():
     for flag in flags:
         os.environ[f"CHIPLOAD_{flag}_TESTS"] = "1"
     os.chdir(ROOT)
+    sys.path.insert(0, str(ROOT))
     try:
         passed = run_suites((f"test_{name}_live.py" for name in names), ROOT / "tests")
     except ValueError as error:
