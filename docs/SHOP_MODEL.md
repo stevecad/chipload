@@ -267,8 +267,8 @@ identities remain unchanged when no offers are present.
 
 See [alternative_routes.py](../examples/alternative_routes.py) for reusable
 Python factories, business conditions and source-project exports. This adds
-alternative composition to the compiled model; custom Python evaluation of
-queries and more general process transformations remain future work.
+alternative composition to the compiled model. Python constraints are described
+below; more general process transformations remain future work.
 
 ## Python constraints
 
@@ -338,11 +338,12 @@ Only explicitly public check metadata appears in discovery; source entrypoints
 are private. A hidden check makes its capability and containing workflows/offers
 incomplete for public evaluation. The existing hidden-catalog policy still applies.
 
-**Current delivery:** Python check authoring and isolated build tests are
-implemented. On-demand queued evaluation through REST/MCP remains to be wired
-to the worker. Ordinary published evaluation never imports source and returns
-`python-check-required` with an unknown contribution until the required checks
-run. A known static rejection can still make the overall result unsupported.
+**Current delivery:** Python check authoring, isolated build tests and
+[queued REST/MCP assessments](ASSESSMENTS.md) are implemented. Ordinary published
+evaluation never imports source and reports `python-check-required` with an
+unknown contribution. The assessment endpoint returns its completed query;
+separate data queries do not reuse that receipt. A known static rejection can
+still make the overall result unsupported.
 Build-test answers are never substituted for a new live query. Operation checks
 also require support and therefore cannot dispatch while Python results are absent.
 

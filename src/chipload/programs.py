@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 
 from .access import Grant, Principal, require
 from .artifact import canonical_json, digest
+from .assessment_model import AssessmentTask, AssessShop
 from .lifecycle import Conflict, IntegrityError, NotFound, now
 from .program_model import MAX_CALLS, MAX_PROGRAM_BYTES, PROGRAM_RESERVATION, RunPython, RunRecord
 from .project import unique_json
@@ -36,12 +37,19 @@ def intersect(ceiling, current):
     return Principal(subject=ceiling.subject, grants=tuple(grants))
 
 
+def request_for(row):
+    model = {"program": RunPython, "assessment": AssessmentTask}.get(row["kind"])
+    if model is None:
+        raise ValueError("invalid queued job kind")
+    return model.model_validate(unique_json(row["request"]))
+
+
 def decode(row):
     if row is None:
         raise NotFound("Python run not found")
     try:
         payload = bytes(row["request"])
-        request = RunPython.model_validate(unique_json(payload))
+        request = request_for(row)
         if (
             len(payload) > MAX_PROGRAM_BYTES
             or digest(payload) != row["request_sha256"]
@@ -93,17 +101,34 @@ class ProgramService:
     def submit(self, principal, request):
         request = RunPython.model_validate(request)
         who = require(principal, request.shop_id, "code:run")
+        return self.enqueue(who, request, kind="program")
+
+    def enqueue(self, who, request, *, kind):
+        """Trusted admission, shared by code and typed assessments."""
+        if kind not in {"program", "assessment"}:
+            raise ValueError("invalid queued job kind")
+        require(who, request.shop_id, "evaluation:run" if kind == "assessment" else "code:run")
         ceiling = canonical_json(scoped(who, request.shop_id))
         if len(ceiling) > 64 * 1024:
             raise ValueError("Python execution grant exceeds its byte limit")
         payload, at = canonical_json(request), self.clock()
+        if len(payload) > MAX_PROGRAM_BYTES:
+            raise ValueError("Queued request exceeds its byte limit")
         with self.repository.transaction() as db:
             prior = db.execute(
                 "SELECT * FROM python_runs WHERE shop_id=? AND actor=? AND request_key=?",
                 (request.shop_id, who.subject, request.request_key),
             ).fetchone()
             if prior:
-                if bytes(prior["request"]) != payload:
+                same = prior["kind"] == kind and bytes(prior["request"]) == payload
+                if prior["kind"] == kind == "assessment":
+                    # A concurrent retry may have selected a newer publication
+                    # before the first admission committed. Server-added pins
+                    # do not change the client's idempotent request identity.
+                    decode(prior)
+                    fields = set(AssessShop.model_fields)
+                    same = request_for(prior).model_dump(include=fields) == request.model_dump(include=fields)
+                if not same:
                     raise Conflict("request key already identifies a different Python program")
                 return decode(prior)
             for scope, limit, where, parameters in scopes(
@@ -131,8 +156,8 @@ class ProgramService:
             identifier = uuid.uuid4().hex
             db.execute("INSERT OR IGNORE INTO shops(id) VALUES(?)", (request.shop_id,))
             db.execute(
-                "INSERT INTO python_runs(id,shop_id,actor,request_key,request,request_sha256,ceiling,state,created_at,deadline,calls) "
-                "VALUES(?,?,?,?,?,?,?,'queued',?,?,?)",
+                "INSERT INTO python_runs(id,shop_id,actor,request_key,request,request_sha256,ceiling,state,created_at,deadline,calls,kind) "
+                "VALUES(?,?,?,?,?,?,?,'queued',?,?,?,?)",
                 (
                     identifier,
                     request.shop_id,
@@ -144,9 +169,11 @@ class ProgramService:
                     at.isoformat(),
                     (at + timedelta(minutes=5)).isoformat(),
                     b"[]",
+                    kind,
                 ),
             )
-            self.repository.event(db, request.shop_id, who.subject, "code.requested", identifier)
+            event = "code" if kind == "program" else "assessment"
+            self.repository.event(db, request.shop_id, who.subject, event + ".requested", identifier)
             return decode(
                 db.execute("SELECT * FROM python_runs WHERE id=?", (identifier,)).fetchone()
             )
@@ -156,16 +183,19 @@ class ProgramService:
         with self.repository.connection() as db:
             return decode(
                 db.execute(
-                    "SELECT * FROM python_runs WHERE id=? AND shop_id=?", (identifier, shop)
+                    "SELECT * FROM python_runs WHERE id=? AND shop_id=? AND kind='program'", (identifier, shop)
                 ).fetchone()
             )
 
-    def cancel(self, principal, shop, identifier):
-        who = require(principal, shop, "code:cancel")
+    def cancel(self, principal, shop, identifier, *, _assessment=False):
+        who = require(principal, shop, "evaluation:run" if _assessment else "code:cancel")
+        kind = "assessment" if _assessment else "program"
         with self.repository.transaction() as db:
             row = db.execute(
-                "SELECT * FROM python_runs WHERE id=? AND shop_id=?", (identifier, shop)
+                "SELECT * FROM python_runs WHERE id=? AND shop_id=? AND kind=?", (identifier, shop, kind)
             ).fetchone()
+            if _assessment and row is not None and row["actor"] != who.subject:
+                raise NotFound("Assessment not found")
             record = decode(row)
             if record.state == "queued":
                 db.execute(
@@ -176,7 +206,8 @@ class ProgramService:
                 db.execute("UPDATE python_runs SET cancel_requested=1 WHERE id=?", (identifier,))
             else:
                 return record
-            self.repository.event(db, shop, who.subject, "code.cancel-requested", identifier)
+            event = "assessment" if _assessment else "code"
+            self.repository.event(db, shop, who.subject, event + ".cancel-requested", identifier)
             return decode(
                 db.execute("SELECT * FROM python_runs WHERE id=?", (identifier,)).fetchone()
             )

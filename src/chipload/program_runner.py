@@ -11,8 +11,8 @@ from .artifact import canonical_json, digest
 from .launches import LaunchGuard, LaunchUncertain
 from .lifecycle import Conflict, ShopService, now
 from .operations import Operations
-from .program_model import MAX_CALLS, MAX_PROGRAM_RESULT, PROGRAM_RESERVATION, RunPython
-from .programs import decode, intersect
+from .program_model import MAX_CALLS, MAX_PROGRAM_RESULT, PROGRAM_RESERVATION
+from .programs import decode, intersect, request_for
 from .project import unique_json
 from .quotas import scopes
 from .sandbox import SandboxError
@@ -26,12 +26,14 @@ def refusal(error):
 
 class ProgramProcessor:
     def __init__(
-        self, repository, runner, principal_for, *, stopping=None, clock=now, operations=None
+        self, repository, runner, principal_for, *, stopping=None, clock=now, operations=None,
+        assessment_runner=None,
     ):
         self.repository, self.runner, self.principal_for = repository, runner, principal_for
         self.stopping, self.clock = stopping or threading.Event(), clock
         self.contained_service = operations is None
         self.operations = operations or Operations(ShopService(repository))
+        self.assessment_runner = assessment_runner
 
     def claim_next(self):
         with self.repository.transaction() as db:
@@ -63,14 +65,15 @@ class ProgramProcessor:
                         break
                 if not available:
                     continue
-                request = RunPython.model_validate(unique_json(row["request"]))
+                request = request_for(row)
                 claim = uuid.uuid4().hex
                 deadline = (at + timedelta(seconds=request.seconds + 60)).isoformat()
                 db.execute(
                     "UPDATE python_runs SET state='running',claim=?,deadline=? WHERE id=?",
                     (claim, deadline, row["id"]),
                 )
-                self.repository.event(db, row["shop_id"], row["actor"], "code.started", row["id"])
+                event = "assessment" if row["kind"] == "assessment" else "code"
+                self.repository.event(db, row["shop_id"], row["actor"], event + ".started", row["id"])
                 return dict(row) | {
                     "state": "running",
                     "claim": claim,
@@ -101,6 +104,10 @@ class ProgramProcessor:
         ):
             raise Forbidden("invalid Python run scope")
         who = intersect(ceiling, self.principal_for(row["actor"]))
+        if row["kind"] == "assessment":
+            from .assessments import AssessmentService
+
+            return AssessmentService.authorize(who, request_for(row))
         return require(who, row["shop_id"], "code:run")
 
     def dispatch(self, row, operation, request, *, deadline=None):
@@ -209,7 +216,8 @@ class ProgramProcessor:
                 "UPDATE python_runs SET state=?,result=?,finished_at=?,claim=NULL WHERE id=?",
                 (state, payload, self.clock().isoformat(), row["id"]),
             )
-            self.repository.event(db, row["shop_id"], row["actor"], "code." + state, row["id"])
+            event = "assessment" if row["kind"] == "assessment" else "code"
+            self.repository.event(db, row["shop_id"], row["actor"], event + "." + state, row["id"])
 
     def run_next(self):
         selected = self.claim_next()
@@ -219,15 +227,25 @@ class ProgramProcessor:
         guard = LaunchGuard(self.repository, "python_runs", row["id"], row["claim"], clock=self.clock)
         try:
             self.principal(row)
-            result = self.runner.run(
-                row["id"],
-                request,
-                lambda operation, body, *, deadline=None: self.dispatch(
-                    row, operation, body, deadline=deadline
-                ),
-                lambda: self.active(row["id"], row["claim"]),
-                guard=guard,
-            )
+            if row["kind"] == "assessment":
+                from .assessment_runner import AssessmentProcessor, DockerAssessmentRunner
+
+                runner = self.assessment_runner or DockerAssessmentRunner(self.runner.environment)
+                result = AssessmentProcessor(self.repository, runner, clock=self.clock).execute(
+                    row, request, guard=guard,
+                    keep_running=lambda: self.active(row["id"], row["claim"]),
+                )
+                self.principal(row)
+            else:
+                result = self.runner.run(
+                    row["id"],
+                    request,
+                    lambda operation, body, *, deadline=None: self.dispatch(
+                        row, operation, body, deadline=deadline
+                    ),
+                    lambda: self.active(row["id"], row["claim"]),
+                    guard=guard,
+                )
             state = "failed" if "error" in result else "succeeded"
         except Forbidden:
             result, state = {"error": "Python execution grant is unavailable"}, "failed"

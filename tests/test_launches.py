@@ -120,11 +120,12 @@ class LaunchTests(unittest.TestCase):
         with self.repository.transaction() as db:
             db.execute("DROP TABLE launch_reservations")
             db.execute("DROP TABLE worker_launches")
+            db.execute("ALTER TABLE python_runs DROP COLUMN kind")
             db.execute("PRAGMA user_version=7")
         with ThreadPoolExecutor(2) as pool:
             list(pool.map(lambda _: Repository(self.repository.path), range(2)))
         with self.repository.connection() as db:
-            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 10)
+            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 11)
             row = db.execute("SELECT name,claim,settled FROM worker_launches").fetchone()
             self.assertEqual(tuple(row), (self.name, self.claim, 0))
 
@@ -134,6 +135,7 @@ class LaunchTests(unittest.TestCase):
         with self.repository.transaction() as db:
             db.execute("DROP TABLE launch_reservations")
             db.execute("DROP TABLE worker_launches")
+            db.execute("ALTER TABLE python_runs DROP COLUMN kind")
             db.execute("PRAGMA user_version=7")
         with patch.object(lifecycle, "LAUNCH_SCHEMA", lifecycle.LAUNCH_SCHEMA + "INVALID SQL;"):
             with self.assertRaises(Exception):

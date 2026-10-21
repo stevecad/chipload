@@ -106,8 +106,8 @@ Target kinds are `capability`, `workflow`, and `offer`. Offers assess alternativ
 routes under shared conditions; see [the model contract](SHOP_MODEL.md#alternative-routes).
 
 Capabilities may publish metadata for [Python constraints](SHOP_MODEL.md#python-constraints).
-Their entrypoints and source remain private. The current worker runs these
-functions for build acceptance cases; queued on-demand evaluation is pending.
+Their entrypoints and source remain private. Use [queued assessments](ASSESSMENTS.md)
+to execute them for a new query through REST or the Python SDK.
 The synchronous data API reports `python-check-required` when answers are absent,
 and does not substitute a passing build test for the current request.
 

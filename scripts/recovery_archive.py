@@ -214,7 +214,7 @@ def validate_pair(directory):
         closing(readonly(directory / "chipload.db")) as main,
         closing(readonly(directory / "chipload.db.admission")) as capacity,
     ):
-        for db, version in ((main, 10), (capacity, 1)):
+        for db, version in ((main, 11), (capacity, 1)):
             if db.execute("PRAGMA user_version").fetchone()[0] != version:
                 raise ValueError("unsupported recovery database schema")
             if db.execute("PRAGMA integrity_check").fetchall() != [("ok",)]:

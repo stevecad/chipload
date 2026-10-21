@@ -38,7 +38,7 @@ for encrypted account snapshots. A restored deployment at a new path needs an ex
 binding after validation; restoring deployed certificates alone does not restore
 the ACME account or enable renewal.
 
-Recovery sets include schema-10 evidence revocations, container launch and
+Recovery sets include schema-11 evidence revocations, container launch and
 name-reservation records, operation bindings, Python run history, execution history,
 and simulation receipts. Reconcile evidence revocations recorded after the backup
 before reopening a restored deployment; an older snapshot cannot contain those
@@ -261,7 +261,7 @@ writer contention, wrong keys, tampered ciphertext, unsafe archive members,
 private file handling, and refusing to overwrite state. Test cleanup is restricted
 to each drill's own containers, volumes, and temporary directories.
 
-Python runs must settle before backup: queued or running code jobs are rejected. Cancel them or let the broker finish, then retry. Code run histories, call journals, resolved launch records and inert name reservations are preserved by schema-10 backups. Unresolved creation intent blocks backup even when the container is currently absent; do not discard it to make a backup pass. For current-protocol launches, use the local `recover-launch` procedure in [authoring recovery](AUTHORING.md#storage-authorization-and-recovery).
+Python runs must settle before backup: queued or running code and assessment jobs are rejected. Cancel them or let the broker finish, then retry. Code and assessment histories, call journals, resolved launch records and inert name reservations are preserved by schema-11 backups. Unresolved creation intent blocks backup even when the container is currently absent; do not discard it to make a backup pass. For current-protocol launches, use the local `recover-launch` procedure in [authoring recovery](AUTHORING.md#storage-authorization-and-recovery).
 
 Broker preparation verifies or reinstalls recorded inert name reservations before
 executing jobs on restored storage. Keep the original host's reservations until

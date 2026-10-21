@@ -214,7 +214,7 @@ class TokenVerifier:
         )
         ceiling = set(ACTIONS) if "shop:admin" in roles else set()
         if "shop:operate" in roles:
-            ceiling.update({"operation:read", "operation:execute", "operation:cancel", "code:run", "code:read", "code:cancel"})
+            ceiling.update({"operation:read", "operation:execute", "operation:cancel", "evaluation:run", "code:run", "code:read", "code:cancel"})
         if "shop:read" in roles:
             ceiling.update(action for action in ACTIONS if action.endswith(":read"))
         binding = self._bindings.get(claims["sub"])

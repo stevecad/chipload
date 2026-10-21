@@ -74,21 +74,25 @@ class PublishedService:
         with self.repository.connection() as db:
             # Publication, observations and evidence revocations share one read snapshot.
             db.execute("BEGIN")
-            row = db.execute(
-                "SELECT builds.* FROM shops JOIN builds ON shops.published_build=builds.id "
-                "WHERE shops.id=? AND builds.shop_id=shops.id",
-                (shop,),
-            ).fetchone()
-            if row is None:
-                raise NotFound("published shop not found")
-            build = self.repository.build_record(row)
-            if build.state != "succeeded" or build.report is None or build.report.artifact is None:
-                raise ValueError("invalid publication")
-            observations = self._observations(
-                db.execute("SELECT * FROM observation_heads WHERE shop_id=?", (shop,)).fetchone()
-            )
-            artifact = build.report.artifact
-            return artifact, observations, evidence_snapshot(db, artifact)
+            return self.snapshot_in(db, shop)[:3]
+
+    def snapshot_in(self, db, shop):
+        row = db.execute(
+            "SELECT builds.* FROM shops JOIN builds ON shops.published_build=builds.id "
+            "WHERE shops.id=? AND builds.shop_id=shops.id",
+            (shop,),
+        ).fetchone()
+        if row is None:
+            raise NotFound("published shop not found")
+        build = self.repository.build_record(row)
+        if build.state != "succeeded" or build.report is None or build.report.artifact is None:
+            raise ValueError("invalid publication")
+        observations = self._observations(
+            db.execute("SELECT * FROM observation_heads WHERE shop_id=?", (shop,)).fetchone()
+        )
+        artifact = build.report.artifact
+        publication = db.execute("SELECT generation FROM shops WHERE id=?", (shop,)).fetchone()
+        return artifact, observations, evidence_snapshot(db, artifact), publication["generation"], build.id
 
     def catalog(self, shop: str) -> dict:
         return self.service.catalog(shop)
@@ -172,11 +176,16 @@ class PublishedService:
         if private:
             require(principal, shop, "evaluation:read")
         artifact, observations, revocations = self._snapshot(shop)
-        at = self.clock()
+        return self.evaluate_snapshot(artifact, observations, revocations, query,
+                                      at=self.clock(), private=private)
+
+    def evaluate_snapshot(self, artifact, observations, revocations, query, *, at,
+                          private=False, python_evaluation=None):
+        """Trusted projection shared by synchronous queries and completed assessments."""
         if private:
             try:
                 result = evaluate(artifact, query, at=at, observations=observations.observations,
-                                  revoked_evidence=revocations.ids)
+                                  revoked_evidence=revocations.ids, python_evaluation=python_evaluation)
             except KeyError:
                 raise NotFound("evaluation target not found") from None
             return {"observation_revision": observations.revision,
@@ -228,7 +237,7 @@ class PublishedService:
                 ],
             }
         result = evaluate(artifact, query, at=at, observations=observations.observations,
-                          revoked_evidence=revocations.ids)
+                          revoked_evidence=revocations.ids, python_evaluation=python_evaluation)
         codes = sorted({reason.code for reason in result.reasons})
         response = {
             **common,

@@ -2,11 +2,33 @@
 
 import errno
 import os
+import sqlite3
 import stat
 import threading
+import time
 from pathlib import Path
 
 _creation_lock = threading.Lock()
+
+
+def enable_wal(db, *, timeout=5.0):
+    """Bound contention during the idempotent journal-mode transition only."""
+    if db.in_transaction:
+        raise ValueError("WAL initialization requires no active transaction")
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            mode = db.execute("PRAGMA journal_mode=WAL").fetchone()[0]
+            if mode != "wal":
+                raise sqlite3.DatabaseError("database requires WAL journaling")
+            return
+        except sqlite3.OperationalError as error:
+            if getattr(error, "sqlite_errorcode", 0) & 255 != sqlite3.SQLITE_BUSY:
+                raise
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise
+            time.sleep(min(.01, remaining))
 
 
 def private_database(path: Path, *, create=False):

@@ -20,28 +20,28 @@ class CheckExecutionError(ValueError):
 def run_checks(shop, project):
     validate_check_sources(shop, project)
     plans = require_check_coverage(shop, project.tests)
-    answers = []
-    for case, plan in zip(project.tests, plans, strict=True):
-        values = {fact.name: fact for fact in case.request.facts}
-        results = []
-        for (capability, identifier), check in sorted(plan.items()):
-            try:
-                module, function = check.entrypoint.split(":")
-                callback = getattr(importlib.import_module(module), function)
-                # Each call gets fresh declared facts without service authority.
-                inputs = {
-                    name: Fact.model_validate(values[name].model_dump()).value
-                    if name in values
-                    else None
-                    for name in check.facts
-                }
-                result = PythonCheckResult(
-                    capability=capability, check=identifier, outcome=callback(inputs)
-                )
-                if result.outcome == "conditional" and not check.remedy.strip():
-                    raise ValueError("A conditional Python check needs a declared remedy")
-            except Exception as error:
-                raise CheckExecutionError(case.id, capability, identifier, error) from error
-            results.append(result)
-        answers.append(CaseChecks(id=case.id, results=tuple(results)).model_dump(mode="json"))
-    return answers
+    return [invoke_checks(case.request, plan, case.id)
+            for case, plan in zip(project.tests, plans, strict=True)]
+
+
+def invoke_checks(request, plan, case_id):
+    values = {fact.name: fact for fact in request.facts}
+    results = []
+    for (capability, identifier), check in sorted(plan.items()):
+        try:
+            module, function = check.entrypoint.split(":")
+            callback = getattr(importlib.import_module(module), function)
+            inputs = {
+                name: Fact.model_validate(values[name].model_dump()).value
+                if name in values else None
+                for name in check.facts
+            }
+            result = PythonCheckResult(
+                capability=capability, check=identifier, outcome=callback(inputs)
+            )
+            if result.outcome == "conditional" and not check.remedy.strip():
+                raise ValueError("A conditional Python check needs a declared remedy")
+        except Exception as error:
+            raise CheckExecutionError(case_id, capability, identifier, error) from error
+        results.append(result)
+    return CaseChecks(id=case_id, results=tuple(results)).model_dump(mode="json")

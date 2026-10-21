@@ -52,6 +52,7 @@ a filesystem or network namespace inside the API container.
 | Shop dependency code executing with database authority | Separate shop Python environment; explicit core interpreter for SDK services; binary hash-pinned installs and unchanged core package constraints; no shop interpreter invocation after installation during image build | `test_worker_dependencies.py`, `test_worker_dependencies_live.py`; [environment contract](DEPENDENCIES.md) |
 | Forged or expensive worker output | Broker-side decoding and model validation; JSON, collection, graph, diagnostic and evaluation budgets | `test_data_limits.py`, hostile-output live worker tests |
 | Python constraint answers bypassing static rules or evidence | Functions run only in source workers; the broker requires exact check/case coverage, binds answers to the build/query/time and recomputes domain outcomes. Build-test answers never substitute for a new query. | `test_python_checks.py`, actual conditional/rejected inputs, execution failures and containment in `test_python_checks_live.py` |
+| Queued queries leaking private conditions or returning a superseded answer | Separate evaluation grant, caller-owned receipts, exact published source/environment, no function execution for opaque public contracts, and publication/observation/revocation checks before returning receipts | `test_assessments.py`, REST and MCP queries through real source containers in `test_assessments_live.py`, receipt preservation in the recovery drill |
 | Request floods or expensive data operations | Shared peer/identity/shop quotas, bounded admission state, deterministic work budgets, two supervised API service workers and container limits | `test_request_limits*.py`, `test_quotas.py`, `test_service_pool.py`, `benchmark-service` |
 | Replayed mutations, lost responses or ambiguous external effects | Expected revisions/generations, durable request keys and call journals, claim fencing, no automatic code/service replay, retained uncertain operation locks, receiver reconciliation | `test_lifecycle.py`, `test_programs.py`, `test_service_pool.py`, `test_execution*.py`, adapter fault tests |
 | Outbound-request abuse or credential leakage | Untrusted containers have no network; operator-owned adapter bindings; pinned HTTPS trust/receiver path; bounded network work; no redirects, proxy inheritance or automatic dispatch retries; scoped AppRole/KV access | `test_remote_adapter.py`, real OpenBao and TLS receiver denials in `test_remote_adapter_live.py`, contained executor tests |
@@ -93,8 +94,9 @@ revocations recorded after that snapshot.
 - Reduce worker-host authority and strengthen isolation for hostile tenants.
   The broker's Docker socket remains a host-level trust dependency. Shop-specific
   dependency environments are operator-selected and hash-pinned. Python constraints
-  currently run during isolated build tests; queued on-demand evaluation and its
-  admission, cancellation and publication checks remain work.
+  run during isolated builds and queued assessments with shared admission,
+  cancellation and publication checks. Qualifying isolation for hostile tenants
+  remains deployment work.
 - Qualify maintenance for indefinitely ambiguous legacy launches and eventual
   retirement of inert name reservations. The operator command handles the new
   cleanup protocol; older removal requests by name could delete a reservation

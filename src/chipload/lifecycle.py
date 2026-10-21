@@ -18,6 +18,7 @@ from typing import Literal
 from .access import Principal, require
 from .admission import AdmissionStore, PolicyConflict
 from .artifact import Artifact, Digest, canonical_json, digest, read_artifact
+from .assessment_model import ASSESSMENT_MIGRATION
 from .cache import DEFAULT_CACHE_BYTES, DataCache
 from .discovery import public_catalog
 from .evidence import EVIDENCE_SCHEMA
@@ -31,7 +32,7 @@ from .project import MAX_OUTPUT_BYTES, MAX_PROJECT_BYTES, BuildReport, SourcePro
 from .quotas import QUOTA_SCHEMA, QuotaPolicy, admit_build, admit_running, admit_source, quota_usage
 from .request_limits import REQUEST_SCHEMA
 from .sandbox import DockerBuilder
-from .storage import private_database
+from .storage import enable_wal, private_database
 from .validation import Diagnostic
 
 
@@ -125,15 +126,14 @@ class Repository:
         private_database(self.path, create=True)
         with self.connection() as db:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}:
+            if version not in {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}:
                 raise ValueError("unsupported repository schema")
-            if version in {5, 6, 7, 8, 9, 10}:
+            if version in {5, 6, 7, 8, 9, 10, 11}:
                 reference = db.execute("SELECT * FROM admission_store WHERE id=1").fetchone()
                 if reference is None:
                     raise IntegrityError("missing admission store reference")
                 if reference["state"] == "ready":
-                    if db.execute("PRAGMA journal_mode=WAL").fetchone()[0] != "wal":
-                        raise IntegrityError("repository database requires WAL journaling")
+                    enable_wal(db)
                     self.admission = self._admission(reference["identity"])
                     self.admission.enable_wal()
                     self.admission.snapshot()
@@ -147,14 +147,16 @@ class Repository:
                         self._initialize_reservations()
                     if version < 10:
                         self._initialize_evidence()
+                    if version < 11:
+                        self._initialize_assessments()
                     return
-            db.execute("PRAGMA journal_mode=WAL")
+            enable_wal(db)
             db.execute("BEGIN IMMEDIATE")
             try:
                 version = db.execute("PRAGMA user_version").fetchone()[0]
-                if version not in {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}:
+                if version not in {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}:
                     raise ValueError("unsupported repository schema")
-                if version in {5, 6, 7, 8, 9, 10}:
+                if version in {5, 6, 7, 8, 9, 10, 11}:
                     db.execute("COMMIT")
                     self._initialize_admission()
                     return
@@ -236,6 +238,15 @@ class Repository:
         self._initialize_launches()
         self._initialize_reservations()
         self._initialize_evidence()
+        self._initialize_assessments()
+
+    def _initialize_assessments(self):
+        with self.transaction() as db:
+            if db.execute("PRAGMA user_version").fetchone()[0] == 10:
+                for statement in ASSESSMENT_MIGRATION.split(";"):
+                    if statement.strip():
+                        db.execute(statement)
+                db.execute("PRAGMA user_version=11")
 
     def _initialize_evidence(self):
         with self.transaction() as db:

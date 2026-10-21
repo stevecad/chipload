@@ -128,6 +128,7 @@ class ReservationTests(unittest.TestCase):
         with self.repository.transaction() as db:
             db.execute("DROP TABLE launch_reservations")
             db.execute("ALTER TABLE worker_launches DROP COLUMN removal_protocol")
+            db.execute("ALTER TABLE python_runs DROP COLUMN kind")
             db.execute("PRAGMA user_version=8")
         with patch.object(lifecycle, "RESERVATION_SCHEMA", lifecycle.RESERVATION_SCHEMA + "INVALID SQL;"):
             with self.assertRaises(Exception):
@@ -137,7 +138,7 @@ class ReservationTests(unittest.TestCase):
             self.assertNotIn("removal_protocol", [row[1] for row in db.execute("PRAGMA table_info(worker_launches)")])
         Repository(self.repository.path)
         with self.repository.connection() as db:
-            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 10)
+            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 11)
             self.assertEqual(db.execute("SELECT settled,removal_protocol FROM worker_launches").fetchone()[:], (0, 1))
 
 

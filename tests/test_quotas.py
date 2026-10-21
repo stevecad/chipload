@@ -349,7 +349,7 @@ class QuotaTests(unittest.TestCase):
         with ThreadPoolExecutor(max_workers=3) as pool:
             repositories = list(pool.map(Repository, [path] * 3))
         with repositories[0].connection() as db:
-            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 10)
+            self.assertEqual(db.execute("PRAGMA user_version").fetchone()[0], 11)
             self.assertEqual(
                 [r[0] for r in db.execute("SELECT actor FROM builds ORDER BY id")],
                 ["requester", "source-owner"],

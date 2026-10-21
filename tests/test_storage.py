@@ -1,15 +1,17 @@
 """Actual file locks survive metadata checks and concurrent repository opens."""
 
 import os
+import sqlite3
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from chipload.lifecycle import Repository
-from chipload.storage import private_database
+from chipload.storage import enable_wal, private_database
 
 LOCK_PROBE = """
 import fcntl, os, sys
@@ -59,6 +61,40 @@ class StorageTests(unittest.TestCase):
             self.assertEqual(store.path.stat().st_mode & 0o777, 0o600)
             with store.connection() as db:
                 self.assertEqual(db.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+
+    def test_wal_transition_waits_for_actual_lock_but_has_a_deadline(self):
+        private_database(self.path, create=True)
+        locked, release = threading.Event(), threading.Event()
+
+        def holder():
+            db = sqlite3.connect(self.path, isolation_level=None)
+            try:
+                db.execute("BEGIN EXCLUSIVE")
+                locked.set()
+                release.wait(5)
+                db.execute("ROLLBACK")
+            finally:
+                db.close()
+
+        thread = threading.Thread(target=holder)
+        thread.start()
+        db = sqlite3.connect(self.path, isolation_level=None, timeout=0)
+        try:
+            self.assertTrue(locked.wait(2))
+            with self.assertRaises(sqlite3.OperationalError) as error:
+                enable_wal(db, timeout=0)
+            self.assertEqual(error.exception.sqlite_errorcode & 255, sqlite3.SQLITE_BUSY)
+            timer = threading.Timer(.05, release.set)
+            timer.start()
+            try:
+                enable_wal(db)
+            finally:
+                timer.join()
+            self.assertEqual(db.execute("PRAGMA journal_mode").fetchone()[0], "wal")
+        finally:
+            release.set()
+            thread.join(5)
+            db.close()
 
     def test_missing_repository_is_not_recreated_by_an_existing_handle(self):
         repository = Repository(self.path)

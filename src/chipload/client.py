@@ -84,6 +84,7 @@ def route(operation, request):
         "observations_write": ("PUT", "/observations"),
         "audit_read": ("GET", "/audit"),
         "code_run": ("POST", "/runs"),
+        "assessment_submit": ("POST", "/assessments"),
         "shop_evaluate": ("POST", "/evaluate"),
         "shop_evaluate_private": ("POST", "/private/evaluate"),
         "shop_variables": ("POST", "/variables/query"),
@@ -96,6 +97,10 @@ def route(operation, request):
     elif operation in {"evidence_revoke", "evidence_revocation_read"}:
         method = "PUT" if operation == "evidence_revoke" else "GET"
         suffix = "/evidence/" + component(request["evidence_id"]) + "/revocation"
+    elif operation in {"assessment_read", "assessment_cancel"}:
+        method, suffix = "GET", "/assessments/" + hex_component(request["assessment_id"], 32)
+        if operation == "assessment_cancel":
+            method, suffix = "POST", suffix + "/cancel"
     elif operation in {"code_read", "code_cancel"}:
         method, suffix = "GET", "/runs/" + hex_component(request["run_id"], 32)
         if operation == "code_cancel":
@@ -134,7 +139,7 @@ def route(operation, request):
     body = (
         request
         if method in {"PUT", "POST"}
-        and operation not in {"operation_execution_cancel", "code_cancel"}
+        and operation not in {"operation_execution_cancel", "code_cancel", "assessment_cancel"}
         else None
     )
     return method, path, body
@@ -332,6 +337,16 @@ class ShopClient:
 
     def evaluate(self, query, *, private=False):
         return self._call("shop_evaluate_private" if private else "shop_evaluate", query=query)
+
+    def assess(self, query, *, expected_revision, request_key, private=False, seconds=30):
+        return self._call("assessment_submit", query=query, expected_revision=expected_revision,
+                          request_key=request_key, private=private, seconds=seconds)
+
+    def assessment(self, assessment_id):
+        return self._call("assessment_read", assessment_id=assessment_id)
+
+    def cancel_assessment(self, assessment_id):
+        return self._call("assessment_cancel", assessment_id=assessment_id)
 
     def variables(self, query, *, private=False):
         return self._call("shop_variables_private" if private else "shop_variables", query=query)

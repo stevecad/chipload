@@ -22,6 +22,7 @@ from starlette.responses import JSONResponse, Response
 
 from .access import Forbidden
 from .artifact import canonical_json, digest
+from .assessment_model import AssessmentRead, AssessmentRecord, AssessShop
 from .auth import AuthenticationError, IdentityUnavailable, ServerSettings, TokenVerifier
 from .cache import DataBusy
 from .evidence import EvidenceReference, EvidenceRevocation, RevokeEvidence
@@ -467,7 +468,7 @@ def create_app(
         # The service worker validates its output contract. Avoid rebuilding a
         # large artifact model a second time in the HTTP supervisor.
         if as_response:
-            status = 202 if name in {"build_request", "operation_submit", "code_run"} else 200
+            status = 202 if name in {"build_request", "operation_submit", "code_run", "assessment_submit"} else 200
             return JSONResponse(result, status_code=status)
         return result
 
@@ -515,6 +516,20 @@ def create_app(
             request,
             await call("shop_catalog", request, ShopInput(shop_id=shop_id), as_response=False),
         )
+
+    @app.post("/v1/shops/{shop_id}/assessments", status_code=202, response_model=AssessmentRecord)
+    async def assessment_submit(shop_id: str, body: AssessShop, request: Request):
+        if body.shop_id != shop_id:
+            raise ValueError("body and path shop IDs must match")
+        return await call("assessment_submit", request, body)
+
+    @app.get("/v1/shops/{shop_id}/assessments/{assessment_id}", response_model=AssessmentRecord)
+    async def assessment_read(shop_id: str, assessment_id: str, request: Request):
+        return await call("assessment_read", request, AssessmentRead(shop_id=shop_id, assessment_id=assessment_id))
+
+    @app.post("/v1/shops/{shop_id}/assessments/{assessment_id}/cancel", response_model=AssessmentRecord)
+    async def assessment_cancel(shop_id: str, assessment_id: str, request: Request):
+        return await call("assessment_cancel", request, AssessmentRead(shop_id=shop_id, assessment_id=assessment_id))
 
     @app.post("/v1/shops/{shop_id}/evaluate", response_model=PublicEvaluation)
     async def evaluation(shop_id: str, body: EvaluationInput, request: Request):

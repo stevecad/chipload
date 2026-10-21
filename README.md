@@ -56,6 +56,13 @@ The [callable shop example](examples/callable_shop.py) adds simulated document r
 
 To save source revisions, build in restricted Docker containers, inspect diagnostics, and publish or roll back an exact build, follow [the authoring walkthrough](docs/AUTHORING.md). Use [Python programs through MCP](docs/PYTHON_API.md) to compose shop workflows with four tools. See [the API guide](docs/API.md) to run REST and MCP, configure Keycloak/shop permissions, and use ordinary HTTP clients.
 
+Shop-defined Python functions can express technical relationships and business
+conditions. [Queued assessments](docs/ASSESSMENTS.md) execute those rules for REST
+clients and agents against an exact published revision. The trusted evaluator
+combines function answers with static limits and evidence. The
+[Python rule examples](examples/python_shop.py) cover machining, heat treatment
+and a document-review service.
+
 ## Local infrastructure
 
 With Docker Engine and Docker Compose installed, start the development stack:

@@ -1,6 +1,7 @@
 """Static machine-readable authoring reference; never imports shop projects."""
 
 from .artifact import SDK_VERSION
+from .assessment_model import AssessShop
 from .evaluate import EvaluationRequest
 from .execution_model import ExecutionRequest
 from .limits import (
@@ -31,6 +32,7 @@ def sdk_reference() -> dict:
             "shop": Shop.model_json_schema(),
             "source_project": SourceProject.model_json_schema(),
             "evaluation_request": EvaluationRequest.model_json_schema(),
+            "assessment_request": AssessShop.model_json_schema(),
             "variable_query": VariableQuery.model_json_schema(),
             "execution_request": ExecutionRequest.model_json_schema(),
         },
@@ -66,6 +68,9 @@ def sdk_reference() -> dict:
             "Save, build, test, and publish are separate actions.",
             "Publication requires a successful build with at least one acceptance case.",
             "Source runs in an operator-provisioned environment with pinned dependencies.",
+            "PythonCheck functions consume declared facts and return supported, unsupported, conditional or unknown. A conditional result requires a declared remedy.",
+            "Use shop.assess with a published revision and stable request key to run Python constraints. Read or cancel that assessment in a subsequent run; it shares Python queue capacity.",
+            "Assessment receipts describe their evaluation time. Changed publication, observations or revocations supersede the receipt; submit a new key for a fresh query.",
             "Operation contracts require a separate adapter binding to execute; publishing source does not grant equipment authority.",
             "Execution mode is explicit. Simulated results are not equipment qualification.",
             "Retry an exact execution request with its original request key. Reconcile indeterminate outcomes without resending effects.",

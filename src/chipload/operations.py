@@ -7,6 +7,8 @@ from pydantic import Field, JsonValue, StrictInt, StrictStr, model_validator
 
 from .access import Action, AuthenticationError, Principal, require, require_operation
 from .artifact import Digest
+from .assessment_model import AssessmentRead, AssessmentRecord, AssessShop
+from .assessments import AssessmentService
 from .evaluate import EvaluationRequest
 from .evidence import EvidenceReference, EvidenceRevocation, EvidenceService, RevokeEvidence
 from .execution import ExecutionService
@@ -123,9 +125,23 @@ class Operations:
         self.evidence = EvidenceService(service.repository, clock=self.published.clock)
         self.executions = ExecutionService(service.repository)
         self.programs = ProgramService(service.repository)
+        self.assessments = AssessmentService(service.repository, clock=self.published.clock)
         p = self.published
         s = self.service
         self.specs = {
+            "assessment_submit": Operation(
+                AssessShop, "Queue an assessment against an exact published revision, including isolated Python rules.",
+                self.assessments.submit, True, False, mutation_action="evaluation:run",
+            ),
+            "assessment_read": Operation(
+                AssessmentRead, "Read your assessment receipt; superseded results are withheld.",
+                lambda who, r: self.assessments.read(who, r.shop_id, r.assessment_id), True,
+            ),
+            "assessment_cancel": Operation(
+                AssessmentRead, "Cancel your queued or running assessment.",
+                lambda who, r: self.assessments.cancel(who, r.shop_id, r.assessment_id),
+                True, False, mutation_action="evaluation:run",
+            ),
             "code_run": Operation(RunPython, "Run Python with scoped SDK calls in an isolated container. Retry the same request key to inspect the same run.",
                                   lambda who, r: self.programs.submit(who, r), True, False, mutation_action="code:run"),
             "code_read": Operation(ReadRun, "Inspect a Python run, its result, and its service-call journal.",
@@ -297,6 +313,9 @@ class Operations:
             ),
         }
         outputs = {
+            "assessment_submit": AssessmentRecord,
+            "assessment_read": AssessmentRecord,
+            "assessment_cancel": AssessmentRecord,
             "code_run": RunRecord,
             "code_read": RunRecord,
             "code_cancel": RunRecord,

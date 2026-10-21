@@ -29,6 +29,7 @@ from chipload.quotas import QuotaPolicy
 from chipload.request_limits import RequestLimiter
 from examples.export_project import project
 from examples.heat_treatment import observations
+from examples.heat_treatment import request as heat_request
 
 
 @unittest.skipUnless(
@@ -176,6 +177,19 @@ class RecoveryLiveTests(unittest.IsolatedAsyncioTestCase):
                     )
                     self.assertEqual(revoked.status_code, 200, revoked.text)
                     catalog = (await client.get(shop + "/catalog")).json()
+                    submitted = await client.post(shop + "/assessments", headers=headers, json={
+                        "shop_id": "thermal-example", "request_key": "recovery-assessment",
+                        "expected_revision": catalog["public_sha256"],
+                        "query": heat_request().model_dump(mode="json"),
+                    })
+                    self.assertEqual(submitted.status_code, 202, submitted.text)
+                    assessment_id = submitted.json()["id"]
+                    for _ in range(120):
+                        assessment = (await client.get(shop + "/assessments/" + assessment_id, headers=headers)).json()
+                        if assessment["state"] not in {"queued", "running"}:
+                            break
+                        await asyncio.sleep(.3)
+                    self.assertEqual(assessment["state"], "succeeded", assessment)
                     audit = (await client.get(shop + "/audit", headers=headers)).json()
                     repository = Repository(original / "data/chipload.db")
                     policy = repository.read_quotas()["policy"]
@@ -341,6 +355,9 @@ script.backup(Path(sys.argv[2]), Path(sys.argv[3]), Path(sys.argv[4]), archive.M
                         {k["kid"]: k for k in new_keys["keys"]}, {k["kid"]: k for k in keys["keys"]}
                     )
                     self.assertEqual((await client.get(shop + "/catalog")).json(), catalog)
+                    self.assertEqual(
+                        (await client.get(shop + "/assessments/" + assessment_id, headers=headers)).json(), assessment
+                    )
                     self.assertEqual(
                         (await client.get(shop + "/source", headers=headers)).json()["revision"],
                         revision,

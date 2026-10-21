@@ -9,7 +9,7 @@ from .artifact import canonical_json
 from .limits import bounded_json
 from .quotas import QuotaPolicy
 from .request_limits import REQUEST_SCHEMA, update_request_rates
-from .storage import private_database
+from .storage import enable_wal, private_database
 
 
 class PolicyConflict(ValueError):
@@ -77,8 +77,7 @@ class AdmissionStore:
         """Restore runtime journaling after an offline SQLite backup is installed."""
         with self._connection() as db:
             self._check_identity(db)
-            if db.execute("PRAGMA journal_mode=WAL").fetchone()[0] != "wal":
-                raise sqlite3.DatabaseError("admission database requires WAL journaling")
+            enable_wal(db)
 
     @contextmanager
     def transaction(self):
@@ -106,7 +105,7 @@ class AdmissionStore:
                 self._check_identity(db)
             elif db.execute("PRAGMA user_version").fetchone()[0] != 0:
                 raise sqlite3.DatabaseError("unrecognized admission database")
-            db.execute("PRAGMA journal_mode=WAL")
+            enable_wal(db)
             db.execute("BEGIN IMMEDIATE")
             try:
                 if not objects:

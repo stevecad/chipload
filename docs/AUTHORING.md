@@ -108,8 +108,8 @@ Capabilities can declare [Python constraints](SHOP_MODEL.md#python-constraints)
 whose functions run during isolated acceptance tests. The broker recomputes
 domain results from bounded function answers and the validated model; private
 case reports retain exact build/query/time bindings. Every function needs a case.
-On-demand queued evaluation remains to be connected to REST/MCP. Published data
-queries do not reuse acceptance-test results or import source into the API.
+Use [queued assessments](ASSESSMENTS.md) for on-demand REST/MCP queries. Published
+data queries do not reuse acceptance-test results or import source into the API.
 
 Source may fabricate output or modify its own Python process. The broker treats
 all worker output as untrusted: it validates the returned model and references,
@@ -480,3 +480,5 @@ They use temporary databases and remove only the worker containers they create.
 The queue test starts two real brokers: one holds a looping shop worker while
 the other builds and publishes a different shop. It then stops only the test's
 looping container and checks that its reservation is released normally.
+
+Schema 10 migrates atomically to schema 11 for typed assessment jobs in the Python queue. Stop old writers and rebuild images before upgrading. See [assessment operation](ASSESSMENTS.md#execution-and-operation) for grants, capacity and recovery.
