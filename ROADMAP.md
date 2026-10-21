@@ -19,7 +19,8 @@ Steve integration is planned for a later stage.
 - A local application service now stores immutable source revisions, durable build jobs, exact publications, rollback/withdrawal, and audit events. It enforces shop/action grants. A restricted Docker worker and broker build Python projects; the broker validates models and acceptance results. Real-container tests cover hostile source and the publication lifecycle.
 - REST/OpenAPI and Streamable HTTP MCP share discovery, evaluation, authoring, publication, evidence, and observation operations. The server verifies Keycloak access tokens and applies explicit shop grants; a separate broker processes queued jobs. Public results have a distinct privacy projection.
 - Data boundaries now enforce JSON depth/token/number limits, model collection limits, bounded diagnostics, and deterministic evaluation/result/acceptance-suite budgets. Graph ordering avoids repeated scans. Adversarial parser, graph, transport, and container tests cover rejection and continued operation.
-- Bounded caches retain validated immutable builds and public catalog bytes while database publication selection, report integrity, permissions, observations, and evaluation time remain live. Concurrent misses share validation; saturation is retryable. `scripts/benchmark-data --service` measures compact/large-catalog reads with retention disabled and enabled. Cold validation, process containment, and deployment load qualification remain open.
+- Bounded caches retain validated immutable builds and public catalog bytes while database publication selection, report integrity, permissions, observations, and evaluation time remain live. Concurrent misses within a process share validation; saturation is retryable. `scripts/benchmark-data --service` measures compact/large-catalog reads with retention disabled and enabled. Cold-validation cost and deployment load qualification remain work.
+- API domain calls now run in two supervised service processes with CPU, address-space, wall-time and IPC bounds. Tests cover resource exhaustion, shutdown, parent death, permission/publication changes and a committed write with a lost response. `scripts/benchmark-service` measures actual HTTP results and rejections, including the restricted API image. See `docs/SERVICE_WORKERS.md`; broker SDK dispatch and full deployment qualification remain separate.
 - Durable source/build quotas now cover deployment, shop, and verified identity scopes, including pending/running jobs, hourly admissions, retained records, and payload storage reservations. Brokers claim work atomically with persistent dispatch turns. Tests exercise competing processes, transport parity, idempotent retries, migration, and operator policy changes.
 - HTTP admission now shares deployment, connection-peer, identity, and mutation budgets across API processes. Limiter state is bounded; contention and saturation return retry details. Tests exercise two actual HTTP servers, process restart, forwarded-header spoofing, and MCP client recovery. `scripts/benchmark-requests` measures admission overhead. Network-edge controls and full deployment load qualification remain open.
 - Capacity policy and request balances use a separate durable store, keeping public admission independent of shop write locks. Resumable migration preserves existing policy history and spent allowances; tests exercise concurrent startup, interruption, store pairing, and discovery during authoring writes. Both database files belong to one backup/restore set.
@@ -192,7 +193,8 @@ Cover authorization on every entry point, malicious source and dependencies, tra
 
 Bound model graph complexity and the CPU/memory spent validating worker output and evaluating published data, in addition to limiting source containers. Request-byte limits alone do not bound graph-processing cost. Exercise per-identity/shop quotas and fair queueing under adversarial workloads before internet deployment.
 
-**Progress:** Structural admission and deterministic work budgets are implemented;
+**Progress:** `docs/THREAT_MODEL.md` records the implemented authority boundaries,
+test evidence and remaining deployment work. Structural admission and deterministic work budgets are implemented;
 see `docs/SHOP_MODEL.md`. `docs/AUTHORING.md` records reproducible data-operation
 measurements. Immutable build/projection caching now reduces repeated-read cost
 under memory and concurrency budgets, with publication/corruption/withdrawal
@@ -203,11 +205,14 @@ its own concurrent writers can still contend. API/broker containers now bound
 memory, CPU, process count, temporary storage, and log retention. A TLS gateway
 and production-mode Keycloak now provide verified identity paths, private
 networks, bounded gateway requests, and exact client-address trust. All host
-listeners remain on loopback. Per-request data-process containment, public-edge
-qualification, production secrets delivery/rotation, off-host and external-secrets recovery,
-broader storage/retention, deployment load
-targets, and full adversarial deployment verification remain open. The component benchmarks and HTTP admission tests cover
-these implemented boundaries; production deployment remains a separate gate.
+listeners remain on loopback. API domain processing now has per-request CPU/wall
+deadlines and bounded service processes, with no automatic replay of interrupted
+mutations. Reproducible HTTP measurements include container limits and rejection
+rates. Broker SDK dispatch containment, public-edge qualification, production
+secrets delivery/rotation, off-host and external-secrets recovery, broader
+storage/retention, deployment load qualification and full adversarial deployment
+verification remain open. The component benchmarks and HTTP admission tests
+cover these implemented boundaries; production deployment remains a separate gate.
 
 Coordinated encrypted backup/restore now preserves identity and shop state,
 including authorization bindings and request balances. Interrupted backup and

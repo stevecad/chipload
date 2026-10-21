@@ -54,6 +54,7 @@ from .operations import (
     SourceWrite,
     VariablesInput,
 )
+from .process_operations import ProcessOperations
 from .program_model import ReadRun, RunPython, RunRecord
 from .project import unique_json
 from .published import Collection, ObservationSnapshot
@@ -62,6 +63,7 @@ from .quotas import QuotaExceeded
 from .request_limits import RateLimited, RequestCapacity, request_peer
 from .responses import CatalogView, ItemView, PageView, PublicEvaluation
 from .service_errors import problem as service_problem
+from .service_pool import ServiceFailure
 
 MAX_REQUEST_BYTES = 3 * 1024 * 1024
 
@@ -324,6 +326,7 @@ def make_mcp(operations: Operations, settings: ServerSettings):
                     ValueError,
                     DataBusy,
                     RequestCapacity,
+                    ServiceFailure,
                 ) as error:
                     status, body = problem(error)
                     result = {"status": status, **body}
@@ -395,8 +398,10 @@ def create_app(
     operations: Operations | None = None,
     verifier: TokenVerifier | None = None,
 ) -> FastAPI:
-    operations = operations or Operations(
-        ShopService(Repository(settings.database, cache_bytes=settings.data_cache_bytes))
+    owned_operations = operations is None
+    operations = operations or ProcessOperations(
+        ShopService(Repository(settings.database, cache_bytes=0)),
+        cache_bytes=settings.data_cache_bytes,
     )
     owned_verifier = verifier is None
     verifier = verifier or TokenVerifier(settings)
@@ -404,10 +409,18 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app):
-        async with mcp_http.router.lifespan_context(mcp_http):
-            yield
-        if owned_verifier:
-            verifier.close()
+        try:
+            if owned_operations:
+                await run_in_threadpool(operations.start)
+            async with mcp_http.router.lifespan_context(mcp_http):
+                yield
+        finally:
+            try:
+                if owned_operations:
+                    await run_in_threadpool(operations.close)
+            finally:
+                if owned_verifier:
+                    verifier.close()
 
     app = FastAPI(
         title="Chipload",
@@ -425,7 +438,7 @@ def create_app(
         status, body = problem(error)
         headers = {"WWW-Authenticate": challenge(settings)} if status == 401 else {}
         if (
-            isinstance(error, (QuotaExceeded, RateLimited, RequestCapacity))
+            isinstance(error, (QuotaExceeded, RateLimited, RequestCapacity, ServiceFailure))
             and error.retry_after is not None
         ):
             headers["Retry-After"] = str(error.retry_after)
@@ -441,14 +454,21 @@ def create_app(
         RequestValidationError,
         DataBusy,
         RequestCapacity,
+        ServiceFailure,
         Exception,
     ):
         app.add_exception_handler(kind, handle_error)
 
-    async def call(name, request, model):
-        return await run_in_threadpool(
+    async def call(name, request, model, *, as_response=True):
+        result = await run_in_threadpool(
             operations.call, name, request.scope.get("chipload.principal"), model
         )
+        # The service worker validates its output contract. Avoid rebuilding a
+        # large artifact model a second time in the HTTP supervisor.
+        if as_response:
+            status = 202 if name in {"build_request", "operation_submit", "code_run"} else 200
+            return JSONResponse(result, status_code=status)
+        return result
 
     def conditional(request, result):
         tag = f'"{digest(canonical_json(result))}"'
@@ -490,7 +510,10 @@ def create_app(
 
     @app.get("/v1/shops/{shop_id}/catalog", response_model=CatalogView)
     async def catalog(shop_id: str, request: Request):
-        return conditional(request, await call("shop_catalog", request, ShopInput(shop_id=shop_id)))
+        return conditional(
+            request,
+            await call("shop_catalog", request, ShopInput(shop_id=shop_id), as_response=False),
+        )
 
     @app.post("/v1/shops/{shop_id}/evaluate", response_model=PublicEvaluation)
     async def evaluation(shop_id: str, body: EvaluationInput, request: Request):
@@ -629,6 +652,7 @@ def create_app(
                 PageInput(
                     shop_id=shop_id, collection=collection, limit=limit, cursor=cursor, query=query
                 ),
+                as_response=False,
             ),
         )
 
@@ -640,6 +664,7 @@ def create_app(
                 "shop_inspect",
                 request,
                 ItemInput(shop_id=shop_id, collection=collection, item_id=item_id),
+                as_response=False,
             ),
         )
 

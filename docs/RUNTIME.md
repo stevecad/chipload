@@ -105,14 +105,22 @@ consistent backup; schema migration is not a rolling-upgrade protocol.
 
 | Process | Storage and access | Runtime limits |
 | --- | --- | --- |
-| API | Shop databases and read-only settings; no Docker socket or CLI; outbound network for JWKS | Non-root, read-only image, no Linux capabilities, no privilege escalation, 1 CPU, 512 MiB memory/swap total, 128 processes |
-| Broker | Shop databases and Docker Unix socket; no IP network, settings, or OpenBao credentials | Same process limits as API; starts separately constrained workers |
+| API | Shop databases and read-only settings; no Docker socket or CLI; outbound network for JWKS | Non-root, read-only image, no Linux capabilities, no privilege escalation, 1 CPU, 1 GiB memory with no additional swap, 128 processes |
+| Broker | Shop databases, read-only settings and Docker Unix socket; no IP network or OpenBao credentials | 1 CPU, 512 MiB memory with no additional swap, 128 processes; same filesystem/capability restrictions; starts separately constrained workers |
 | Source worker | Stdin source bundle, bounded temporary storage; no host mounts or network | Existing worker boundary: non-root, 1 CPU, 256 MiB, 64 processes, execution/output deadlines |
 
 API and broker `/tmp` mounts are limited to 32 MiB with `noexec`, `nosuid`, and
 `nodev`. Core dumps are disabled. Container logs rotate with a 10 MiB size and
 three-file limit. The API image contains no Docker client. Equipment secrets
 and the OpenBao bootstrap files are mounted into neither service.
+
+The API dispatches domain operations to two [supervised service processes](SERVICE_WORKERS.md),
+each with a 256 MiB address-space limit and CPU/wall deadlines. These trusted
+processes share the API's filesystem and network namespace. The 1 GiB container
+budget covers the HTTP supervisor, both service processes and overhead. The
+default 32 MiB artifact cache allowance is divided between the workers. Startup
+requires Linux process-descriptor support; the shipped image and live tests
+exercise that facility under the container restrictions.
 
 The broker is trusted infrastructure: access to the Docker socket permits host
 control even when the socket bind mount is marked read-only. Its process limits

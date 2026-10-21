@@ -289,8 +289,11 @@ evaluation, and acceptance-suite limits are exposed by `chipload://sdk/reference
 [model admission limits](SHOP_MODEL.md#units-identities-and-artifacts) and
 [build contracts](AUTHORING.md#project-and-build-contracts).
 
-These initial bounds do not constitute internet load qualification. Data
-processing still needs deployment process limits and concurrent load verification.
+API domain operations run in two [supervised service processes](SERVICE_WORKERS.md)
+with address-space, CPU and wall-time limits. Saturation returns `503 data_busy`;
+interruption returns `503 service_interrupted` without replaying the request.
+An interrupted mutation may already have committed. The documented loopback
+HTTP measurements cover service capacity; internet load qualification remains open.
 
 Source/build and [Python run](PYTHON_API.md) admission use durable quotas shared by every API and broker using
 the same database. Limits apply to the deployment, shop, and verified identity;
@@ -308,14 +311,18 @@ These controls cover source/build storage and work admission. Filesystem quotas
 and retention/backup operations remain deployment work.
 
 Validated terminal build records and serialized public catalogs share a bounded
-process-local LRU cache. `data_cache_bytes` defaults to 33,554,432 (32 MiB);
-set it to zero to disable retention. It limits estimated retained Python-object
-memory, with a separate 128-entry limit. It is not a process RSS limit.
-Oversized entries are returned without retention. Four distinct cold loads may
-run concurrently; requests for the same data share their load. Saturation or a
-five-second wait returns REST HTTP 503 `data_busy`, or an MCP tool error with
-structured status 503. Retrying a read is safe; a waiting request timing out
-does not cancel or restart the original load.
+LRU cache within each service process. `data_cache_bytes` defaults to 33,554,432
+(32 MiB) across the API's two workers; set it to zero to disable retention. Each
+worker receives half that estimated Python-object memory allowance and a
+128-entry limit. Oversized entries are returned without retention. Cache memory
+accounting is separate from the enforced process address-space limit.
+
+The cache implementation shares concurrent cold loads within a process, with a
+four-load limit and a five-second wait. API service workers each dispatch one
+call at a time; their independent caches do not share loads with one another.
+Calls arriving while both workers are occupied return REST HTTP 503 `data_busy`,
+or an MCP tool error with structured status 503. A read can be retried; a worker
+interrupted during a write requires inspection of its durable record first.
 
 The database selects the current publication on every request. Build cache keys
 include all returned record metadata and a hash of the exact stored report

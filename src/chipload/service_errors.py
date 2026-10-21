@@ -7,9 +7,12 @@ from .cache import DataBusy
 from .lifecycle import Conflict, IntegrityError, NotFound
 from .quotas import QuotaExceeded
 from .request_limits import RateLimited, RequestCapacity
+from .service_pool import ServiceFailure
 
 
 def problem(error: Exception) -> tuple[int, dict]:
+    if isinstance(error, ServiceFailure):
+        return error.status, error.body
     if isinstance(error, IntegrityError):
         status, code, message = 500, "internal_error", "request could not be completed"
     elif isinstance(error, AuthenticationError):

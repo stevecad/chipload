@@ -24,6 +24,9 @@ x-runtime: &runtime
 services:
   api:
     <<: *runtime
+    # HTTP supervisor plus two bounded service processes.
+    mem_limit: 1g
+    memswap_limit: 1g
     image: ${CHIPLOAD_API_IMAGE:?Run ./scripts/build-runtime}
     pull_policy: never
     stop_grace_period: 20s

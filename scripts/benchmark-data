@@ -29,49 +29,54 @@ def measure(iterations, function):
     }
 
 
-def service_measurements(artifact, request, at, iterations):
-    """Seed synthetic trusted data; never invoke a source worker or real shop."""
+def seed(path, artifact, request, at):
+    """Persist a trusted synthetic fixture without executing its source."""
     from chipload import compile_shop
     from chipload.access import ACTIONS, Grant, Principal
     from chipload.lifecycle import Repository, ShopService
     from chipload.project import AcceptanceCase, BuildReport, SourceFile, SourceProject, run_cases
+
+    writer = ShopService(Repository(path, cache_bytes=0))
+    owner = Principal(subject="benchmark", grants=(Grant(shop_id="benchmark", actions=ACTIONS),))
+    source = SourceProject(
+        shop_id="benchmark",
+        entrypoint="shop:define_shop",
+        files=(
+            SourceFile(
+                path="shop.py",
+                content="def define_shop():\n    raise RuntimeError('benchmark fixture only')\n",
+            ),
+        ),
+        tests=(AcceptanceCase(id="support", request=request, at=at, expected="supported"),),
+    )
+    saved = writer.save_source(owner, source, expected_head=None)
+    queued = writer.request_build(owner, "benchmark", saved.revision)
+    claim, _ = writer.repository.claim(queued.id, 60)
+    artifact = compile_shop(
+        artifact.shop, artifact.identity.model_copy(update={"source_sha256": saved.revision})
+    )
+    writer.repository.finish(
+        queued.id,
+        claim,
+        BuildReport(
+            source_revision=saved.revision,
+            worker_image="sha256:" + "a" * 64,
+            status="succeeded",
+            artifact=artifact,
+            tests=run_cases(artifact, source.tests),
+        ),
+    )
+    writer.publish(owner, "benchmark", queued.id, expected_generation=0)
+
+
+def service_measurements(artifact, request, at, iterations):
+    """Seed synthetic trusted data; never invoke a source worker or real shop."""
+    from chipload.lifecycle import Repository, ShopService
     from chipload.published import PublishedService
 
     with tempfile.TemporaryDirectory(prefix="chipload-benchmark-") as directory:
         path = Path(directory) / "benchmark.db"
-        writer = ShopService(Repository(path, cache_bytes=0))
-        owner = Principal(
-            subject="benchmark", grants=(Grant(shop_id="benchmark", actions=ACTIONS),)
-        )
-        source = SourceProject(
-            shop_id="benchmark",
-            entrypoint="shop:define_shop",
-            files=(
-                SourceFile(
-                    path="shop.py",
-                    content="def define_shop():\n    raise RuntimeError('benchmark fixture only')\n",
-                ),
-            ),
-            tests=(AcceptanceCase(id="support", request=request, at=at, expected="supported"),),
-        )
-        saved = writer.save_source(owner, source, expected_head=None)
-        queued = writer.request_build(owner, "benchmark", saved.revision)
-        claim, _ = writer.repository.claim(queued.id, 60)
-        artifact = compile_shop(
-            artifact.shop, artifact.identity.model_copy(update={"source_sha256": saved.revision})
-        )
-        writer.repository.finish(
-            queued.id,
-            claim,
-            BuildReport(
-                source_revision=saved.revision,
-                worker_image="sha256:" + "a" * 64,
-                status="succeeded",
-                artifact=artifact,
-                tests=run_cases(artifact, source.tests),
-            ),
-        )
-        writer.publish(owner, "benchmark", queued.id, expected_generation=0)
+        seed(path, artifact, request, at)
         uncached = PublishedService(ShopService(Repository(path, cache_bytes=0)), clock=lambda: at)
         repository = Repository(path)
         cached = PublishedService(ShopService(repository), clock=lambda: at)
@@ -91,11 +96,7 @@ def service_measurements(artifact, request, at, iterations):
         return measurements, repository.data_cache.usage
 
 
-def child(iterations, broad, service):
-    # Contain this benchmark itself. Deployment resource controls are separate.
-    resource.setrlimit(resource.RLIMIT_AS, (512 * 1024 * 1024,) * 2)
-    resource.setrlimit(resource.RLIMIT_CPU, (30, 30))
-    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+def workload(broad):
     from chipload import (
         BuildIdentity,
         Capability,
@@ -109,14 +110,9 @@ def child(iterations, broad, service):
         Step,
         Workflow,
         compile_shop,
-        evaluate,
         quantity,
-        read_artifact,
     )
-    from chipload.complexity import target_budgets
-    from chipload.discovery import public_catalog
     from chipload.evaluate import EvaluationRequest
-    from chipload.limits import bounded_json
 
     at = datetime(2026, 10, 20, tzinfo=timezone.utc)
     rules = tuple(
@@ -206,6 +202,20 @@ def child(iterations, broad, service):
         allow_simulated=True,
         facts=tuple(Fact(name=r.fact, value=quantity("50", "mm")) for r in rules),
     )
+    return artifact, request, at
+
+
+def child(iterations, broad, service):
+    # Contain this benchmark itself. Deployment resource controls are separate.
+    resource.setrlimit(resource.RLIMIT_AS, (512 * 1024 * 1024,) * 2)
+    resource.setrlimit(resource.RLIMIT_CPU, (30, 30))
+    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+    from chipload import evaluate, read_artifact
+    from chipload.complexity import target_budgets
+    from chipload.discovery import public_catalog
+    from chipload.limits import bounded_json
+
+    artifact, request, at = workload(broad)
     wire = artifact.to_json()
 
     def evaluate_loaded():
@@ -250,7 +260,7 @@ def child(iterations, broad, service):
                 "iterations": iterations,
                 "workload": "large-catalog" if broad else "compact",
                 "artifact_bytes": len(wire),
-                "workflow_work_score": target_budgets(shop)["workflow", "route"][0],
+                "workflow_work_score": target_budgets(artifact.shop)["workflow", "route"][0],
                 "peak_process_rss_kib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
                 "measurements": measurements,
                 "cache_usage": cache_usage,

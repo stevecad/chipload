@@ -142,8 +142,10 @@ else:
                     config_state, host = record["Config"], record["HostConfig"]
                     self.assertEqual(config_state["User"], f"{os.getuid()}:{os.getgid()}")
                     self.assertTrue(host["ReadonlyRootfs"])
-                    self.assertEqual(host["Memory"], 512 * 1024**2)
-                    self.assertEqual(host["MemorySwap"], 512 * 1024**2)
+                    self.assertEqual(
+                        host["Memory"], (1024 if record is inspections[0] else 512) * 1024**2
+                    )
+                    self.assertEqual(host["MemorySwap"], host["Memory"])
                     self.assertEqual(host["NanoCpus"], 1_000_000_000)
                     self.assertEqual(host["PidsLimit"], 128)
                     self.assertEqual(host["CapDrop"], ["ALL"])
@@ -168,6 +170,33 @@ else:
                 self.assertEqual(
                     {m["Destination"] for m in inspections[1]["Mounts"]},
                     {"/data", "/var/run/docker.sock", "/etc/chipload/settings.json"},
+                )
+                await run(
+                    "docker",
+                    "exec",
+                    api,
+                    "python",
+                    "-I",
+                    "-c",
+                    """
+from pathlib import Path
+import re
+workers = []
+for process in Path('/proc').iterdir():
+    if not process.name.isdigit():
+        continue
+    try:
+        argv = (process / 'cmdline').read_bytes().split(b'\\0')
+        if len(argv) > 4 and argv[3] == b'-c' and argv[4].startswith(b'import resource,sys,os,select'):
+            workers.append((process / 'limits').read_text())
+    except FileNotFoundError:
+        pass
+assert len(workers) == 2, len(workers)
+for limits in workers:
+    assert re.search(r'Max address space\\s+268435456\\s+268435456', limits), limits
+    assert re.search(r'Max open files\\s+64\\s+64', limits), limits
+    assert re.search(r'Max core file size\\s+0\\s+0', limits), limits
+""",
                 )
                 await run(
                     "docker",

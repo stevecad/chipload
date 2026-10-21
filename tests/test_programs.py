@@ -228,6 +228,7 @@ class ProgramTests(unittest.TestCase):
 
     def test_running_capacity_and_sdk_call_limit_hold_across_processors(self):
         one = self.service.submit(self.owner, self.request())
+        self.at += timedelta(milliseconds=1)
         two = self.service.submit(self.owner, self.request("two"))
         row, _ = self.processor.claim_next()
         other = ProgramProcessor(
