@@ -35,6 +35,10 @@ def check_images(images):
         b"".join(p.name.encode() + b"\0" + p.read_bytes() + b"\0" for p in files)
     ).hexdigest()
     lock = hashlib.sha256((ROOT / "uv.lock").read_bytes()).hexdigest()
+    recipes = {
+        "worker": hashlib.sha256((ROOT / "deploy/worker/Dockerfile").read_bytes()).hexdigest(),
+        "runtime": hashlib.sha256((ROOT / "deploy/runtime/Dockerfile").read_bytes()).hexdigest(),
+    }
     for role, identifier in images.items():
         result = subprocess.run(
             ["docker", "image", "inspect", identifier, "--format", "{{json .Config.Labels}}"],
@@ -50,6 +54,9 @@ def check_images(images):
         if (
             labels.get("org.chipload.sdk-sha256") != expected
             or core_dependencies != lock
+            or labels.get("org.chipload.recipe-sha256") != recipes[
+                "worker" if role == "worker" else "runtime"
+            ]
         ):
             raise ValueError(
                 f"{role} image differs from the checkout; rebuild worker and runtime images"

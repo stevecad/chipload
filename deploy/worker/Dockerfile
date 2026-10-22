@@ -40,10 +40,12 @@ COPY LICENSE /usr/local/share/licenses/chipload/LICENSE
 ARG SDK_SHA256
 ARG DEPENDENCIES_SHA256
 ARG CORE_DEPENDENCIES_SHA256
+ARG RECIPE_SHA256
 LABEL org.chipload.worker-protocol="1" \
       org.chipload.sdk-sha256=$SDK_SHA256 \
       org.chipload.dependencies-sha256=$DEPENDENCIES_SHA256 \
       org.chipload.core-dependencies-sha256=$CORE_DEPENDENCIES_SHA256 \
+      org.chipload.recipe-sha256=$RECIPE_SHA256 \
       org.chipload.python-version="3.12.15"
 
 USER 65532:65532
