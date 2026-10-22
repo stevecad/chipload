@@ -5,13 +5,14 @@ import tempfile
 import unittest
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
 
 from chipload.access import Forbidden, Grant, Principal
 from chipload.artifact import canonical_json
-from chipload.directory_model import SearchPage, SupplierSearch
+from chipload.directory_model import ListingSummary, SearchPage, SupplierCandidate, SupplierSearch
 from chipload.lifecycle import Conflict, NotFound, Repository, ShopService
 from chipload.network import NetworkService
 from chipload.network_model import NetworkComplete, NetworkSubmit, search_hash
@@ -76,6 +77,48 @@ class NetworkTests(unittest.TestCase):
         with self.assertRaises((Conflict, NotFound)):
             self.service.complete(self.dispatcher, NetworkComplete(shop_id="mill", job_id=record.id, claim=lease["claim"], result=self.result(intent)))
         self.assertIsNone(self.service.claim(self.dispatcher, "mill")["lease"])
+
+    def test_submit_and_complete_recheck_time_after_waiting_for_write_lock(self):
+        transaction = self.repository.transaction
+
+        @contextmanager
+        def delayed(seconds):
+            self.now += timedelta(seconds=seconds)
+            with transaction() as db:
+                yield db
+
+        with patch.object(self.repository, "transaction", lambda: delayed(31)):
+            with self.assertRaises(ValueError):
+                self.service.submit(self.owner, self.intent())
+        with self.repository.connection() as db:
+            self.assertEqual(db.execute("SELECT count(*) FROM network_jobs").fetchone()[0], 0)
+
+        intent = self.intent()
+        record = self.service.submit(self.owner, intent)
+        lease = self.service.claim(self.dispatcher, "mill")["lease"]
+        completion = NetworkComplete(shop_id="mill", job_id=record.id,
+            claim=lease["claim"], result=self.result(intent))
+        with patch.object(self.repository, "transaction", lambda: delayed(31)):
+            with self.assertRaises((Conflict, NotFound)):
+                self.service.complete(self.dispatcher, completion)
+        self.assertEqual(self.service.read(self.owner, "mill", record.id).state, "expired")
+
+        intent = self.intent()
+        record = self.service.submit(self.owner, intent)
+        lease = self.service.claim(self.dispatcher, "mill")["lease"]
+        candidate = SupplierCandidate(instance_id="a" * 32, shop_id="seller",
+            shop_name="Dummy Seller", listing=ListingSummary(id="stock", name="Stock",
+                profile=intent.query.query.profile, site=None, target_kind="capability",
+                target="stock"), source_generation=1, source_revision="b" * 64,
+            expires_at=self.now + timedelta(seconds=1), direct_origin=None,
+            relay_available=True, location=None, distance_m=None,
+            distance_uncertainty_m=None)
+        completion = NetworkComplete(shop_id="mill", job_id=record.id,
+            claim=lease["claim"], result=self.result(intent, candidates=(candidate,)))
+        with patch.object(self.repository, "transaction", lambda: delayed(2)):
+            with self.assertRaises(ValueError):
+                self.service.complete(self.dispatcher, completion)
+        self.assertEqual(self.service.read(self.owner, "mill", record.id).state, "running")
 
     def test_result_identity_and_query_must_match_before_settlement(self):
         intent = self.intent()

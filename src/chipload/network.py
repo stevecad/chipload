@@ -54,8 +54,8 @@ class NetworkService:
         encoded = canonical_json(request)
         if len(encoded) > MAX_NETWORK_REQUEST:
             raise ValueError("network intent exceeds its byte limit")
-        when = self.clock().timestamp()
         with self.repository.transaction() as db:
+            when = self.clock().timestamp()
             self.expire(db, when)
             row = db.execute("SELECT * FROM network_jobs WHERE shop_id=? AND actor=? AND request_key=?",
                              (request.shop_id, who.subject, request.request_key)).fetchone()
@@ -133,10 +133,10 @@ class NetworkService:
         who = require(principal, completion.shop_id, "network:dispatch")
         if (completion.result is None) == (completion.error is None):
             raise ValueError("network completion requires exactly one result or error")
-        when = self.clock()
         # Read-only requests are never reclaimed/replayed after a lost connector.
         # Rechecking under the write lock fences cancellation and concurrent replies.
         with self.repository.transaction() as db:
+            when = self.clock()
             self.expire(db, when.timestamp())
             row = db.execute("SELECT * FROM network_jobs WHERE id=? AND shop_id=? AND dispatcher=?",
                 (completion.job_id, completion.shop_id, who.subject)).fetchone()
