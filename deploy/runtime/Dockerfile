@@ -12,10 +12,12 @@ COPY chipload/ /usr/local/lib/python3.12/site-packages/chipload/
 COPY LICENSE /usr/local/share/licenses/chipload/LICENSE
 ARG SDK_SHA256
 ARG DEPENDENCIES_SHA256
+ARG RECIPE_SHA256
 LABEL org.chipload.runtime-role="api" \
       org.chipload.runtime-protocol="1" \
       org.chipload.sdk-sha256=$SDK_SHA256 \
-      org.chipload.dependencies-sha256=$DEPENDENCIES_SHA256
+      org.chipload.dependencies-sha256=$DEPENDENCIES_SHA256 \
+      org.chipload.recipe-sha256=$RECIPE_SHA256
 USER 65532:65532
 ENTRYPOINT ["python", "-I", "-B", "-m", "chipload.server"]
 CMD ["--config", "/etc/chipload/settings.json", "--bind", "0.0.0.0", "--port", "8088"]
@@ -40,10 +42,12 @@ COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
 COPY licenses/ /usr/local/share/licenses/docker-cli/
 ARG SDK_SHA256
 ARG DEPENDENCIES_SHA256
+ARG RECIPE_SHA256
 LABEL org.chipload.runtime-role="broker" \
       org.chipload.runtime-protocol="1" \
       org.chipload.sdk-sha256=$SDK_SHA256 \
-      org.chipload.dependencies-sha256=$DEPENDENCIES_SHA256
+      org.chipload.dependencies-sha256=$DEPENDENCIES_SHA256 \
+      org.chipload.recipe-sha256=$RECIPE_SHA256
 USER 65532:65532
 ENTRYPOINT ["python", "-I", "-B", "-m", "chipload.broker"]
 
@@ -55,9 +59,11 @@ COPY chipload/ /usr/local/lib/python3.12/site-packages/chipload/
 COPY LICENSE /usr/local/share/licenses/chipload/LICENSE
 ARG SDK_SHA256
 ARG DEPENDENCIES_SHA256
+ARG RECIPE_SHA256
 LABEL org.chipload.runtime-role="executor" \
       org.chipload.runtime-protocol="1" \
       org.chipload.sdk-sha256=$SDK_SHA256 \
-      org.chipload.dependencies-sha256=$DEPENDENCIES_SHA256
+      org.chipload.dependencies-sha256=$DEPENDENCIES_SHA256 \
+      org.chipload.recipe-sha256=$RECIPE_SHA256
 USER 65532:65532
 ENTRYPOINT ["python", "-I", "-B", "-m", "chipload.executor"]

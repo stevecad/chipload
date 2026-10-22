@@ -43,6 +43,7 @@ def main():
     lock = (root / "uv.lock").read_bytes()
     core_hash = hashlib.sha256(lock).hexdigest()
     recipe = (root / "deploy/worker/Dockerfile").read_bytes()
+    recipe_hash = hashlib.sha256(recipe).hexdigest()
     dependencies_hash = fingerprint(lock, extensions, recipe if args.graphics else b"")
     with tempfile.TemporaryDirectory(prefix="chipload-worker-image-") as directory:
         context = Path(directory)
@@ -83,6 +84,8 @@ def main():
                 f"DEPENDENCIES_SHA256={dependencies_hash}",
                 "--build-arg",
                 f"CORE_DEPENDENCIES_SHA256={core_hash}",
+                "--build-arg",
+                f"RECIPE_SHA256={recipe_hash}",
                 "--iidfile",
                 str(context / "image-id"),
                 str(context),

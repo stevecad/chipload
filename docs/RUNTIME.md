@@ -42,9 +42,10 @@ shop projects, local databases, and `.env` files are excluded. Python and Docker
 CLI base images are pinned by digest. Installation accepts hash-locked binary
 wheels. Image IDs are saved in `.local/worker-image`, `.local/api-image`, and
 `.local/broker-image`, plus `.local/executor-image` for the separate executor.
-Startup checks image roles, SDK fingerprint, and dependency lock against the
-checkout. Rebuild these images after SDK, lock, image recipe or version-pin
-changes, then apply them through the deployment's maintenance procedure.
+Startup checks image roles, SDK fingerprint, dependency lock, and exact
+Dockerfile recipe against the checkout. Rebuild these images after SDK, lock,
+image recipe or version-pin changes, then apply them through the deployment's
+maintenance procedure.
 Images carry Chipload's MIT license. The broker also includes the Docker CLI
 29.9.2 [license](https://github.com/docker/cli/blob/v29.9.2/LICENSE) and
 [notice](https://github.com/docker/cli/blob/v29.9.2/NOTICE) under

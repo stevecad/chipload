@@ -276,6 +276,21 @@ print(hashlib.sha256(receiver_token(config.secrets, Path('/credentials')).encode
                 service("up")
                 service("unseal", share_file=shares[0])
                 service("unseal", share_file=shares[2])
+                # An unsealed restored node may not be active yet. Wait for
+                # readiness before exercising the restored AppRole credential.
+                deadline = time.monotonic() + 30
+                while True:
+                    status, health = request("GET", "sys/health", allowed=(429, 500))
+                    if status == 200:
+                        self.assertTrue(health["initialized"])
+                        self.assertFalse(health["sealed"])
+                        self.assertEqual(
+                            health["cluster_id"],
+                            script.read_json(state / "initialized.json")["cluster_id"],
+                        )
+                        break
+                    self.assertLess(time.monotonic(), deadline, f"OpenBao readiness: HTTP {status}")
+                    time.sleep(.2)
                 args.action = "verify"
                 self.assertTrue(workload.operate(args)["verified"])
                 self.assertEqual(real_client(), hashlib.sha256(bearer.encode()).hexdigest())

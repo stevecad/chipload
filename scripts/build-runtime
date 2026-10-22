@@ -16,6 +16,7 @@ def main():
         b"".join(name.encode() + b"\0" + content + b"\0" for name, content in source.items())
     ).hexdigest()
     lock = (root / "uv.lock").read_bytes()
+    recipe_hash = hashlib.sha256((root / "deploy/runtime/Dockerfile").read_bytes()).hexdigest()
     with tempfile.TemporaryDirectory(prefix="chipload-runtime-image-") as directory:
         context = Path(directory)
         (context / "chipload").mkdir()
@@ -56,6 +57,8 @@ def main():
                     f"SDK_SHA256={sdk_hash}",
                     "--build-arg",
                     f"DEPENDENCIES_SHA256={hashlib.sha256(lock).hexdigest()}",
+                    "--build-arg",
+                    f"RECIPE_SHA256={recipe_hash}",
                     "--iidfile",
                     str(context / "image-id"),
                     str(context),

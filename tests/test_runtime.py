@@ -95,6 +95,9 @@ class RuntimeTests(unittest.TestCase):
             "org.chipload.dependencies-sha256": hashlib.sha256(
                 (ROOT / "uv.lock").read_bytes()
             ).hexdigest(),
+            "org.chipload.recipe-sha256": hashlib.sha256(
+                (ROOT / "deploy/runtime/Dockerfile").read_bytes()
+            ).hexdigest(),
         }
         labels = {
             role: {
@@ -104,7 +107,13 @@ class RuntimeTests(unittest.TestCase):
             }
             for role in ("api", "broker")
         }
-        labels["worker"] = {**common, "org.chipload.worker-protocol": "1"}
+        labels["worker"] = {
+            **common,
+            "org.chipload.worker-protocol": "1",
+            "org.chipload.recipe-sha256": hashlib.sha256(
+                (ROOT / "deploy/worker/Dockerfile").read_bytes()
+            ).hexdigest(),
+        }
 
         def inspect(command, **kwargs):
             return SimpleNamespace(stdout=json.dumps(labels[command[3]]))
@@ -124,6 +133,8 @@ class RuntimeTests(unittest.TestCase):
                 ("broker", "org.chipload.sdk-sha256", "old-sdk"),
                 ("worker", "org.chipload.dependencies-sha256", "old-lock"),
                 ("worker", "org.chipload.worker-protocol", "0"),
+                ("api", "org.chipload.recipe-sha256", "old-recipe"),
+                ("worker", "org.chipload.recipe-sha256", "old-recipe"),
             ):
                 with self.subTest(role=role, key=key), patch.dict(labels[role], {key: invalid}):
                     with self.assertRaises(ValueError):

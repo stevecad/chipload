@@ -16,9 +16,9 @@ Build the images from the same checkout before preparing deployments:
 
 The runtime build produces `api`, `broker`, `executor`, `cloud` and `connector`
 images and records their immutable IDs under `.local/`. The launcher checks the
-SDK and lock fingerprints and pins the selected IDs. Use a non-root Linux
-account with a local Unix Docker socket. Configuration files and credential
-files must be owner-only; keep state directories at mode 0700.
+SDK, lock and Dockerfile recipe fingerprints and pins the selected IDs. Use a
+non-root Linux account with a local Unix Docker socket. Configuration and
+credential files must be owner-only; keep state directories at mode 0700.
 
 ## Cloud directory and relay
 
@@ -57,6 +57,13 @@ the existing directory and paired accounting stores before clearing the marker;
 it never creates or migrates missing accounting state. Restore all three stores
 from a consistent stopped backup if any is lost. Keep deployment settings and
 instance-owner bindings with that backup. Do not initialize over a partial store.
+Before reopening a restored cloud listener, reconcile current owner bindings
+and credential revocations with the identity and secrets services. An older
+snapshot can expose a withdrawn advertisement until its lease expires (at most
+300 seconds). If post-backup withdrawal history is unavailable, keep the listener
+stopped until all restored leases expire. Do not reopen while owner or credential
+changes remain unresolved. This launcher has no automated restore or post-backup
+reconciliation command.
 Cloud relay sessions are ephemeral and reconnect after restart; old deliveries
 are never replayed. This is a single-process, single-host cloud package.
 

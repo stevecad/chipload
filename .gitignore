@@ -14,6 +14,15 @@ build/
 !.env.*.example
 /.local/
 
+# Private key and credential exports outside the local state directory
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.kdbx
+
 # Test, coverage, and tool caches
 .pytest_cache/
 .mypy_cache/
