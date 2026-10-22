@@ -325,6 +325,11 @@ for the remaining production deployment work.
 
 Connect a Streamable HTTP client to `http://localhost:8088/mcp`. The server uses
 the official MCP Python SDK and supports its current 2026-07-28 protocol.
+Calls use stateless POST requests with JSON responses. GET, HEAD and DELETE at
+`/mcp` (including its trailing-slash spelling) return HTTP 405 with
+`Allow: POST, OPTIONS`. This also closes the SDK's legacy standalone SSE path
+when a client omits the protocol header; idle streams cannot retain the shared
+HTTP request slots. CORS preflight and public discovery remain available.
 The four tools are `run_python`, `read_run`, `cancel_run` and `discover_shop`.
 Use [Python programs](PYTHON_API.md) to compose authenticated service calls.
 Tools use a single typed `request` argument. For example:

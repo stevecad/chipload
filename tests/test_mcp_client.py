@@ -15,7 +15,7 @@ from program_support import agent_call, processor
 from server_support import IdentityFixture
 
 from chipload.quotas import QuotaPolicy
-from chipload.server import create_app
+from chipload.server import Boundary, create_app
 
 
 class MCPClientTests(unittest.IsolatedAsyncioTestCase):
@@ -76,6 +76,38 @@ class MCPClientTests(unittest.IsolatedAsyncioTestCase):
                 async with httpx.AsyncClient(trust_env=False) as rest:
                     conventional = await rest.get(self.base + "/v1/shops/thermal-example/catalog")
                     self.assertEqual(conventional.json(), result.structured_content)
+
+    async def test_standalone_streams_finish_without_retaining_shared_capacity(self):
+        boundary = self.server.config.app.middleware_stack
+        while not isinstance(boundary, Boundary):
+            boundary = boundary.app
+        boundary.max_active = 1
+        async with (
+            httpx.AsyncClient(trust_env=False, timeout=2) as transport,
+            httpx.AsyncClient(
+                transport=httpx.AsyncHTTPTransport(local_address="127.0.0.2"),
+                trust_env=False,
+                timeout=2,
+            ) as observer,
+        ):
+            for path in ("/mcp", "/mcp/"):
+                for version in (None, "2025-11-25", "2026-07-28"):
+                    with self.subTest(path=path, version=version):
+                        headers = {"Accept": "text/event-stream"}
+                        if version is not None:
+                            headers["MCP-Protocol-Version"] = version
+                        async with transport.stream("GET", self.base + path, headers=headers) as response:
+                            self.assertEqual(response.status_code, 405)
+                            self.assertEqual(response.headers["allow"], "POST, OPTIONS")
+                            self.assertEqual(await response.aread(), b"")
+                        health = await observer.get(self.base + "/healthz")
+                        self.assertEqual(health.status_code, 200)
+            for method in ("HEAD", "DELETE"):
+                response = await transport.request(method, self.base + "/mcp")
+                self.assertEqual(response.status_code, 405)
+            self.assertEqual((await transport.options(self.base + "/mcp")).status_code, 204)
+            metadata = await transport.get(self.base + "/.well-known/oauth-protected-resource/mcp")
+            self.assertEqual(metadata.status_code, 200)
 
     async def test_official_client_and_rest_share_source_and_publication_guards(self):
         headers = {"Authorization": "Bearer " + self.identity.token()}

@@ -814,6 +814,13 @@ def create_app(
                     )
         return schema
 
+    @app.api_route("/mcp", methods=["GET", "HEAD", "DELETE"], include_in_schema=False)
+    @app.api_route("/mcp/", methods=["GET", "HEAD", "DELETE"], include_in_schema=False)
+    async def no_mcp_session():
+        # Stateless JSON calls need no standalone stream. The SDK's legacy GET
+        # path otherwise holds a shared Boundary slot until client disconnect.
+        return Response(status_code=405, headers={"Allow": "POST, OPTIONS"})
+
     app.openapi = openapi
     app.mount("/", mcp_http)
     return app
