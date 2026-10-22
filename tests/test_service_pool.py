@@ -289,7 +289,7 @@ os._exit(0)
                     )
                     if "Z (zombie)" not in state:
                         running.append(identifier)
-                except FileNotFoundError:
+                except (FileNotFoundError, ProcessLookupError):
                     pass
             if not running:
                 break
