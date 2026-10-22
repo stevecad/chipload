@@ -1,7 +1,9 @@
 """Managed outbound sessions and publication sync over actual HTTPS listeners."""
 
+import sqlite3
 import time
 import unittest
+from unittest.mock import Mock, patch
 
 from cloud_support import CloudServer
 from peer_support import PeerServer
@@ -11,6 +13,19 @@ from chipload.connector import CloudLink, Connector, ConnectorSettings
 from chipload.connector_auth import WorkloadIdentity
 from chipload.directory_model import SupplierSearch
 from examples.federation_shops import define_shop, query, term
+
+
+def admitted_read(read):
+    """A fixture may repeat a read explicitly refused before request admission."""
+    for attempt in range(4):
+        try:
+            return read()
+        except ServiceError as error:
+            if (attempt == 3 or error.status != 503 or error.code != "request_capacity"
+                    or type(error.retry_after) is not int or not 1 <= error.retry_after <= 5):
+                raise
+            time.sleep(error.retry_after)
+    raise AssertionError("unreachable")
 
 
 class ConnectorTests(unittest.TestCase):
@@ -45,7 +60,7 @@ class ConnectorTests(unittest.TestCase):
         self.fail("connector fixture did not reach the expected state")
 
     def candidates(self):
-        return self.cloud.client.search(SupplierSearch(profile=term("material-supply"))).candidates
+        return admitted_read(lambda: self.cloud.client.search(SupplierSearch(profile=term("material-supply")))).candidates
 
     def test_outbound_startup_withdrawal_restart_and_cloud_outage(self):
         connector = self.connector()
@@ -53,15 +68,15 @@ class ConnectorTests(unittest.TestCase):
         candidate = self.wait(self.candidates)[0]
         self.assertIsNone(candidate.direct_origin)
         self.assertTrue(candidate.relay_available)
-        result = self.cloud.client.evaluate_listing(self.peer.settings.instance_id,
-            "supplier-far", "service", query(revision=candidate.source_revision), expected_generation=1)
+        result = admitted_read(lambda: self.cloud.client.evaluate_listing(self.peer.settings.instance_id,
+            "supplier-far", "service", query(revision=candidate.source_revision), expected_generation=1))
         self.assertEqual(result.value["outcome"], "supported")
         self.peer.service.withdraw(self.peer.owner, "supplier-far", expected_generation=1)
         connector.refresh("cloud")
         self.assertFalse(self.candidates())
-        self.assertIsNone(self.cloud.owner(0).head(self.peer.settings.instance_id, "supplier-far").expires_at)
+        self.assertIsNone(admitted_read(lambda: self.cloud.owner(0).head(self.peer.settings.instance_id, "supplier-far")).expires_at)
         with self.assertRaises(ServiceError) as withdrawn:
-            self.cloud.client.catalog(self.peer.settings.instance_id, "supplier-far")
+            admitted_read(lambda: self.cloud.client.catalog(self.peer.settings.instance_id, "supplier-far"))
         self.assertEqual(withdrawn.exception.status, 404)
         self.peer.build(define_shop())
         connector.refresh("cloud")
@@ -70,7 +85,7 @@ class ConnectorTests(unittest.TestCase):
         old_epoch = connector.sessions["cloud"].epoch
         self.cloud.restart()
         self.wait(lambda: connector.sessions.get("cloud") is not None and connector.sessions["cloud"].epoch > old_epoch)
-        self.assertEqual(self.cloud.client.catalog(self.peer.settings.instance_id, "supplier-far").generation,
+        self.assertEqual(admitted_read(lambda: self.cloud.client.catalog(self.peer.settings.instance_id, "supplier-far")).generation,
                          candidate.source_generation)
         self.cloud.stop()
         self.assertEqual(self.peer.client.catalog("supplier-far").generation, candidate.source_generation)
@@ -87,6 +102,23 @@ class ConnectorTests(unittest.TestCase):
         self.assertFalse(candidate.relay_available)
         self.assertEqual(self.cloud.app.state.broker.connected(), frozenset())
 
+    def test_fixture_read_recovers_after_real_accounting_lock_refusal(self):
+        path = self.cloud.settings.identity.database.with_name("cloud.db.limits.admission")
+        refused = []
+        with sqlite3.connect(path) as writer:
+            writer.execute("BEGIN IMMEDIATE")
+
+            def read():
+                try:
+                    return self.cloud.client.search(SupplierSearch(profile=term("material-supply")))
+                except ServiceError as error:
+                    refused.append((error.status, error.code))
+                    writer.rollback()
+                    raise
+
+            self.assertEqual(admitted_read(read).candidates, ())
+        self.assertEqual(refused, [(503, "request_capacity")])
+
     def test_source_identity_mismatch_stops_before_cloud_enrollment(self):
         connector = self.connector(self.settings.model_copy(update={"instance_id": "0" * 32}))
         with self.assertRaises(TransportError):
@@ -94,3 +126,36 @@ class ConnectorTests(unittest.TestCase):
         self.assertFalse(connector.threads)
         with self.cloud.app.state.store.connection() as db:
             self.assertEqual(db.execute("SELECT count(*) FROM epochs").fetchone()[0], 0)
+
+
+class ConnectorAdmissionTests(unittest.TestCase):
+    def refusal(self, code="request_capacity", *, status=503, delay=1):
+        return ServiceError(status, {"error": {"code": code, "retry_after": delay}})
+
+    def test_read_recovers_from_explicit_pre_admission_refusal(self):
+        read = Mock(side_effect=[self.refusal(), {"generation": 3}])
+        with patch("test_connector.time.sleep") as sleep:
+            self.assertEqual(admitted_read(read), {"generation": 3})
+        self.assertEqual(read.call_count, 2)
+        sleep.assert_called_once_with(1)
+
+    def test_unrelated_refusals_transport_errors_and_invalid_retry_metadata_are_not_retried(self):
+        errors = [self.refusal(code) for code in ("relay_offline", "relay_capacity", "relay_session_replaced", "identity_unavailable")]
+        errors += [self.refusal(status=429), TransportError("lost reply")]
+        errors += [self.refusal(delay=delay) for delay in (None, True, 0, 6, "1")]
+        for error in errors:
+            with self.subTest(error=type(error).__name__, detail=getattr(error, "detail", None)):
+                read = Mock(side_effect=error)
+                with patch("test_connector.time.sleep") as sleep, self.assertRaises(type(error)):
+                    admitted_read(read)
+                self.assertEqual(read.call_count, 1)
+                sleep.assert_not_called()
+
+    def test_persistent_refusal_keeps_a_fixed_attempt_bound(self):
+        error = self.refusal()
+        read = Mock(side_effect=error)
+        with patch("test_connector.time.sleep") as sleep, self.assertRaises(ServiceError) as caught:
+            admitted_read(read)
+        self.assertIs(caught.exception, error)
+        self.assertEqual(read.call_count, 4)
+        self.assertEqual(sleep.call_count, 3)

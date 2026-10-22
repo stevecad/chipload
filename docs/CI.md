@@ -29,6 +29,13 @@ Connection failures, lost replies, application errors and arbitrary HTTP 503s
 are not retried. Dedicated tests verify those distinctions and the retry bound.
 Load benchmarks use their ordinary transports and continue to count refusals.
 
+Connector fixture reads also allow four bounded attempts after an explicit
+HTTP 503 `request_capacity` refusal with valid retry timing. Concurrent
+publication/polling can legitimately contend for the admission-store writer.
+A real SQLite-lock regression verifies that refusal and recovery. Relay failures,
+lost replies, other status codes and invalid retry metadata fail immediately;
+production clients and mutation retry behavior are unchanged.
+
 To run the same profiles locally, install Docker Engine 29 with Compose, GnuPG 2.4+,
 Python 3.12+ and `uv`, then run:
 
